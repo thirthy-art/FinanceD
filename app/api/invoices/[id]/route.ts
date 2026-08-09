@@ -9,6 +9,7 @@ import {
 } from "@/src/db/schema";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
+import { isAmountMismatch, parseAmount } from "@/src/lib/invoice-validation";
 
 const UpdateSchema = z.object({
   vendorId: z.number().nullable().optional(),
@@ -79,6 +80,26 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (invoice) {
       const [v] = await db.insert(vendors).values({ companyId: invoice.companyId, name: data.newVendorName }).returning();
       vendorId = v.id;
+    }
+  }
+
+  // Server-side arithmetic guard: refuse to approve an invoice whose amounts
+  // are inconsistent beyond the accepted rounding tolerance.
+  if (data.status === "approved") {
+    // Use submitted amounts if present, otherwise fall back to stored values.
+    const existing = await db
+      .select({ netAmount: supplierInvoices.netAmount, vatAmount: supplierInvoices.vatAmount, grossAmount: supplierInvoices.grossAmount })
+      .from(supplierInvoices)
+      .where(eq(supplierInvoices.id, Number(id)));
+    if (!existing[0]) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    const net = parseAmount(data.netAmount ?? existing[0].netAmount);
+    const vat = parseAmount(data.vatAmount ?? existing[0].vatAmount);
+    const gross = parseAmount(data.grossAmount ?? existing[0].grossAmount);
+    if (isAmountMismatch(net, vat, gross)) {
+      return NextResponse.json(
+        { error: `Cannot approve: net (${net}) + VAT (${vat}) does not match gross (${gross}) within the accepted tolerance.` },
+        { status: 422 }
+      );
     }
   }
 

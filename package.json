@@ -9,7 +9,9 @@
     "lint": "eslint",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "ts-node --esm src/db/migrate.ts",
-    "db:push": "drizzle-kit push"
+    "db:push": "drizzle-kit push",
+    "test": "vitest run --config vitest.config.mjs",
+    "test:watch": "vitest --config vitest.config.mjs"
   },
   "dependencies": {
     "@types/pdf-parse": "^1.1.5",
@@ -30,9 +32,11 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@vitest/coverage-v8": "^4.1.10",
     "eslint": "^9",
     "eslint-config-next": "16.3.0",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.10"
   }
 }

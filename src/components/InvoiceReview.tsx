@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { isAmountMismatch, parseAmount } from "@/src/lib/invoice-validation";
 
 interface Vendor { id: number; name: string; }
 interface CostCentre { id: number; code: string; name: string; }
@@ -86,12 +87,12 @@ export default function InvoiceReview({ invoice, documents, vendors, costCentres
 
   const doc = documents[0];
 
-  // Arithmetic validation
-  const net = parseFloat(form.netAmount.replace(",", ".")) || 0;
-  const vat = parseFloat(form.vatAmount.replace(",", ".")) || 0;
-  const gross = parseFloat(form.grossAmount.replace(",", ".")) || 0;
+  // Arithmetic validation — uses shared tolerance constant (see invoice-validation.ts)
+  const net = parseAmount(form.netAmount);
+  const vat = parseAmount(form.vatAmount);
+  const gross = parseAmount(form.grossAmount);
   const computed = net + vat;
-  const mismatch = gross > 0 && net > 0 && Math.abs(computed - gross) > 0.01;
+  const mismatch = isAmountMismatch(net, vat, gross);
 
   function set(k: string) {
     return (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
