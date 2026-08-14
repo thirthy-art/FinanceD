@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { parseDecimalInput } from "./invoice-validation";
+import { parseDecimalInput, safeParseDecimal, toDecimal } from "./invoice-validation";
 
 const nullableText = (max: number) => z.string().max(max).nullable();
 const nullableDecimalInput = z.string().max(100).nullable();
@@ -94,4 +94,20 @@ export function editableLineToInput(line: EditableInvoiceLine): InvoiceLineInput
     grossAmount: nullable(line.grossAmount),
     sourcePage: line.sourcePage.trim() ? Number(line.sourcePage) : null,
   };
+}
+
+export function sumInvoiceLineAmounts(lines: EditableInvoiceLine[]): { sum: string; invalidLineNumbers: number[] } {
+  let sum = toDecimal(null);
+  const invalidLineNumbers: number[] = [];
+
+  lines.forEach((line, index) => {
+    const parsed = safeParseDecimal(line.netAmount);
+    if (parsed.error) {
+      invalidLineNumbers.push(index + 1);
+      return;
+    }
+    if (parsed.value !== null) sum = sum.plus(toDecimal(parsed.value));
+  });
+
+  return { sum: sum.toFixed(), invalidLineNumbers };
 }

@@ -1,10 +1,12 @@
 "use client";
 
 import type { EditableInvoiceLine } from "@/src/lib/invoice-lines";
-import { emptyEditableInvoiceLine } from "@/src/lib/invoice-lines";
+import { emptyEditableInvoiceLine, sumInvoiceLineAmounts } from "@/src/lib/invoice-lines";
+import { safeParseDecimal, toDecimal } from "@/src/lib/invoice-validation";
 
 interface Props {
   lines: EditableInvoiceLine[];
+  invoiceNetAmount: string;
   onChange: (lines: EditableInvoiceLine[]) => void;
 }
 
@@ -17,7 +19,15 @@ const inputStyle: React.CSSProperties = {
   fontSize: 12,
 };
 
-export default function InvoiceLinesEditor({ lines, onChange }: Props) {
+export default function InvoiceLinesEditor({ lines, invoiceNetAmount, onChange }: Props) {
+  const lineAmountSummary = sumInvoiceLineAmounts(lines);
+  const parsedInvoiceNet = safeParseDecimal(invoiceNetAmount);
+  const comparableInvoiceNet = parsedInvoiceNet.error ? null : parsedInvoiceNet.value;
+  const amountsMismatch = lines.length > 0
+    && lineAmountSummary.invalidLineNumbers.length === 0
+    && comparableInvoiceNet !== null
+    && !toDecimal(lineAmountSummary.sum).equals(toDecimal(comparableInvoiceNet));
+
   function update(index: number, field: keyof EditableInvoiceLine, value: string) {
     onChange(lines.map((line, lineIndex) => lineIndex === index ? { ...line, [field]: value } : line));
   }
@@ -46,7 +56,7 @@ export default function InvoiceLinesEditor({ lines, onChange }: Props) {
           <table style={{ borderCollapse: "collapse", minWidth: 1320, width: "100%" }}>
             <thead style={{ background: "#f8fafc" }}>
               <tr>
-                {["Line", "Original description", "English description", "Qty", "Unit", "Unit price", "Net", "VAT rate", "VAT", "Gross", "Page", ""].map((heading) => (
+                {["Line", "Original description", "English description", "Quantity", "Unit", "Unit price", "Line amount", "VAT rate", "VAT", "Gross", "Page", ""].map((heading) => (
                   <th key={heading} style={{ padding: "7px", textAlign: "left", fontSize: 11, color: "#64748b", whiteSpace: "nowrap" }}>{heading}</th>
                 ))}
               </tr>
@@ -68,7 +78,7 @@ export default function InvoiceLinesEditor({ lines, onChange }: Props) {
                       onClick={() => onChange(lines.filter((_, lineIndex) => lineIndex !== index))}
                       style={{ padding: "6px 8px", border: "1px solid #fecaca", borderRadius: 5, background: "#fff", color: "#dc2626", cursor: "pointer", fontSize: 11 }}
                     >
-                      Remove
+                      Delete line
                     </button>
                   </td>
                 </tr>
@@ -77,6 +87,27 @@ export default function InvoiceLinesEditor({ lines, onChange }: Props) {
           </table>
         </div>
       )}
+
+      <div style={{ marginTop: 12, padding: 12, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 6, fontSize: 13 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 16 }}>
+          <span style={{ color: "#475569" }}>Sum of invoice lines</span>
+          <strong style={{ color: "#1e293b" }}>{lineAmountSummary.sum}</strong>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 16, marginTop: 5 }}>
+          <span style={{ color: "#475569" }}>Invoice net amount</span>
+          <strong style={{ color: "#1e293b" }}>{(comparableInvoiceNet ?? invoiceNetAmount) || "—"}</strong>
+        </div>
+        {lineAmountSummary.invalidLineNumbers.length > 0 && (
+          <div style={{ marginTop: 9, padding: "8px 10px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 5, color: "#b91c1c" }}>
+            Enter a valid line amount for line{lineAmountSummary.invalidLineNumbers.length === 1 ? "" : "s"} {lineAmountSummary.invalidLineNumbers.join(", ")} before comparing totals.
+          </div>
+        )}
+        {amountsMismatch && (
+          <div style={{ marginTop: 9, padding: "8px 10px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 5, color: "#92400e" }}>
+            The sum of invoice lines does not match the invoice net amount. Review the lines or net amount before saving; neither value was changed automatically.
+          </div>
+        )}
+      </div>
     </div>
   );
 }

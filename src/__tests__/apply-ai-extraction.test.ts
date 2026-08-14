@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AiInvoiceExtraction } from "@/src/lib/ai-extraction";
 import { applyExtractionLines, applyExtractionToDraft, extractionLinesToEditable } from "@/src/lib/apply-ai-extraction";
+import { sumInvoiceLineAmounts } from "@/src/lib/invoice-lines";
 
 const extraction: AiInvoiceExtraction = {
   vendorOriginal: "ACME LTD",
@@ -57,5 +58,17 @@ describe("applying AI extraction", () => {
     expect(first.lines).toHaveLength(1);
     expect(second.lines).toHaveLength(1);
     expect(second.applied).toBe(true);
+  });
+
+  it("sums line amounts as decimal strings without floating-point rounding", () => {
+    const lines = extractionLinesToEditable({
+      ...extraction,
+      lines: [
+        { ...extraction.lines[0], netAmount: "0.1" },
+        { ...extraction.lines[0], lineNumber: "2", netAmount: "0.2" },
+      ],
+    });
+
+    expect(sumInvoiceLineAmounts(lines)).toEqual({ sum: "0.3", invalidLineNumbers: [] });
   });
 });

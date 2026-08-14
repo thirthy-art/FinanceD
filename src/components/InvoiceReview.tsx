@@ -734,6 +734,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
 
           <InvoiceLinesEditor
             lines={editableLines}
+            invoiceNetAmount={form.netAmount}
             onChange={(nextLines) => {
               setEditableLines(nextLines);
               setSaved(false);
