@@ -136,9 +136,6 @@ function AiExtractionPreview({ extraction }: { extraction: AiInvoiceExtraction }
     <div style={{ background: "#fff", border: "1px solid #bfdbfe", borderRadius: 8, marginBottom: 16, overflow: "hidden" }}>
       <div style={{ padding: "14px 16px", background: "#eff6ff", borderBottom: "1px solid #bfdbfe" }}>
         <div style={{ fontWeight: 700, color: "#1e3a5f" }}>AI extraction preview</div>
-        <div style={{ marginTop: 3, fontSize: 12, color: "#64748b" }}>
-          Read-only AI output. Nothing below has been copied into the invoice fields or saved.
-        </div>
       </div>
 
       <div style={{ padding: 16 }}>
@@ -228,7 +225,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
   const [aiExtraction, setAiExtraction] = useState<AiInvoiceExtraction | null>(null);
   const [editableLines, setEditableLines] = useState<EditableInvoiceLine[]>(lines);
   const [lastAppliedLineSignature, setLastAppliedLineSignature] = useState<string | null>(null);
-  const [applyNotice, setApplyNotice] = useState<{ applied: string[]; skipped: string[] } | null>(null);
+  const [applyNotice, setApplyNotice] = useState<{ applied: string[]; skipped: string[]; warnings: string[] } | null>(null);
   const [unmatchedVendorName, setUnmatchedVendorName] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -378,7 +375,8 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
     );
 
     const applied = [...draftResult.appliedFields];
-    const skipped = [...draftResult.skippedFields];
+    const skipped = draftResult.skippedFields.filter((field) => !field.includes("(unrecognized date)"));
+    const warnings = draftResult.skippedFields.filter((field) => field.includes("(unrecognized date)"));
     if (aiExtraction.lines.length > 0) {
       if (lineResult.applied) applied.push("Invoice lines");
       else skipped.push("Invoice lines");
@@ -394,7 +392,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
     setEditableLines(lineResult.lines);
     setLastAppliedLineSignature(lineResult.signature);
     setUnmatchedVendorName(draftResult.unmatchedVendorName);
-    setApplyNotice({ applied, skipped });
+    setApplyNotice({ applied, skipped, warnings });
     setSaved(false);
   }
 
@@ -510,6 +508,11 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
               </button>
             )}
           </div>
+          {aiExtraction && !applyNotice && (
+            <div style={{ marginTop: 10, color: "#475569", fontSize: 13 }}>
+              Review the extracted values, then apply them to the draft.
+            </div>
+          )}
           {!doc && <div style={{ marginTop: 8, color: "#64748b", fontSize: 12 }}>Attach a document before trying AI extraction.</div>}
           {extractionError && (
             <div style={{ marginTop: 12, padding: "9px 12px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 6, color: "#b91c1c", fontSize: 13 }}>
@@ -518,8 +521,16 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
           )}
           {applyNotice && (
             <div style={{ marginTop: 12, padding: "9px 12px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 6, color: "#166534", fontSize: 13 }}>
+              <div>AI values were applied to the draft. Review them before saving.</div>
               {applyNotice.applied.length > 0 && <div>Applied: {applyNotice.applied.join(", ")}.</div>}
-              {applyNotice.skipped.length > 0 && <div style={{ color: "#92400e", marginTop: applyNotice.applied.length ? 4 : 0 }}>Skipped existing values: {applyNotice.skipped.join(", ")}.</div>}
+              {applyNotice.skipped.length > 0 && (
+                <div style={{ color: "#92400e", marginTop: 4 }}>
+                  The following non-empty draft fields were not overwritten: {applyNotice.skipped.join(", ")}.
+                </div>
+              )}
+              {applyNotice.warnings.length > 0 && (
+                <div style={{ color: "#92400e", marginTop: 4 }}>Could not apply: {applyNotice.warnings.join(", ")}.</div>
+              )}
             </div>
           )}
           {unmatchedVendorName && (
