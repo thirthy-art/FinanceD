@@ -1,4 +1,5 @@
 import fs from "fs";
+import { Decimal } from "./decimal";
 
 // ─── PDF text extraction (embedded text only) ─────────────────────────────────
 
@@ -17,7 +18,6 @@ export async function extractPdfText(
   } catch {
     // fall through to empty result
   }
-  // Scanned PDF: degrade gracefully, user fills manually
   return { text: "", ocrPerformed: false };
 }
 
@@ -82,7 +82,7 @@ export function parseInvoiceFields(text: string): InvoiceFields {
   const curr = text.match(/\b(USD|EUR|GBP|CHF|CAD|AUD|RON|JPY|SEK|NOK|DKK)\b/i);
   if (curr) fields.currency = curr[1].toUpperCase();
 
-  // Amounts by keyword
+  // Amounts by keyword — uses Decimal for comparison, returns original matched string
   for (const line of lines) {
     const amount = extractLargestAmount(line);
     if (!amount) continue;
@@ -125,7 +125,19 @@ function normalizeDate(raw: string): string | null {
 function extractLargestAmount(line: string): string | null {
   const matches = line.match(/[\d,]+\.?\d*/g);
   if (!matches) return null;
-  const nums = matches.map((s) => parseFloat(s.replace(/,/g, ""))).filter((n) => n > 0.01);
-  if (!nums.length) return null;
-  return Math.max(...nums).toFixed(2);
+  let largest: Decimal | null = null;
+  let largestStr: string | null = null;
+  for (const raw of matches) {
+    const cleaned = raw.replace(/,/g, "");
+    try {
+      const d = new Decimal(cleaned);
+      if (d.greaterThan("0.01") && (largest === null || d.greaterThan(largest))) {
+        largest = d;
+        largestStr = cleaned;
+      }
+    } catch {
+      continue;
+    }
+  }
+  return largestStr;
 }

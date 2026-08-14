@@ -1,37 +1,76 @@
-// Arithmetic tolerance for net + VAT vs gross comparison, expressed in cents.
-// Invoices often carry per-line rounding to 2 decimal places; a 1-cent
-// difference is considered acceptable and must not block manual review.
-// Anything beyond 1 cent is flagged as a discrepancy requiring user attention.
-//
-// Comparison is done in integer cents to avoid floating-point representation
-// errors (e.g. 100 + 20 - 120.01 evaluates to -0.01000…5 in IEEE 754).
-export const AMOUNT_TOLERANCE = 0.01;
-const TOLERANCE_CENTS = 1; // Math.round(AMOUNT_TOLERANCE * 100)
+import { Decimal } from "./decimal";
 
-/**
- * Returns true when the stored gross amount is inconsistent with net + VAT
- * beyond the acceptable rounding tolerance (1 cent).
- *
- * Only active when all three amounts are positive — partial entries (user
- * typing in progress) are not flagged.
- */
-export function isAmountMismatch(
-  net: number,
-  vat: number,
-  gross: number
-): boolean {
-  if (gross <= 0 || net <= 0) return false;
-  // Convert to integer cents before comparing to avoid IEEE 754 drift.
-  const netCents = Math.round(net * 100);
-  const vatCents = Math.round(vat * 100);
-  const grossCents = Math.round(gross * 100);
-  return Math.abs(netCents + vatCents - grossCents) > TOLERANCE_CENTS;
+export const FIAT_TOLERANCE = "0.01";
+const BASE_SCALE = 4;
+
+export function cleanAmount(raw: string | null | undefined): string {
+  if (!raw || !raw.trim()) return "0";
+  const cleaned = raw
+    .replace(/[^\d.,\-]/g, "")
+    .replace(/,(\d{1,2})$/, ".$1")
+    .replace(/,/g, "");
+  if (!cleaned || cleaned === "-" || cleaned === ".") return "0";
+  try {
+    new Decimal(cleaned);
+    return cleaned;
+  } catch {
+    return "0";
+  }
 }
 
-/** Parse a locale-tolerant decimal string ("1,200.50" or "1200,50") to float. */
-export function parseAmount(raw: string | null | undefined): number {
-  if (!raw) return 0;
-  // Remove thousand separators then normalise decimal comma
-  const cleaned = raw.replace(/[^\d.,\-]/g, "").replace(/,(\d{2})$/, ".$1").replace(/,/g, "");
-  return parseFloat(cleaned) || 0;
+export function toDecimal(raw: string | null | undefined): Decimal {
+  return new Decimal(cleanAmount(raw));
+}
+
+export function isAmountMismatch(
+  net: string | null | undefined,
+  vat: string | null | undefined,
+  gross: string | null | undefined,
+  currencyType: "fiat" | "crypto" = "fiat"
+): boolean {
+  const netDec = toDecimal(net);
+  const vatDec = toDecimal(vat);
+  const grossDec = toDecimal(gross);
+
+  if (grossDec.isZero() || netDec.isZero()) return false;
+
+  const diff = netDec.plus(vatDec).minus(grossDec).abs();
+
+  if (currencyType === "crypto") {
+    return !diff.isZero();
+  }
+  return diff.greaterThan(FIAT_TOLERANCE);
+}
+
+export function calculateBaseAmount(
+  originalAmount: string | null | undefined,
+  fxRateToBase: string | null | undefined
+): string | null {
+  if (!originalAmount || !fxRateToBase) return null;
+  const amount = toDecimal(originalAmount);
+  const rate = toDecimal(fxRateToBase);
+  if (rate.isZero()) return null;
+  return amount.times(rate).toFixed(BASE_SCALE, Decimal.ROUND_HALF_EVEN);
+}
+
+export function decimalAdd(
+  a: string | null | undefined,
+  b: string | null | undefined
+): string {
+  return toDecimal(a).plus(toDecimal(b)).toFixed();
+}
+
+export function formatDisplayAmount(
+  value: string | null | undefined,
+  currencyType: "fiat" | "crypto" = "fiat"
+): string {
+  if (!value) return "";
+  const dec = toDecimal(value);
+  if (currencyType === "crypto") {
+    if (dec.isZero()) return "0";
+    const full = dec.toFixed();
+    if (!full.includes(".")) return full;
+    return full.replace(/0+$/, "").replace(/\.$/, "");
+  }
+  return dec.toFixed(2);
 }

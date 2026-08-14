@@ -30,7 +30,6 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
     db.select().from(chartOfAccounts).where(eq(chartOfAccounts.companyId, invoice.companyId)),
   ]);
 
-  // Pre-fill extracted fields from the stored extracted text
   const extractedText = docs[0]?.extractedText ?? "";
   const extractedFields = parseInvoiceFields(extractedText) as Record<string, string>;
 
@@ -38,9 +37,9 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
     <div>
       <div style={{ marginBottom: 20, display: "flex", alignItems: "center", gap: 8 }}>
         <Link href="/" style={{ color: "#2563eb", textDecoration: "none", fontSize: 13 }}>
-          ← All Invoices
+          All Invoices
         </Link>
-        <span style={{ color: "#cbd5e1" }}>›</span>
+        <span style={{ color: "#cbd5e1" }}>/</span>
         <span style={{ fontSize: 13, color: "#64748b" }}>
           Invoice #{invoice.id}
           {invoice.invoiceNumber ? ` · ${invoice.invoiceNumber}` : ""}

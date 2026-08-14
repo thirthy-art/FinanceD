@@ -9,22 +9,23 @@ import {
 } from "@/src/db/schema";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { isAmountMismatch, parseAmount } from "@/src/lib/invoice-validation";
+import { isAmountMismatch, calculateBaseAmount } from "@/src/lib/invoice-validation";
 
 const UpdateSchema = z.object({
   vendorId: z.number().nullable().optional(),
   newVendorName: z.string().optional(),
-  invoiceNumber: z.string().optional(),
-  invoiceDate: z.string().optional(),
-  dueDate: z.string().optional(),
-  currency: z.string().length(3).optional(),
-  fxRate: z.string().optional(),
-  netAmount: z.string().optional(),
-  vatAmount: z.string().optional(),
-  grossAmount: z.string().optional(),
+  invoiceNumber: z.string().nullable().optional(),
+  invoiceDate: z.string().nullable().optional(),
+  dueDate: z.string().nullable().optional(),
+  currency: z.string().min(1).max(20).optional(),
+  currencyType: z.enum(["fiat", "crypto"]).optional(),
+  fxRateToBase: z.string().nullable().optional(),
+  netAmount: z.string().nullable().optional(),
+  vatAmount: z.string().nullable().optional(),
+  grossAmount: z.string().nullable().optional(),
   costCentreId: z.number().nullable().optional(),
   expenseAccountId: z.number().nullable().optional(),
-  notes: z.string().optional(),
+  notes: z.string().nullable().optional(),
   status: z.enum(["draft", "approved"]).optional(),
 });
 
@@ -73,31 +74,35 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const db = getDb();
   const data = parsed.data;
 
+  const [existing] = await db
+    .select()
+    .from(supplierInvoices)
+    .where(eq(supplierInvoices.id, Number(id)));
+
+  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
   // Create a new vendor if name provided without id
   let vendorId = data.vendorId;
   if (data.newVendorName && !vendorId) {
-    const [invoice] = await db.select({ companyId: supplierInvoices.companyId }).from(supplierInvoices).where(eq(supplierInvoices.id, Number(id)));
-    if (invoice) {
-      const [v] = await db.insert(vendors).values({ companyId: invoice.companyId, name: data.newVendorName }).returning();
-      vendorId = v.id;
-    }
+    const [v] = await db
+      .insert(vendors)
+      .values({ companyId: existing.companyId, name: data.newVendorName })
+      .returning();
+    vendorId = v.id;
   }
 
-  // Server-side arithmetic guard: refuse to approve an invoice whose amounts
-  // are inconsistent beyond the accepted rounding tolerance.
+  // Resolve final values for monetary fields
+  const finalNet = data.netAmount !== undefined ? data.netAmount : existing.netAmount;
+  const finalVat = data.vatAmount !== undefined ? data.vatAmount : existing.vatAmount;
+  const finalGross = data.grossAmount !== undefined ? data.grossAmount : existing.grossAmount;
+  const finalRate = data.fxRateToBase !== undefined ? data.fxRateToBase : existing.fxRateToBase;
+  const finalCurrencyType = data.currencyType ?? existing.currencyType;
+
+  // Server-side arithmetic guard for approval
   if (data.status === "approved") {
-    // Use submitted amounts if present, otherwise fall back to stored values.
-    const existing = await db
-      .select({ netAmount: supplierInvoices.netAmount, vatAmount: supplierInvoices.vatAmount, grossAmount: supplierInvoices.grossAmount })
-      .from(supplierInvoices)
-      .where(eq(supplierInvoices.id, Number(id)));
-    if (!existing[0]) return NextResponse.json({ error: "Not found" }, { status: 404 });
-    const net = parseAmount(data.netAmount ?? existing[0].netAmount);
-    const vat = parseAmount(data.vatAmount ?? existing[0].vatAmount);
-    const gross = parseAmount(data.grossAmount ?? existing[0].grossAmount);
-    if (isAmountMismatch(net, vat, gross)) {
+    if (isAmountMismatch(finalNet, finalVat, finalGross, finalCurrencyType)) {
       return NextResponse.json(
-        { error: `Cannot approve: net (${net}) + VAT (${vat}) does not match gross (${gross}) within the accepted tolerance.` },
+        { error: "Cannot approve: net + VAT does not match gross within the accepted tolerance." },
         { status: 422 }
       );
     }
@@ -109,7 +114,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (data.invoiceDate !== undefined) updateValues.invoiceDate = data.invoiceDate;
   if (data.dueDate !== undefined) updateValues.dueDate = data.dueDate;
   if (data.currency !== undefined) updateValues.currency = data.currency;
-  if (data.fxRate !== undefined) updateValues.fxRate = data.fxRate;
+  if (data.currencyType !== undefined) updateValues.currencyType = data.currencyType;
+  if (data.fxRateToBase !== undefined) updateValues.fxRateToBase = data.fxRateToBase;
   if (data.netAmount !== undefined) updateValues.netAmount = data.netAmount;
   if (data.vatAmount !== undefined) updateValues.vatAmount = data.vatAmount;
   if (data.grossAmount !== undefined) updateValues.grossAmount = data.grossAmount;
@@ -117,6 +123,19 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (data.expenseAccountId !== undefined) updateValues.expenseAccountId = data.expenseAccountId;
   if (data.notes !== undefined) updateValues.notes = data.notes;
   if (data.status !== undefined) updateValues.status = data.status;
+
+  // Recalculate base amounts when any monetary field or FX rate changes
+  const monetaryFieldChanged =
+    data.netAmount !== undefined ||
+    data.vatAmount !== undefined ||
+    data.grossAmount !== undefined ||
+    data.fxRateToBase !== undefined;
+
+  if (monetaryFieldChanged) {
+    updateValues.baseNetAmount = calculateBaseAmount(finalNet, finalRate);
+    updateValues.baseVatAmount = calculateBaseAmount(finalVat, finalRate);
+    updateValues.baseGrossAmount = calculateBaseAmount(finalGross, finalRate);
+  }
 
   const [updated] = await db
     .update(supplierInvoices)

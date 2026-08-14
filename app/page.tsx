@@ -3,6 +3,9 @@ import { getDb } from "@/src/db";
 import { supplierInvoices, vendors } from "@/src/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { getOrCreateCompany } from "@/src/lib/db-helpers";
+import { formatDisplayAmount } from "@/src/lib/invoice-validation";
+
+export const dynamic = "force-dynamic";
 
 function statusBadge(status: string) {
   const style: React.CSSProperties =
@@ -21,6 +24,7 @@ export default async function Home() {
       invoiceNumber: supplierInvoices.invoiceNumber,
       invoiceDate: supplierInvoices.invoiceDate,
       currency: supplierInvoices.currency,
+      currencyType: supplierInvoices.currencyType,
       grossAmount: supplierInvoices.grossAmount,
       status: supplierInvoices.status,
       vendorName: vendors.name,
@@ -61,7 +65,6 @@ export default async function Home() {
             color: "#718096",
           }}
         >
-          <div style={{ fontSize: 40, marginBottom: 12 }}>📄</div>
           <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>No invoices yet</div>
           <div style={{ marginBottom: 20 }}>Upload your first supplier invoice to get started.</div>
           <Link
@@ -112,7 +115,9 @@ export default async function Home() {
                   <td style={{ padding: "12px 16px" }}>{inv.invoiceNumber ?? <span style={{ color: "#94a3b8" }}>—</span>}</td>
                   <td style={{ padding: "12px 16px", color: "#64748b" }}>{inv.invoiceDate ?? "—"}</td>
                   <td style={{ padding: "12px 16px", fontWeight: 600 }}>
-                    {inv.grossAmount ? `${inv.currency} ${Number(inv.grossAmount).toFixed(2)}` : "—"}
+                    {inv.grossAmount
+                      ? `${inv.currency} ${formatDisplayAmount(inv.grossAmount, inv.currencyType)}`
+                      : "—"}
                   </td>
                   <td style={{ padding: "12px 16px" }}>{statusBadge(inv.status)}</td>
                   <td style={{ padding: "12px 16px" }}>
@@ -120,7 +125,7 @@ export default async function Home() {
                       href={`/invoices/${inv.id}`}
                       style={{ color: "#2563eb", textDecoration: "none", fontWeight: 500, fontSize: 13 }}
                     >
-                      Review →
+                      Review
                     </Link>
                   </td>
                 </tr>

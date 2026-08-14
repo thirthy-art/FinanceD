@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/src/db";
-import { supplierInvoices, vendors, supplierInvoiceDocuments } from "@/src/db/schema";
+import { supplierInvoices, vendors } from "@/src/db/schema";
 import { eq, desc } from "drizzle-orm";
 
 export async function GET() {
@@ -12,6 +12,7 @@ export async function GET() {
       invoiceDate: supplierInvoices.invoiceDate,
       dueDate: supplierInvoices.dueDate,
       currency: supplierInvoices.currency,
+      currencyType: supplierInvoices.currencyType,
       grossAmount: supplierInvoices.grossAmount,
       status: supplierInvoices.status,
       vendorName: vendors.name,

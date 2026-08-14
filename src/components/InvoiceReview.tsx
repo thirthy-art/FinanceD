@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { isAmountMismatch, parseAmount } from "@/src/lib/invoice-validation";
+import { isAmountMismatch, toDecimal } from "@/src/lib/invoice-validation";
 
 interface Vendor { id: number; name: string; }
 interface CostCentre { id: number; code: string; name: string; }
@@ -14,7 +14,8 @@ interface Invoice {
   invoiceDate: string | null;
   dueDate: string | null;
   currency: string;
-  fxRate: string | null;
+  currencyType: "fiat" | "crypto";
+  fxRateToBase: string | null;
   netAmount: string | null;
   vatAmount: string | null;
   grossAmount: string | null;
@@ -33,7 +34,7 @@ interface Props {
   extractedFields: Record<string, string>;
 }
 
-const CURRENCIES = ["USD", "EUR", "GBP", "CHF", "CAD", "AUD", "JPY", "SEK", "NOK", "DKK", "RON"];
+const CURRENCIES = ["EUR", "USD", "GBP", "CHF", "CAD", "AUD", "JPY", "SEK", "NOK", "DKK", "RON", "BTC", "ETH", "USDT", "USDC"];
 
 function field(label: string, children: React.ReactNode, hint?: string) {
   return (
@@ -71,8 +72,9 @@ export default function InvoiceReview({ invoice, documents, vendors, costCentres
     invoiceNumber: invoice.invoiceNumber ?? extractedFields.invoiceNumber ?? "",
     invoiceDate: invoice.invoiceDate ?? extractedFields.invoiceDate ?? "",
     dueDate: invoice.dueDate ?? extractedFields.dueDate ?? "",
-    currency: invoice.currency ?? extractedFields.currency ?? "USD",
-    fxRate: invoice.fxRate ?? "1",
+    currency: invoice.currency ?? extractedFields.currency ?? "EUR",
+    currencyType: invoice.currencyType ?? "fiat" as "fiat" | "crypto",
+    fxRateToBase: invoice.fxRateToBase ?? "1",
     netAmount: invoice.netAmount ?? extractedFields.netAmount ?? "",
     vatAmount: invoice.vatAmount ?? extractedFields.vatAmount ?? "",
     grossAmount: invoice.grossAmount ?? extractedFields.grossAmount ?? "",
@@ -87,12 +89,16 @@ export default function InvoiceReview({ invoice, documents, vendors, costCentres
 
   const doc = documents[0];
 
-  // Arithmetic validation — uses shared tolerance constant (see invoice-validation.ts)
-  const net = parseAmount(form.netAmount);
-  const vat = parseAmount(form.vatAmount);
-  const gross = parseAmount(form.grossAmount);
-  const computed = net + vat;
-  const mismatch = isAmountMismatch(net, vat, gross);
+  // Arithmetic validation using decimal strings
+  const mismatch = isAmountMismatch(
+    form.netAmount, form.vatAmount, form.grossAmount, form.currencyType
+  );
+  const computedSum = form.netAmount || form.vatAmount
+    ? toDecimal(form.netAmount).plus(toDecimal(form.vatAmount)).toFixed()
+    : "";
+  const grossDisplay = form.grossAmount
+    ? toDecimal(form.grossAmount).toFixed()
+    : "";
 
   function set(k: string) {
     return (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -110,7 +116,8 @@ export default function InvoiceReview({ invoice, documents, vendors, costCentres
         invoiceDate: form.invoiceDate || null,
         dueDate: form.dueDate || null,
         currency: form.currency,
-        fxRate: form.fxRate || "1",
+        currencyType: form.currencyType,
+        fxRateToBase: form.fxRateToBase || null,
         netAmount: form.netAmount || null,
         vatAmount: form.vatAmount || null,
         grossAmount: form.grossAmount || null,
@@ -172,7 +179,7 @@ export default function InvoiceReview({ invoice, documents, vendors, costCentres
             alignItems: "center",
           }}
         >
-          <span>📄 Original Document</span>
+          <span>Original Document</span>
           {doc && (
             <span style={{ fontSize: 11, color: "#94a3b8", fontWeight: 400 }}>
               {doc.ocrPerformed ? "OCR applied" : "Text extracted"} · {doc.originalFilename}
@@ -260,7 +267,7 @@ export default function InvoiceReview({ invoice, documents, vendors, costCentres
                     style={{ padding: "8px 12px", border: "1px solid #e2e8f0", borderRadius: 6, background: "#f8fafc", cursor: "pointer", fontSize: 13 }}
                     type="button"
                   >
-                    ✕
+                    Cancel
                   </button>
                 </div>
               )}
@@ -274,19 +281,44 @@ export default function InvoiceReview({ invoice, documents, vendors, costCentres
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-            {field("Due Date", <input style={inputStyle} type="date" value={form.dueDate} onChange={set("dueDate")} />)}
+            {field("Due Date (optional)", <input style={inputStyle} type="date" value={form.dueDate} onChange={set("dueDate")} />)}
             {field(
               "Currency",
-              <select style={inputStyle} value={form.currency} onChange={set("currency")}>
-                {CURRENCIES.map((c) => <option key={c}>{c}</option>)}
-              </select>
+              <div style={{ display: "flex", gap: 8 }}>
+                <select style={{ ...inputStyle, flex: 1 }} value={form.currency} onChange={set("currency")}>
+                  {CURRENCIES.map((c) => <option key={c}>{c}</option>)}
+                </select>
+                <input
+                  style={{ ...inputStyle, flex: 1 }}
+                  value={form.currency}
+                  onChange={set("currency")}
+                  placeholder="Or type code"
+                  title="Type a currency or asset code not in the list"
+                />
+              </div>
+            )}
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+            {field(
+              "Currency Type",
+              <select style={inputStyle} value={form.currencyType} onChange={set("currencyType")}>
+                <option value="fiat">Fiat</option>
+                <option value="crypto">Crypto</option>
+              </select>,
+              "Affects validation tolerance and display formatting"
+            )}
+            {field(
+              "FX Rate to Base",
+              <input style={inputStyle} value={form.fxRateToBase} onChange={set("fxRateToBase")} placeholder="1" />,
+              "1 unit of invoice currency = ? units of base currency"
             )}
           </div>
 
           {/* Amounts */}
           <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: 16, marginBottom: 16 }}>
             <div style={{ fontSize: 12, fontWeight: 600, color: "#64748b", marginBottom: 12, textTransform: "uppercase", letterSpacing: "0.04em" }}>
-              Amounts
+              Amounts ({form.currency})
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
               <div>
@@ -300,7 +332,7 @@ export default function InvoiceReview({ invoice, documents, vendors, costCentres
               <div>
                 <label style={{ display: "block", fontSize: 12, color: "#64748b", marginBottom: 4 }}>
                   Gross Amount
-                  {mismatch && " ⚠"}
+                  {mismatch && " !!"}
                 </label>
                 <input style={mismatch ? warnStyle : inputStyle} value={form.grossAmount} onChange={set("grossAmount")} placeholder="0.00" />
               </div>
@@ -317,7 +349,10 @@ export default function InvoiceReview({ invoice, documents, vendors, costCentres
                   color: "#92400e",
                 }}
               >
-                ⚠ Net + VAT = {computed.toFixed(2)} but Gross = {gross.toFixed(2)} (difference: {Math.abs(computed - gross).toFixed(2)}). Please verify.
+                Net + VAT = {computedSum} but Gross = {grossDisplay}
+                {form.currencyType === "fiat"
+                  ? " (difference exceeds 0.01 tolerance). Please verify."
+                  : " (crypto amounts must match exactly). Please verify."}
               </div>
             )}
           </div>
@@ -350,7 +385,7 @@ export default function InvoiceReview({ invoice, documents, vendors, costCentres
               style={{ ...inputStyle, minHeight: 64, resize: "vertical" }}
               value={form.notes}
               onChange={set("notes")}
-              placeholder="Any additional notes…"
+              placeholder="Any additional notes..."
             />
           )}
 
@@ -361,7 +396,7 @@ export default function InvoiceReview({ invoice, documents, vendors, costCentres
           )}
           {saved && (
             <div style={{ marginBottom: 16, padding: "10px 14px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 6, color: "#16a34a", fontSize: 13 }}>
-              ✓ Draft saved
+              Draft saved
             </div>
           )}
 

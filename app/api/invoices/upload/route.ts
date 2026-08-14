@@ -45,7 +45,6 @@ export async function POST(req: NextRequest) {
       extracted = await extractImageText(storagePath);
     }
   } catch (err) {
-    // Extraction failure is non-fatal — return empty text so user can fill manually
     console.error("Extraction error:", err);
     extracted = { text: "", ocrPerformed: false };
   }
@@ -61,6 +60,8 @@ export async function POST(req: NextRequest) {
       companyId: company.id,
       status: "draft",
       currency: fields.currency ?? company.baseCurrency,
+      currencyType: "fiat",
+      fxRateToBase: "1",
     })
     .returning();
 
