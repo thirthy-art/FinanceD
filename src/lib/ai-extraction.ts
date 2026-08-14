@@ -6,48 +6,44 @@ const nullableDecimal = z
   .regex(/^-?(?:\d+(?:\.\d+)?|\.\d+)$/, "Expected a plain decimal string")
   .nullable();
 
-export const MimoInvoiceLineSchema = z
-  .object({
-    lineNumber: nullableText,
-    descriptionOriginal: nullableText,
-    description: nullableText,
-    quantity: nullableDecimal,
-    unit: nullableText,
-    unitPrice: nullableDecimal,
-    netAmount: nullableDecimal,
-    vatRate: nullableDecimal,
-    vatAmount: nullableDecimal,
-    grossAmount: nullableDecimal,
-    sourcePage: z.number().int().positive().nullable(),
-  })
-  .strict();
+export const AiInvoiceLineSchema = z.object({
+  lineNumber: nullableText,
+  descriptionOriginal: nullableText,
+  description: nullableText,
+  quantity: nullableDecimal,
+  unit: nullableText,
+  unitPrice: nullableDecimal,
+  netAmount: nullableDecimal,
+  vatRate: nullableDecimal,
+  vatAmount: nullableDecimal,
+  grossAmount: nullableDecimal,
+  sourcePage: z.number().int().positive().nullable(),
+}).strict();
 
-export const MimoInvoiceExtractionSchema = z
-  .object({
-    vendorOriginal: nullableText,
-    vendorNormalized: nullableText,
-    invoiceNumber: nullableText,
-    invoiceDate: nullableText,
-    dueDate: nullableText,
-    currency: nullableText,
-    netAmount: nullableDecimal,
-    vatAmount: nullableDecimal,
-    grossAmount: nullableDecimal,
-    lines: z.array(MimoInvoiceLineSchema),
-  })
-  .strict();
+export const AiInvoiceExtractionSchema = z.object({
+  vendorOriginal: nullableText,
+  vendorNormalized: nullableText,
+  invoiceNumber: nullableText,
+  invoiceDate: nullableText,
+  dueDate: nullableText,
+  currency: nullableText,
+  netAmount: nullableDecimal,
+  vatAmount: nullableDecimal,
+  grossAmount: nullableDecimal,
+  lines: z.array(AiInvoiceLineSchema),
+}).strict();
 
-export type MimoInvoiceExtraction = z.infer<typeof MimoInvoiceExtractionSchema>;
+export type AiInvoiceExtraction = z.infer<typeof AiInvoiceExtractionSchema>;
 
-export const MIMO_EXTRACTION_PROMPT = `Extract this supplier invoice and return JSON only, with no Markdown or explanation.
+export const AI_EXTRACTION_PROMPT = `Extract this supplier invoice and return JSON only, with no Markdown or explanation.
 
 Use exactly this shape and include every field:
 {
   "vendorOriginal": string | null,
   "vendorNormalized": string | null,
   "invoiceNumber": string | null,
-  "invoiceDate": string | null,
-  "dueDate": string | null,
+  "invoiceDate": ISO-date-string | null,
+  "dueDate": ISO-date-string | null,
   "currency": string | null,
   "netAmount": decimal-string | null,
   "vatAmount": decimal-string | null,
@@ -69,6 +65,7 @@ Use exactly this shape and include every field:
 
 Rules:
 - Never invent, infer, or calculate a missing or unreadable value. Use null.
+- Return invoiceDate and dueDate as YYYY-MM-DD when the date is unambiguous; otherwise return null.
 - Preserve original-language vendor and line-description text exactly in vendorOriginal and descriptionOriginal.
 - Put English-normalized vendor and description text only in vendorNormalized and description.
 - Extract every invoice table row in document order. Do not combine or reorder rows.

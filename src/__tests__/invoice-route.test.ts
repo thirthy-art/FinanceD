@@ -18,6 +18,7 @@ import * as schema from "../db/schema";
 // DB reads/writes, and JSON response construction.
 
 let PATCH: (req: unknown, ctx: { params: Promise<{ id: string }> }) => Promise<Response>;
+let DELETE: (req: unknown, ctx: { params: Promise<{ id: string }> }) => Promise<Response>;
 
 const HAS_DB = !!process.env.DATABASE_URL;
 
@@ -34,6 +35,7 @@ beforeAll(async () => {
 
   const mod = await import("@/app/api/invoices/[id]/route");
   PATCH = mod.PATCH as typeof PATCH;
+  DELETE = mod.DELETE as typeof DELETE;
 });
 
 afterAll(async () => {
@@ -46,6 +48,7 @@ const createdVendorIds: number[] = [];
 afterEach(async () => {
   if (!HAS_DB) return;
   for (const id of createdInvoiceIds) {
+    await db.delete(schema.supplierInvoiceLines).where(eq(schema.supplierInvoiceLines.invoiceId, id));
     await db.delete(schema.supplierInvoiceDocuments).where(eq(schema.supplierInvoiceDocuments.invoiceId, id));
     await db.delete(schema.supplierInvoices).where(eq(schema.supplierInvoices.id, id));
   }
@@ -359,5 +362,30 @@ describe("PATCH /api/invoices/[id] — route-level", () => {
     );
 
     expect(res.status).toBe(422);
+  });
+});
+
+describe("DELETE /api/invoices/[id] — draft-only", () => {
+  it.skipIf(!HAS_DB)("deletes a draft invoice and its lines", async () => {
+    const inv = await createTestInvoice();
+    await db.insert(schema.supplierInvoiceLines).values({
+      invoiceId: inv.id,
+      position: 0,
+      description: "Test line",
+      netAmount: "1000.00",
+    });
+
+    const res = await DELETE(new Request(`http://localhost/api/invoices/${inv.id}`, { method: "DELETE" }), params(inv.id));
+    expect(res.status).toBe(200);
+    expect(await db.select().from(schema.supplierInvoices).where(eq(schema.supplierInvoices.id, inv.id))).toHaveLength(0);
+    expect(await db.select().from(schema.supplierInvoiceLines).where(eq(schema.supplierInvoiceLines.invoiceId, inv.id))).toHaveLength(0);
+  });
+
+  it.skipIf(!HAS_DB)("refuses to hard-delete an approved invoice", async () => {
+    const inv = await createTestInvoice({ status: "approved" });
+    const res = await DELETE(new Request(`http://localhost/api/invoices/${inv.id}`, { method: "DELETE" }), params(inv.id));
+
+    expect(res.status).toBe(409);
+    expect(await db.select().from(schema.supplierInvoices).where(eq(schema.supplierInvoices.id, inv.id))).toHaveLength(1);
   });
 });

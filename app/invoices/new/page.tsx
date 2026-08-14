@@ -7,26 +7,42 @@ export default function NewInvoicePage() {
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
+  const [canRetry, setCanRetry] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const inFlightRef = useRef(false);
+  const pendingUploadRef = useRef<{ file: File; requestId: string } | null>(null);
 
-  async function handleFile(file: File) {
+  async function handleFile(file: File, requestId = crypto.randomUUID()) {
+    if (inFlightRef.current) return;
     setError("");
     const allowed = ["application/pdf", "image/jpeg", "image/png", "image/tiff", "image/webp"];
     if (!allowed.includes(file.type)) {
+      pendingUploadRef.current = null;
+      setCanRetry(false);
       setError("Unsupported file type. Upload a PDF, JPEG, PNG, TIFF, or WebP.");
       return;
     }
+    pendingUploadRef.current = { file, requestId };
+    setCanRetry(false);
+    inFlightRef.current = true;
     setUploading(true);
     try {
       const fd = new FormData();
       fd.append("file", file);
+      fd.append("requestId", requestId);
       const res = await fetch("/api/invoices/upload", { method: "POST", body: fd });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? "Upload failed");
-      router.push(`/invoices/${json.invoiceId}`);
+      const json = await res.json().catch(() => ({})) as { error?: unknown; invoiceId?: unknown };
+      if (!res.ok) throw new Error(typeof json.error === "string" ? json.error : "Upload failed. Please retry.");
+      if (typeof json.invoiceId !== "number") throw new Error("Upload completed without an invoice identifier. Please retry.");
+      pendingUploadRef.current = null;
+      setCanRetry(false);
+      router.replace(`/invoices/${json.invoiceId}`);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Upload failed");
+      setCanRetry(true);
       setUploading(false);
+    } finally {
+      inFlightRef.current = false;
     }
   }
 
@@ -38,8 +54,14 @@ export default function NewInvoicePage() {
   function onDrop(e: React.DragEvent) {
     e.preventDefault();
     setDragging(false);
+    if (uploading) return;
     const file = e.dataTransfer.files[0];
     if (file) handleFile(file);
+  }
+
+  function retryUpload() {
+    const pending = pendingUploadRef.current;
+    if (pending) handleFile(pending.file, pending.requestId);
   }
 
   return (
@@ -106,7 +128,17 @@ export default function NewInvoicePage() {
             fontSize: 14,
           }}
         >
-          {error}
+          <div>{error}</div>
+          {canRetry && (
+            <button
+              type="button"
+              onClick={retryUpload}
+              disabled={uploading}
+              style={{ marginTop: 10, padding: "7px 12px", border: "none", borderRadius: 6, background: "#dc2626", color: "#fff", cursor: uploading ? "default" : "pointer", fontWeight: 600 }}
+            >
+              Retry upload
+            </button>
+          )}
         </div>
       )}
 

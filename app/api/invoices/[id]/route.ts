@@ -3,13 +3,15 @@ import { getDb } from "@/src/db";
 import {
   supplierInvoices,
   supplierInvoiceDocuments,
+  supplierInvoiceLines,
   vendors,
   costCentres,
   chartOfAccounts,
   companies,
 } from "@/src/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, asc } from "drizzle-orm";
 import { z } from "zod";
+import { unlink } from "fs/promises";
 import {
   isAmountMismatch,
   calculateBaseAmount,
@@ -17,6 +19,10 @@ import {
   validateAmount,
   validateBaseAmount,
 } from "@/src/lib/invoice-validation";
+import { InvoiceLineInputSchema, normalizeInvoiceLineInput } from "@/src/lib/invoice-lines";
+import { resolveSafeUploadPath } from "@/src/lib/safe-upload-path";
+
+const UPLOAD_DIR = process.env.UPLOAD_DIR ?? "./uploads";
 
 const UpdateSchema = z.object({
   vendorId: z.number().nullable().optional(),
@@ -34,6 +40,7 @@ const UpdateSchema = z.object({
   expenseAccountId: z.number().nullable().optional(),
   notes: z.string().nullable().optional(),
   status: z.enum(["draft", "approved"]).optional(),
+  lines: z.array(InvoiceLineInputSchema).max(1_000).optional(),
 });
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -47,8 +54,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
   if (!invoice) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const [docs, vendorList, costCentreList, accountList, [company]] = await Promise.all([
+  const [docs, lines, vendorList, costCentreList, accountList, [company]] = await Promise.all([
     db.select().from(supplierInvoiceDocuments).where(eq(supplierInvoiceDocuments.invoiceId, invoice.id)),
+    db.select().from(supplierInvoiceLines).where(eq(supplierInvoiceLines.invoiceId, invoice.id)).orderBy(asc(supplierInvoiceLines.position)),
     db.select({ id: vendors.id, name: vendors.name }).from(vendors).where(eq(vendors.companyId, invoice.companyId)),
     db.select().from(costCentres).where(eq(costCentres.companyId, invoice.companyId)),
     db.select().from(chartOfAccounts).where(eq(chartOfAccounts.companyId, invoice.companyId)),
@@ -58,6 +66,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   return NextResponse.json({
     invoice,
     documents: docs,
+    lines,
     vendors: vendorList,
     costCentres: costCentreList,
     accounts: accountList,
@@ -133,6 +142,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   if (errors.length > 0) {
     return NextResponse.json({ error: errors.join("; ") }, { status: 422 });
+  }
+
+  let normalizedLines: ReturnType<typeof normalizeInvoiceLineInput>[] | undefined;
+  if (data.lines !== undefined) {
+    try {
+      normalizedLines = data.lines.map(normalizeInvoiceLineInput);
+    } catch (error) {
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : "Invalid invoice line." },
+        { status: 422 },
+      );
+    }
   }
 
   // ── Validate database references ──────────────────────────────────────────
@@ -273,53 +294,48 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
 
   // ── Vendor creation inside a transaction ───────────────────────────────────
-  const vendorId = data.vendorId;
-  if (data.newVendorName && !vendorId) {
-    try {
-      const result = await db.transaction(async (tx) => {
+  try {
+    const result = await db.transaction(async (tx) => {
+      let vendorId = data.vendorId;
+      if (data.newVendorName && !vendorId) {
         const [v] = await tx
           .insert(vendors)
           .values({ companyId: existing.companyId, name: data.newVendorName! })
           .returning();
 
-        const updateValues = buildUpdateValues(
-          data, normalizedNet, normalizedVat, normalizedGross,
-          effectiveRate, finalNet, finalVat, finalGross, finalStatus, v.id,
-          currencyChanged
-        );
+        vendorId = v.id;
+      }
 
-        const [updated] = await tx
-          .update(supplierInvoices)
-          .set(updateValues)
-          .where(eq(supplierInvoices.id, Number(id)))
-          .returning();
+      const updateValues = buildUpdateValues(
+        data, normalizedNet, normalizedVat, normalizedGross,
+        effectiveRate, finalNet, finalVat, finalGross, finalStatus, vendorId,
+        currencyChanged
+      );
 
-        return updated;
-      });
+      const [updated] = await tx
+        .update(supplierInvoices)
+        .set(updateValues)
+        .where(eq(supplierInvoices.id, Number(id)))
+        .returning();
 
-      if (!result) return NextResponse.json({ error: "Not found" }, { status: 404 });
-      return NextResponse.json(result);
-    } catch (err) {
-      console.error("Transaction error:", err);
-      return NextResponse.json({ error: "Save failed" }, { status: 500 });
-    }
+      if (!updated) return null;
+      if (normalizedLines !== undefined) {
+        await tx.delete(supplierInvoiceLines).where(eq(supplierInvoiceLines.invoiceId, existing.id));
+        if (normalizedLines.length > 0) {
+          await tx.insert(supplierInvoiceLines).values(
+            normalizedLines.map((line, position) => ({ invoiceId: existing.id, position, ...line })),
+          );
+        }
+      }
+
+      return updated;
+    });
+
+    if (!result) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return NextResponse.json(result);
+  } catch {
+    return NextResponse.json({ error: "Save failed" }, { status: 500 });
   }
-
-  // ── Non-transactional update (no new vendor) ───────────────────────────────
-  const updateValues = buildUpdateValues(
-    data, normalizedNet, normalizedVat, normalizedGross,
-    effectiveRate, finalNet, finalVat, finalGross, finalStatus, vendorId,
-    currencyChanged
-  );
-
-  const [updated] = await db
-    .update(supplierInvoices)
-    .set(updateValues)
-    .where(eq(supplierInvoices.id, Number(id)))
-    .returning();
-
-  if (!updated) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json(updated);
 }
 
 function buildUpdateValues(
@@ -379,4 +395,78 @@ function buildUpdateValues(
   }
 
   return updateValues;
+}
+
+export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const invoiceId = Number(id);
+  if (!Number.isInteger(invoiceId) || invoiceId <= 0) {
+    return NextResponse.json({ error: "Invalid invoice id." }, { status: 400 });
+  }
+
+  const db = getDb();
+  const outcome = await (async () => {
+    try {
+      return await db.transaction(async (tx) => {
+        const [invoice] = await tx
+          .select({ id: supplierInvoices.id, status: supplierInvoices.status })
+          .from(supplierInvoices)
+          .where(eq(supplierInvoices.id, invoiceId));
+
+        if (!invoice) return { kind: "not-found" as const, paths: [] as string[] };
+        if (invoice.status !== "draft") return { kind: "approved" as const, paths: [] as string[] };
+
+        const documents = await tx
+          .select({ storagePath: supplierInvoiceDocuments.storagePath })
+          .from(supplierInvoiceDocuments)
+          .where(eq(supplierInvoiceDocuments.invoiceId, invoiceId));
+
+        await tx.delete(supplierInvoiceLines).where(eq(supplierInvoiceLines.invoiceId, invoiceId));
+        await tx.delete(supplierInvoiceDocuments).where(eq(supplierInvoiceDocuments.invoiceId, invoiceId));
+        const [deleted] = await tx
+          .delete(supplierInvoices)
+          .where(and(eq(supplierInvoices.id, invoiceId), eq(supplierInvoices.status, "draft")))
+          .returning({ id: supplierInvoices.id });
+        if (!deleted) throw new Error("Invoice status changed before deletion.");
+
+        const exclusivePaths: string[] = [];
+        for (const document of documents) {
+          const [otherReference] = await tx
+            .select({ id: supplierInvoiceDocuments.id })
+            .from(supplierInvoiceDocuments)
+            .where(eq(supplierInvoiceDocuments.storagePath, document.storagePath))
+            .limit(1);
+          if (!otherReference) exclusivePaths.push(document.storagePath);
+        }
+        return { kind: "deleted" as const, paths: exclusivePaths };
+      });
+    } catch {
+      return null;
+    }
+  })();
+
+  if (!outcome) return NextResponse.json({ error: "Invoice deletion failed. Please retry." }, { status: 500 });
+
+  if (outcome.kind === "not-found") return NextResponse.json({ error: "Invoice not found." }, { status: 404 });
+  if (outcome.kind === "approved") {
+    return NextResponse.json({ error: "Approved invoices cannot be deleted." }, { status: 409 });
+  }
+
+  let fileWarning: string | undefined;
+  for (const storagePath of outcome.paths) {
+    const safePath = resolveSafeUploadPath(storagePath, UPLOAD_DIR);
+    if (!safePath) {
+      fileWarning = "The invoice was deleted, but an unsafe document path was not removed.";
+      continue;
+    }
+    try {
+      await unlink(safePath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        fileWarning = "The invoice was deleted, but its uploaded file could not be removed.";
+      }
+    }
+  }
+
+  return NextResponse.json({ deleted: true, warning: fileWarning });
 }

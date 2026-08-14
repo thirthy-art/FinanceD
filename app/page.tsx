@@ -15,7 +15,8 @@ function statusBadge(status: string) {
   return <span style={style}>{status}</span>;
 }
 
-export default async function Home() {
+export default async function Home({ searchParams }: { searchParams: Promise<{ deleted?: string }> }) {
+  const { deleted } = await searchParams;
   await getOrCreateCompany();
   const db = getDb();
   const rows = await db
@@ -38,21 +39,37 @@ export default async function Home() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 style={{ fontSize: 22, fontWeight: 700, color: "#1e3a5f" }}>Supplier Invoices</h1>
-        <Link
-          href="/invoices/new"
-          style={{
-            background: "#2563eb",
-            color: "#fff",
-            padding: "8px 18px",
-            borderRadius: 6,
-            textDecoration: "none",
-            fontSize: 14,
-            fontWeight: 600,
-          }}
-        >
-          + New Invoice
-        </Link>
+        <div style={{ display: "flex", gap: 10 }}>
+          <form action="/api/invoices/export" method="get">
+            <button
+              type="submit"
+              style={{ border: "1px solid #cbd5e1", color: "#334155", background: "#fff", padding: "8px 18px", borderRadius: 6, fontSize: 14, fontWeight: 600, cursor: "pointer" }}
+            >
+              Export invoices
+            </button>
+          </form>
+          <Link
+            href="/invoices/new"
+            style={{
+              background: "#2563eb",
+              color: "#fff",
+              padding: "8px 18px",
+              borderRadius: 6,
+              textDecoration: "none",
+              fontSize: 14,
+              fontWeight: 600,
+            }}
+          >
+            + New Invoice
+          </Link>
+        </div>
       </div>
+
+      {deleted === "1" && (
+        <div style={{ marginBottom: 16, padding: "10px 14px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 6, color: "#166534", fontSize: 14 }}>
+          Draft invoice deleted successfully.
+        </div>
+      )}
 
       {rows.length === 0 ? (
         <div

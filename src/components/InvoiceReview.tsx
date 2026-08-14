@@ -2,7 +2,11 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { safeIsAmountMismatch, safeCalculateBaseAmount, safeParseDecimal, formatDisplayAmount, toDecimal } from "@/src/lib/invoice-validation";
-import type { MimoInvoiceExtraction } from "@/src/lib/mimo-extraction";
+import type { AiInvoiceExtraction } from "@/src/lib/ai-extraction";
+import type { EditableInvoiceLine } from "@/src/lib/invoice-lines";
+import { editableLineToInput } from "@/src/lib/invoice-lines";
+import { applyExtractionLines, applyExtractionToDraft, extractionLinesToEditable } from "@/src/lib/apply-ai-extraction";
+import InvoiceLinesEditor from "@/src/components/InvoiceLinesEditor";
 
 interface Vendor { id: number; name: string; }
 interface CostCentre { id: number; code: string; name: string; }
@@ -32,6 +36,7 @@ interface Invoice {
 interface Props {
   invoice: Invoice;
   documents: Document[];
+  lines: EditableInvoiceLine[];
   vendors: Vendor[];
   costCentres: CostCentre[];
   accounts: Account[];
@@ -106,7 +111,7 @@ function extractionValue(value: string | number | null) {
   return value === null ? <span style={{ color: "#94a3b8" }}>—</span> : String(value);
 }
 
-function MimoExtractionPreview({ extraction }: { extraction: MimoInvoiceExtraction }) {
+function AiExtractionPreview({ extraction }: { extraction: AiInvoiceExtraction }) {
   const headerFields: Array<[string, string | null]> = [
     ["Vendor (original)", extraction.vendorOriginal],
     ["Vendor (English)", extraction.vendorNormalized],
@@ -130,7 +135,7 @@ function MimoExtractionPreview({ extraction }: { extraction: MimoInvoiceExtracti
   return (
     <div style={{ background: "#fff", border: "1px solid #bfdbfe", borderRadius: 8, marginBottom: 16, overflow: "hidden" }}>
       <div style={{ padding: "14px 16px", background: "#eff6ff", borderBottom: "1px solid #bfdbfe" }}>
-        <div style={{ fontWeight: 700, color: "#1e3a5f" }}>MiMo extraction preview</div>
+        <div style={{ fontWeight: 700, color: "#1e3a5f" }}>AI extraction preview</div>
         <div style={{ marginTop: 3, fontSize: 12, color: "#64748b" }}>
           Read-only AI output. Nothing below has been copied into the invoice fields or saved.
         </div>
@@ -153,7 +158,7 @@ function MimoExtractionPreview({ extraction }: { extraction: MimoInvoiceExtracti
           Invoice lines ({extraction.lines.length})
         </div>
         {extraction.lines.length === 0 ? (
-          <div style={{ color: "#64748b", fontSize: 13 }}>MiMo did not find any invoice lines.</div>
+          <div style={{ color: "#64748b", fontSize: 13 }}>AI extraction did not find any invoice lines.</div>
         ) : (
           <div style={{ overflowX: "auto", border: "1px solid #e2e8f0", borderRadius: 6 }}>
             <table style={{ borderCollapse: "collapse", minWidth: 1180, width: "100%", textAlign: "left" }}>
@@ -193,7 +198,7 @@ function MimoExtractionPreview({ extraction }: { extraction: MimoInvoiceExtracti
   );
 }
 
-export default function InvoiceReview({ invoice, documents, vendors, costCentres, accounts, extractedFields, baseCurrency }: Props) {
+export default function InvoiceReview({ invoice, documents, lines, vendors, costCentres, accounts, extractedFields, baseCurrency }: Props) {
   const router = useRouter();
   const isApproved = invoice.status === "approved";
   const isSameCurrency = invoice.currency === baseCurrency;
@@ -220,7 +225,14 @@ export default function InvoiceReview({ invoice, documents, vendors, costCentres
   const [addVendor, setAddVendor] = useState(false);
   const [extracting, setExtracting] = useState(false);
   const [extractionError, setExtractionError] = useState("");
-  const [mimoExtraction, setMimoExtraction] = useState<MimoInvoiceExtraction | null>(null);
+  const [aiExtraction, setAiExtraction] = useState<AiInvoiceExtraction | null>(null);
+  const [editableLines, setEditableLines] = useState<EditableInvoiceLine[]>(lines);
+  const [lastAppliedLineSignature, setLastAppliedLineSignature] = useState<string | null>(null);
+  const [applyNotice, setApplyNotice] = useState<{ applied: string[]; skipped: string[] } | null>(null);
+  const [unmatchedVendorName, setUnmatchedVendorName] = useState<string | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   const doc = documents[0];
 
@@ -297,6 +309,7 @@ export default function InvoiceReview({ invoice, documents, vendors, costCentres
         costCentreId: form.costCentreId ? Number(form.costCentreId) : null,
         expenseAccountId: form.expenseAccountId ? Number(form.expenseAccountId) : null,
         notes: form.notes || null,
+        lines: editableLines.map(editableLineToInput),
       };
 
       if (action === "approve") {
@@ -320,6 +333,7 @@ export default function InvoiceReview({ invoice, documents, vendors, costCentres
       const json = await res.json();
       if (!res.ok) throw new Error(typeof json.error === "string" ? json.error : JSON.stringify(json.error));
       setSaved(true);
+      router.refresh();
       if (action === "approve") router.push("/");
     } catch (err: unknown) {
       setSaveError(err instanceof Error ? err.message : "Save failed");
@@ -328,13 +342,15 @@ export default function InvoiceReview({ invoice, documents, vendors, costCentres
     }
   }
 
-  async function tryMimoExtraction() {
+  async function tryAiExtraction() {
     setExtracting(true);
     setExtractionError("");
-    setMimoExtraction(null);
+    setAiExtraction(null);
+    setApplyNotice(null);
+    setUnmatchedVendorName(null);
     try {
       const response = await fetch(`/api/invoices/${invoice.id}/extract`, { method: "POST" });
-      let json: { error?: unknown; extraction?: MimoInvoiceExtraction };
+      let json: { error?: unknown; extraction?: AiInvoiceExtraction };
       try {
         json = await response.json();
       } catch {
@@ -344,11 +360,57 @@ export default function InvoiceReview({ invoice, documents, vendors, costCentres
         throw new Error(typeof json.error === "string" ? json.error : "AI extraction failed.");
       }
       if (!json.extraction) throw new Error("AI extraction returned no preview data.");
-      setMimoExtraction(json.extraction);
+      setAiExtraction(json.extraction);
     } catch (error: unknown) {
       setExtractionError(error instanceof Error ? error.message : "AI extraction failed.");
     } finally {
       setExtracting(false);
+    }
+  }
+
+  function applyAiExtraction() {
+    if (!aiExtraction) return;
+    const draftResult = applyExtractionToDraft(form, aiExtraction, vendors);
+    const lineResult = applyExtractionLines(
+      editableLines,
+      extractionLinesToEditable(aiExtraction),
+      lastAppliedLineSignature,
+    );
+
+    const applied = [...draftResult.appliedFields];
+    const skipped = [...draftResult.skippedFields];
+    if (aiExtraction.lines.length > 0) {
+      if (lineResult.applied) applied.push("Invoice lines");
+      else skipped.push("Invoice lines");
+    }
+
+    setForm((current) => {
+      const next = { ...current, ...draftResult.draft };
+      if (draftResult.appliedFields.includes("Currency")) {
+        next.fxRateToBase = next.currency === baseCurrency ? "1" : "";
+      }
+      return next;
+    });
+    setEditableLines(lineResult.lines);
+    setLastAppliedLineSignature(lineResult.signature);
+    setUnmatchedVendorName(draftResult.unmatchedVendorName);
+    setApplyNotice({ applied, skipped });
+    setSaved(false);
+  }
+
+  async function deleteInvoice() {
+    if (deleting || isApproved) return;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      const response = await fetch(`/api/invoices/${invoice.id}`, { method: "DELETE" });
+      const json = await response.json().catch(() => ({})) as { error?: unknown };
+      if (!response.ok) throw new Error(typeof json.error === "string" ? json.error : "Invoice deletion failed.");
+      router.push("/?deleted=1");
+      router.refresh();
+    } catch (error: unknown) {
+      setDeleteError(error instanceof Error ? error.message : "Invoice deletion failed.");
+      setDeleting(false);
     }
   }
 
@@ -417,35 +479,57 @@ export default function InvoiceReview({ invoice, documents, vendors, costCentres
         <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: 16, marginBottom: 16 }}>
           <div style={{ fontWeight: 700, color: "#1e3a5f", marginBottom: 5 }}>AI extraction preview</div>
           <div style={{ fontSize: 13, lineHeight: 1.5, color: "#475569", marginBottom: 12 }}>
-            Before sending: this invoice document will be processed by <strong>Xiaomi MiMo</strong>.
+            Before sending: this invoice document will be processed by the configured AI extraction service.
             The result is a preview only and will not change saved or manually entered invoice values.
           </div>
-          <button
-            type="button"
-            onClick={tryMimoExtraction}
-            disabled={!doc || extracting}
-            style={{
-              padding: "9px 14px",
-              border: "none",
-              borderRadius: 6,
-              background: !doc || extracting ? "#cbd5e1" : "#2563eb",
-              color: "#fff",
-              cursor: !doc || extracting ? "default" : "pointer",
-              fontSize: 13,
-              fontWeight: 600,
-            }}
-          >
-            {extracting ? "Extracting with MiMo…" : "Try AI extraction"}
-          </button>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <button
+              type="button"
+              onClick={tryAiExtraction}
+              disabled={!doc || extracting}
+              style={{
+                padding: "9px 14px",
+                border: "none",
+                borderRadius: 6,
+                background: !doc || extracting ? "#cbd5e1" : "#2563eb",
+                color: "#fff",
+                cursor: !doc || extracting ? "default" : "pointer",
+                fontSize: 13,
+                fontWeight: 600,
+              }}
+            >
+              {extracting ? "Running AI extraction…" : "Try AI extraction"}
+            </button>
+            {aiExtraction && (
+              <button
+                type="button"
+                onClick={applyAiExtraction}
+                style={{ padding: "9px 14px", border: "none", borderRadius: 6, background: "#16a34a", color: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 700 }}
+              >
+                Apply AI extraction
+              </button>
+            )}
+          </div>
           {!doc && <div style={{ marginTop: 8, color: "#64748b", fontSize: 12 }}>Attach a document before trying AI extraction.</div>}
           {extractionError && (
             <div style={{ marginTop: 12, padding: "9px 12px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 6, color: "#b91c1c", fontSize: 13 }}>
               {extractionError}
             </div>
           )}
+          {applyNotice && (
+            <div style={{ marginTop: 12, padding: "9px 12px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 6, color: "#166534", fontSize: 13 }}>
+              {applyNotice.applied.length > 0 && <div>Applied: {applyNotice.applied.join(", ")}.</div>}
+              {applyNotice.skipped.length > 0 && <div style={{ color: "#92400e", marginTop: applyNotice.applied.length ? 4 : 0 }}>Skipped existing values: {applyNotice.skipped.join(", ")}.</div>}
+            </div>
+          )}
+          {unmatchedVendorName && (
+            <div style={{ marginTop: 10, padding: "9px 12px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 6, color: "#92400e", fontSize: 13 }}>
+              Extracted vendor: <strong>{unmatchedVendorName}</strong>. No existing vendor matched; please select one manually.
+            </div>
+          )}
         </div>
 
-        {mimoExtraction && <MimoExtractionPreview extraction={mimoExtraction} />}
+        {aiExtraction && <AiExtractionPreview extraction={aiExtraction} />}
 
         <div
           style={{
@@ -637,6 +721,14 @@ export default function InvoiceReview({ invoice, documents, vendors, costCentres
             )}
           </div>
 
+          <InvoiceLinesEditor
+            lines={editableLines}
+            onChange={(nextLines) => {
+              setEditableLines(nextLines);
+              setSaved(false);
+            }}
+          />
+
           {/* Base amounts (read-only) */}
           {showBaseAmounts && (
             <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: 16, marginBottom: 16 }}>
@@ -708,7 +800,7 @@ export default function InvoiceReview({ invoice, documents, vendors, costCentres
             </div>
           )}
 
-          <div style={{ display: "flex", gap: 12 }}>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
             <button
               onClick={() => save("save")}
               disabled={saving}
@@ -747,6 +839,30 @@ export default function InvoiceReview({ invoice, documents, vendors, costCentres
                 Approve Invoice
               </button>
             )}
+            {!isApproved && (
+              <button
+                type="button"
+                onClick={() => {
+                  setDeleteError("");
+                  setDeleteOpen(true);
+                }}
+                disabled={saving || deleting}
+                style={{
+                  padding: "10px 20px",
+                  marginLeft: "auto",
+                  background: "#dc2626",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: 6,
+                  cursor: saving || deleting ? "default" : "pointer",
+                  fontSize: 14,
+                  fontWeight: 600,
+                  opacity: saving || deleting ? 0.6 : 1,
+                }}
+              >
+                Delete invoice
+              </button>
+            )}
           </div>
           {!isApproved && (hasInputErrors || mismatch) && (
             <div style={{ marginTop: 8, fontSize: 12, color: "#d97706" }}>
@@ -757,6 +873,56 @@ export default function InvoiceReview({ invoice, documents, vendors, costCentres
           )}
         </div>
       </div>
+      {deleteOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-invoice-title"
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 100,
+            background: "rgba(15, 23, 42, 0.55)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+          }}
+        >
+          <div style={{ width: "100%", maxWidth: 460, background: "#fff", borderRadius: 10, padding: 24, boxShadow: "0 20px 50px rgba(15, 23, 42, 0.25)" }}>
+            <h2 id="delete-invoice-title" style={{ margin: 0, fontSize: 18, color: "#991b1b" }}>Delete invoice</h2>
+            {form.invoiceNumber && (
+              <div style={{ marginTop: 10, fontSize: 14, color: "#475569" }}>Invoice number: <strong>{form.invoiceNumber}</strong></div>
+            )}
+            <p style={{ margin: "14px 0 0", color: "#334155", lineHeight: 1.5 }}>
+              Are you sure you want to delete this invoice? This action cannot be undone.
+            </p>
+            {deleteError && (
+              <div style={{ marginTop: 14, padding: "9px 12px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 6, color: "#b91c1c", fontSize: 13 }}>
+                {deleteError}
+              </div>
+            )}
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 22 }}>
+              <button
+                type="button"
+                onClick={() => setDeleteOpen(false)}
+                disabled={deleting}
+                style={{ padding: "9px 14px", border: "1px solid #cbd5e1", borderRadius: 6, background: "#fff", cursor: deleting ? "default" : "pointer" }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={deleteInvoice}
+                disabled={deleting}
+                style={{ padding: "9px 14px", border: "none", borderRadius: 6, background: deleting ? "#fca5a5" : "#dc2626", color: "#fff", cursor: deleting ? "default" : "pointer", fontWeight: 600 }}
+              >
+                {deleting ? "Deleting…" : "Delete invoice"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

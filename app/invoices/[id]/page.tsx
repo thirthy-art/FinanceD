@@ -3,12 +3,13 @@ import { getDb } from "@/src/db";
 import {
   supplierInvoices,
   supplierInvoiceDocuments,
+  supplierInvoiceLines,
   vendors,
   costCentres,
   chartOfAccounts,
   companies,
 } from "@/src/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, asc } from "drizzle-orm";
 import InvoiceReview from "@/src/components/InvoiceReview";
 import Link from "next/link";
 import { parseInvoiceFields } from "@/src/lib/extract";
@@ -24,8 +25,9 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
 
   if (!invoice) notFound();
 
-  const [docs, vendorList, ccList, acctList, [company]] = await Promise.all([
+  const [docs, lines, vendorList, ccList, acctList, [company]] = await Promise.all([
     db.select().from(supplierInvoiceDocuments).where(eq(supplierInvoiceDocuments.invoiceId, invoice.id)),
+    db.select().from(supplierInvoiceLines).where(eq(supplierInvoiceLines.invoiceId, invoice.id)).orderBy(asc(supplierInvoiceLines.position)),
     db.select({ id: vendors.id, name: vendors.name }).from(vendors).where(eq(vendors.companyId, invoice.companyId)),
     db.select().from(costCentres).where(eq(costCentres.companyId, invoice.companyId)),
     db.select().from(chartOfAccounts).where(eq(chartOfAccounts.companyId, invoice.companyId)),
@@ -50,6 +52,20 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
       <InvoiceReview
         invoice={invoice}
         documents={docs}
+        lines={lines.map((line) => ({
+          id: line.id,
+          lineNumber: line.lineNumber ?? "",
+          descriptionOriginal: line.descriptionOriginal ?? "",
+          description: line.description ?? "",
+          quantity: line.quantity ?? "",
+          unit: line.unit ?? "",
+          unitPrice: line.unitPrice ?? "",
+          netAmount: line.netAmount ?? "",
+          vatRate: line.vatRate ?? "",
+          vatAmount: line.vatAmount ?? "",
+          grossAmount: line.grossAmount ?? "",
+          sourcePage: line.sourcePage === null ? "" : String(line.sourcePage),
+        }))}
         vendors={vendorList}
         costCentres={ccList}
         accounts={acctList}

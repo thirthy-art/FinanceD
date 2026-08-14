@@ -94,6 +94,7 @@ export const vendors = pgTable("vendors", {
 
 export const supplierInvoices = pgTable("supplier_invoices", {
   id: serial("id").primaryKey(),
+  uploadRequestId: varchar("upload_request_id", { length: 100 }).unique(),
   companyId: integer("company_id")
     .notNull()
     .references(() => companies.id),
@@ -135,6 +136,29 @@ export const supplierInvoiceDocuments = pgTable("supplier_invoice_documents", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const supplierInvoiceLines = pgTable("supplier_invoice_lines", {
+  id: serial("id").primaryKey(),
+  invoiceId: integer("invoice_id")
+    .notNull()
+    .references(() => supplierInvoices.id, { onDelete: "cascade" }),
+  position: integer("position").notNull(),
+  lineNumber: varchar("line_number", { length: 100 }),
+  descriptionOriginal: text("description_original"),
+  description: text("description"),
+  quantity: numeric("quantity", { precision: 38, scale: 18 }),
+  unit: varchar("unit", { length: 100 }),
+  unitPrice: numeric("unit_price", { precision: 38, scale: 18 }),
+  netAmount: numeric("net_amount", { precision: 38, scale: 18 }),
+  vatRate: numeric("vat_rate", { precision: 38, scale: 18 }),
+  vatAmount: numeric("vat_amount", { precision: 38, scale: 18 }),
+  grossAmount: numeric("gross_amount", { precision: 38, scale: 18 }),
+  sourcePage: integer("source_page"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  invoicePositionUnique: unique("uq_invoice_line_position").on(table.invoiceId, table.position),
+}));
+
 // ─── Relations ────────────────────────────────────────────────────────────────
 
 export const supplierInvoiceRelations = relations(
@@ -153,6 +177,7 @@ export const supplierInvoiceRelations = relations(
       references: [costCentres.id],
     }),
     documents: many(supplierInvoiceDocuments),
+    lines: many(supplierInvoiceLines),
   })
 );
 
@@ -161,6 +186,16 @@ export const supplierInvoiceDocumentRelations = relations(
   ({ one }) => ({
     invoice: one(supplierInvoices, {
       fields: [supplierInvoiceDocuments.invoiceId],
+      references: [supplierInvoices.id],
+    }),
+  })
+);
+
+export const supplierInvoiceLineRelations = relations(
+  supplierInvoiceLines,
+  ({ one }) => ({
+    invoice: one(supplierInvoices, {
+      fields: [supplierInvoiceLines.invoiceId],
       references: [supplierInvoices.id],
     }),
   })
