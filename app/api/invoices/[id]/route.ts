@@ -8,13 +8,14 @@ import {
   chartOfAccounts,
   companies,
 } from "@/src/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import {
   isAmountMismatch,
   calculateBaseAmount,
   validatePositiveRate,
   validateAmount,
+  validateBaseAmount,
 } from "@/src/lib/invoice-validation";
 
 const UpdateSchema = z.object({
@@ -134,10 +135,42 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json({ error: errors.join("; ") }, { status: 422 });
   }
 
+  // ── Validate database references ──────────────────────────────────────────
+  const refErrors: string[] = [];
+
+  if (data.vendorId !== undefined && data.vendorId !== null) {
+    const [v] = await db
+      .select({ id: vendors.id })
+      .from(vendors)
+      .where(and(eq(vendors.id, data.vendorId), eq(vendors.companyId, existing.companyId)));
+    if (!v) refErrors.push("Vendor does not exist or does not belong to this company.");
+  }
+
+  if (data.costCentreId !== undefined && data.costCentreId !== null) {
+    const [cc] = await db
+      .select({ id: costCentres.id })
+      .from(costCentres)
+      .where(and(eq(costCentres.id, data.costCentreId), eq(costCentres.companyId, existing.companyId)));
+    if (!cc) refErrors.push("Cost centre does not exist or does not belong to this company.");
+  }
+
+  if (data.expenseAccountId !== undefined && data.expenseAccountId !== null) {
+    const [acct] = await db
+      .select({ id: chartOfAccounts.id, type: chartOfAccounts.type })
+      .from(chartOfAccounts)
+      .where(and(eq(chartOfAccounts.id, data.expenseAccountId), eq(chartOfAccounts.companyId, existing.companyId)));
+    if (!acct) {
+      refErrors.push("Expense account does not exist or does not belong to this company.");
+    } else if (acct.type !== "expense") {
+      refErrors.push("The selected account is not an expense account.");
+    }
+  }
+
+  if (refErrors.length > 0) {
+    return NextResponse.json({ error: refErrors.join(" ") }, { status: 422 });
+  }
+
   // ── Determine final status ─────────────────────────────────────────────────
-  // When request omits status, preserve existing status.
-  // Block accidental approved→draft downgrade: the ordinary edit form must not
-  // send status:"draft" for an approved invoice.
   const requestedStatus = data.status;
   let finalStatus: "draft" | "approved";
 
@@ -157,17 +190,25 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const finalNet = normalizedNet !== undefined ? normalizedNet : existing.netAmount;
   const finalVat = normalizedVat !== undefined ? normalizedVat : existing.vatAmount;
   const finalGross = normalizedGross !== undefined ? normalizedGross : existing.grossAmount;
-  const finalRate = normalizedRate !== undefined ? normalizedRate : existing.fxRateToBase;
   const finalCurrencyType = data.currencyType ?? existing.currencyType;
   const finalCurrency = data.currency ?? existing.currency;
   const finalVendorId = data.vendorId !== undefined ? data.vendorId : existing.vendorId;
   const finalInvoiceNumber = data.invoiceNumber !== undefined ? data.invoiceNumber : existing.invoiceNumber;
   const finalInvoiceDate = data.invoiceDate !== undefined ? data.invoiceDate : existing.invoiceDate;
 
-  // ── FX rate: auto-set "1" for same-currency, require for foreign ──────────
-  let effectiveRate = finalRate;
+  // ── Currency change: invalidate stale FX rate ─────────────────────────────
+  const currencyChanged = data.currency !== undefined && data.currency !== existing.currency;
+  let effectiveRate: string | null | undefined;
+
   if (finalCurrency === baseCurrency) {
     effectiveRate = "1";
+  } else if (currencyChanged) {
+    // Currency changed to a foreign currency: discard old rate, accept only
+    // an explicitly supplied new rate
+    effectiveRate = normalizedRate !== undefined ? normalizedRate : null;
+  } else {
+    // No currency change — use the supplied rate or fall back to stored
+    effectiveRate = normalizedRate !== undefined ? normalizedRate : existing.fxRateToBase;
   }
 
   // ── Approval validation ────────────────────────────────────────────────────
@@ -182,7 +223,6 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (finalVat === null || finalVat === undefined) missing.push("VAT amount (use 0 if none)");
     if (!finalGross) missing.push("gross amount");
 
-    // Check for attached document
     const docCount = await db
       .select({ id: supplierInvoiceDocuments.id })
       .from(supplierInvoiceDocuments)
@@ -190,7 +230,6 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       .limit(1);
     if (docCount.length === 0) missing.push("attached source document");
 
-    // Foreign currency requires a positive FX rate
     if (finalCurrency !== baseCurrency && !effectiveRate) {
       missing.push("FX rate (required for foreign currency)");
     }
@@ -198,6 +237,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (missing.length > 0) {
       return NextResponse.json(
         { error: `Cannot approve: missing ${missing.join(", ")}.` },
+        { status: 422 }
+      );
+    }
+
+    // Block all-zero approval
+    const { Decimal } = await import("@/src/lib/decimal");
+    const netDec = new Decimal(finalNet ?? "0");
+    const vatDec = new Decimal(finalVat ?? "0");
+    const grossDec = new Decimal(finalGross ?? "0");
+    if (netDec.isZero() && vatDec.isZero() && grossDec.isZero()) {
+      return NextResponse.json(
+        { error: "Cannot approve: invoice amounts are all zero." },
         { status: 422 }
       );
     }
@@ -210,11 +261,20 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
   }
 
+  // ── Validate base amount overflow ─────────────────────────────────────────
+  if (effectiveRate) {
+    try {
+      validateBaseAmount(calculateBaseAmount(finalNet, effectiveRate), "Base net amount");
+      validateBaseAmount(calculateBaseAmount(finalVat, effectiveRate), "Base VAT amount");
+      validateBaseAmount(calculateBaseAmount(finalGross, effectiveRate), "Base gross amount");
+    } catch (e) {
+      return NextResponse.json({ error: (e as Error).message }, { status: 422 });
+    }
+  }
+
   // ── Vendor creation inside a transaction ───────────────────────────────────
   const vendorId = data.vendorId;
   if (data.newVendorName && !vendorId) {
-    // Wrap vendor creation + invoice update in a transaction so a failed
-    // invoice save does not leave an orphan vendor.
     try {
       const result = await db.transaction(async (tx) => {
         const [v] = await tx
@@ -223,8 +283,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           .returning();
 
         const updateValues = buildUpdateValues(
-          data, normalizedNet, normalizedVat, normalizedGross, normalizedRate,
-          effectiveRate, finalNet, finalVat, finalGross, finalStatus, v.id
+          data, normalizedNet, normalizedVat, normalizedGross,
+          effectiveRate, finalNet, finalVat, finalGross, finalStatus, v.id,
+          currencyChanged
         );
 
         const [updated] = await tx
@@ -246,8 +307,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   // ── Non-transactional update (no new vendor) ───────────────────────────────
   const updateValues = buildUpdateValues(
-    data, normalizedNet, normalizedVat, normalizedGross, normalizedRate,
-    effectiveRate, finalNet, finalVat, finalGross, finalStatus, vendorId
+    data, normalizedNet, normalizedVat, normalizedGross,
+    effectiveRate, finalNet, finalVat, finalGross, finalStatus, vendorId,
+    currencyChanged
   );
 
   const [updated] = await db
@@ -265,13 +327,13 @@ function buildUpdateValues(
   normalizedNet: string | null | undefined,
   normalizedVat: string | null | undefined,
   normalizedGross: string | null | undefined,
-  normalizedRate: string | null | undefined,
   effectiveRate: string | null | undefined,
   finalNet: string | null | undefined,
   finalVat: string | null | undefined,
   finalGross: string | null | undefined,
   finalStatus: "draft" | "approved",
   vendorId: number | null | undefined,
+  currencyChanged: boolean,
 ): Record<string, unknown> {
   const updateValues: Record<string, unknown> = {
     updatedAt: new Date(),
@@ -287,9 +349,9 @@ function buildUpdateValues(
   if (normalizedVat !== undefined) updateValues.vatAmount = normalizedVat;
   if (normalizedGross !== undefined) updateValues.grossAmount = normalizedGross;
 
-  // Write the effective rate (auto-"1" for same-currency, or the normalized input)
-  if (normalizedRate !== undefined || effectiveRate !== undefined) {
-    updateValues.fxRateToBase = effectiveRate;
+  // Always write rate when currency changed or rate was explicitly provided
+  if (effectiveRate !== undefined || currencyChanged) {
+    updateValues.fxRateToBase = effectiveRate ?? null;
   }
 
   if (data.costCentreId !== undefined) updateValues.costCentreId = data.costCentreId;
@@ -301,13 +363,19 @@ function buildUpdateValues(
     normalizedNet !== undefined ||
     normalizedVat !== undefined ||
     normalizedGross !== undefined ||
-    normalizedRate !== undefined ||
-    data.currency !== undefined;
+    effectiveRate !== undefined ||
+    currencyChanged;
 
-  if (monetaryFieldChanged && effectiveRate) {
-    updateValues.baseNetAmount = calculateBaseAmount(finalNet, effectiveRate);
-    updateValues.baseVatAmount = calculateBaseAmount(finalVat, effectiveRate);
-    updateValues.baseGrossAmount = calculateBaseAmount(finalGross, effectiveRate);
+  if (monetaryFieldChanged) {
+    if (effectiveRate) {
+      updateValues.baseNetAmount = calculateBaseAmount(finalNet, effectiveRate);
+      updateValues.baseVatAmount = calculateBaseAmount(finalVat, effectiveRate);
+      updateValues.baseGrossAmount = calculateBaseAmount(finalGross, effectiveRate);
+    } else {
+      updateValues.baseNetAmount = null;
+      updateValues.baseVatAmount = null;
+      updateValues.baseGrossAmount = null;
+    }
   }
 
   return updateValues;

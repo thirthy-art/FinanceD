@@ -9,6 +9,10 @@ import {
   parseDecimalInput,
   validatePositiveRate,
   validateAmount,
+  validateBaseAmount,
+  safeParseDecimal,
+  safeIsAmountMismatch,
+  safeCalculateBaseAmount,
   FIAT_TOLERANCE,
 } from "../lib/invoice-validation";
 
@@ -56,9 +60,30 @@ describe("parseDecimalInput", () => {
     expect(() => parseDecimalInput("$")).toThrow(/[Ii]nvalid/);
   });
 
-  it("strips currency symbols before parsing", () => {
+  it("strips only known currency symbols", () => {
     expect(parseDecimalInput("$1200.00")).toBe("1200");
     expect(parseDecimalInput("€500")).toBe("500");
+    expect(parseDecimalInput("£99.99")).toBe("99.99");
+    expect(parseDecimalInput("¥1000")).toBe("1000");
+  });
+
+  it("rejects arbitrary text mixed with digits", () => {
+    expect(() => parseDecimalInput("abc123")).toThrow(/[Ii]nvalid/);
+    expect(() => parseDecimalInput("12abc")).toThrow(/[Ii]nvalid/);
+    expect(() => parseDecimalInput("1a2b3c")).toThrow(/[Ii]nvalid/);
+    expect(() => parseDecimalInput("hello")).toThrow(/[Ii]nvalid/);
+  });
+
+  it("rejects malformed thousands grouping", () => {
+    expect(() => parseDecimalInput("12,34,567")).toThrow(/[Ii]nvalid/);
+    expect(() => parseDecimalInput("1,23.45")).toThrow(/[Ii]nvalid/);
+    expect(() => parseDecimalInput("1.23,45")).toThrow(/[Ii]nvalid/);
+  });
+
+  it("rejects misplaced signs and separators", () => {
+    expect(() => parseDecimalInput("1-2")).toThrow(/[Ii]nvalid/);
+    expect(() => parseDecimalInput("12..34")).toThrow(/[Ii]nvalid/);
+    expect(() => parseDecimalInput("-.")).toThrow(/[Ii]nvalid/);
   });
 
   it("preserves 18-decimal crypto value exactly", () => {
@@ -73,6 +98,70 @@ describe("parseDecimalInput", () => {
 
   it("handles negative values", () => {
     expect(parseDecimalInput("-500.25")).toBe("-500.25");
+  });
+});
+
+// ── safeParseDecimal ────────────────────────────────────────────────────────
+
+describe("safeParseDecimal", () => {
+  it("returns value for valid input", () => {
+    expect(safeParseDecimal("1234.56")).toEqual({ value: "1234.56", error: null });
+  });
+
+  it("returns null value for blank input", () => {
+    expect(safeParseDecimal("")).toEqual({ value: null, error: null });
+    expect(safeParseDecimal(null)).toEqual({ value: null, error: null });
+  });
+
+  it("returns error for malformed input without throwing", () => {
+    const result = safeParseDecimal("abc");
+    expect(result.value).toBeNull();
+    expect(result.error).toBeTruthy();
+  });
+
+  it("returns error for ambiguous input without throwing", () => {
+    const result = safeParseDecimal("1,234");
+    expect(result.value).toBeNull();
+    expect(result.error).toMatch(/[Aa]mbiguous/);
+  });
+
+  it("returns error for partially numeric input", () => {
+    const result = safeParseDecimal("abc123");
+    expect(result.value).toBeNull();
+    expect(result.error).toBeTruthy();
+  });
+});
+
+// ── safeIsAmountMismatch ────────────────────────────────────────────────────
+
+describe("safeIsAmountMismatch", () => {
+  it("returns false (no mismatch) for valid matching amounts", () => {
+    expect(safeIsAmountMismatch("100", "20", "120", "fiat")).toBe(false);
+  });
+
+  it("returns true for valid mismatched amounts", () => {
+    expect(safeIsAmountMismatch("100", "20", "200", "fiat")).toBe(true);
+  });
+
+  it("returns false when input is malformed", () => {
+    expect(safeIsAmountMismatch("abc", "20", "120", "fiat")).toBe(false);
+    expect(safeIsAmountMismatch("100", "xyz", "120", "fiat")).toBe(false);
+  });
+});
+
+// ── safeCalculateBaseAmount ─────────────────────────────────────────────────
+
+describe("safeCalculateBaseAmount", () => {
+  it("calculates correctly for valid input", () => {
+    expect(safeCalculateBaseAmount("100", "1.5")).toBe("150.0000");
+  });
+
+  it("returns null for malformed amount", () => {
+    expect(safeCalculateBaseAmount("abc", "1.5")).toBeNull();
+  });
+
+  it("returns null for malformed rate", () => {
+    expect(safeCalculateBaseAmount("100", "xyz")).toBeNull();
   });
 });
 
@@ -138,6 +227,10 @@ describe("validatePositiveRate", () => {
   it("normalizes European format", () => {
     expect(validatePositiveRate("1,25")).toBe("1.25");
   });
+
+  it("rejects rate exceeding numeric(38,18) bounds", () => {
+    expect(() => validatePositiveRate("1." + "9".repeat(19))).toThrow(/precision/);
+  });
 });
 
 // ── validateAmount ───────────────────────────────────────────────────────────
@@ -157,6 +250,22 @@ describe("validateAmount", () => {
 
   it("accepts 18 decimal places", () => {
     expect(validateAmount("0.000000000000000001", "Net")).toBe("0.000000000000000001");
+  });
+});
+
+// ── validateBaseAmount ──────────────────────────────────────────────────────
+
+describe("validateBaseAmount", () => {
+  it("passes a value within numeric(18,4) bounds", () => {
+    expect(validateBaseAmount("12345678901234.5678", "Base net")).toBe("12345678901234.5678");
+  });
+
+  it("returns null for null input", () => {
+    expect(validateBaseAmount(null, "Base net")).toBeNull();
+  });
+
+  it("rejects a value that overflows numeric(18,4)", () => {
+    expect(() => validateBaseAmount("123456789012345.6789", "Base net")).toThrow(/capacity/);
   });
 });
 
@@ -241,11 +350,8 @@ describe("calculateBaseAmount", () => {
   });
 
   it("uses ROUND_HALF_UP", () => {
-    // 1.23455 rounded to 4dp with ROUND_HALF_UP → 1.2346
     expect(calculateBaseAmount("1", "1.23455")).toBe("1.2346");
-    // 1.23445 rounded to 4dp with ROUND_HALF_UP → 1.2345
     expect(calculateBaseAmount("1", "1.23445")).toBe("1.2345");
-    // 1.23465 → 1.2347 (ROUND_HALF_UP: 5 always rounds up)
     expect(calculateBaseAmount("1", "1.23465")).toBe("1.2347");
   });
 
@@ -418,5 +524,41 @@ describe("decimal separator rules", () => {
 
   it("crypto with European comma: '0,000000000000000001'", () => {
     expect(parseDecimalInput("0,000000000000000001")).toBe("0.000000000000000001");
+  });
+});
+
+// ── Strict decimal grammar ──────────────────────────────────────────────────
+
+describe("strict decimal grammar", () => {
+  it("rejects 'abc123' — arbitrary text before digits", () => {
+    expect(() => parseDecimalInput("abc123")).toThrow(/[Ii]nvalid/);
+  });
+
+  it("rejects '12,34,567' — malformed thousands grouping", () => {
+    expect(() => parseDecimalInput("12,34,567")).toThrow(/[Ii]nvalid/);
+  });
+
+  it("rejects '1,23.45' — invalid US grouping with non-3-digit group", () => {
+    expect(() => parseDecimalInput("1,23.45")).toThrow(/[Ii]nvalid/);
+  });
+
+  it("rejects '1.23,45' — invalid European grouping with non-3-digit group", () => {
+    expect(() => parseDecimalInput("1.23,45")).toThrow(/[Ii]nvalid/);
+  });
+
+  it("rejects embedded letters like '1a2b'", () => {
+    expect(() => parseDecimalInput("1a2b")).toThrow(/[Ii]nvalid/);
+  });
+
+  it("accepts valid US format '12,345.67'", () => {
+    expect(parseDecimalInput("12,345.67")).toBe("12345.67");
+  });
+
+  it("accepts valid European format '12.345,67'", () => {
+    expect(parseDecimalInput("12.345,67")).toBe("12345.67");
+  });
+
+  it("accepts plain integer '12345'", () => {
+    expect(parseDecimalInput("12345")).toBe("12345");
   });
 });

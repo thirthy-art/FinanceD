@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { isAmountMismatch, toDecimal, calculateBaseAmount, formatDisplayAmount } from "@/src/lib/invoice-validation";
+import { safeIsAmountMismatch, safeCalculateBaseAmount, safeParseDecimal, formatDisplayAmount } from "@/src/lib/invoice-validation";
 
 interface Vendor { id: number; name: string; }
 interface CostCentre { id: number; code: string; name: string; }
@@ -74,6 +74,33 @@ const warnStyle: React.CSSProperties = {
   background: "#fffbeb",
 };
 
+const errorInputStyle: React.CSSProperties = {
+  ...inputStyle,
+  borderColor: "#ef4444",
+  background: "#fef2f2",
+};
+
+function validateMonetaryFields(form: { netAmount: string; vatAmount: string; grossAmount: string; fxRateToBase: string }): string[] {
+  const fieldErrors: string[] = [];
+  if (form.netAmount) {
+    const r = safeParseDecimal(form.netAmount);
+    if (r.error) fieldErrors.push(`Net: ${r.error}`);
+  }
+  if (form.vatAmount) {
+    const r = safeParseDecimal(form.vatAmount);
+    if (r.error) fieldErrors.push(`VAT: ${r.error}`);
+  }
+  if (form.grossAmount) {
+    const r = safeParseDecimal(form.grossAmount);
+    if (r.error) fieldErrors.push(`Gross: ${r.error}`);
+  }
+  if (form.fxRateToBase) {
+    const r = safeParseDecimal(form.fxRateToBase);
+    if (r.error) fieldErrors.push(`FX Rate: ${r.error}`);
+  }
+  return fieldErrors;
+}
+
 export default function InvoiceReview({ invoice, documents, vendors, costCentres, accounts, extractedFields, baseCurrency }: Props) {
   const router = useRouter();
   const isApproved = invoice.status === "approved";
@@ -104,22 +131,37 @@ export default function InvoiceReview({ invoice, documents, vendors, costCentres
 
   const currentIsSameCurrency = form.currency === baseCurrency;
 
-  // Arithmetic validation using decimal strings
-  const mismatch = isAmountMismatch(
+  // Validate monetary fields defensively — never throws
+  const inputErrors = validateMonetaryFields(form);
+  const hasInputErrors = inputErrors.length > 0;
+
+  // Arithmetic validation using safe helpers
+  const mismatch = !hasInputErrors && safeIsAmountMismatch(
     form.netAmount, form.vatAmount, form.grossAmount, form.currencyType
   );
-  const computedSum = form.netAmount || form.vatAmount
-    ? toDecimal(form.netAmount).plus(toDecimal(form.vatAmount)).toFixed()
-    : "";
-  const grossDisplay = form.grossAmount
-    ? toDecimal(form.grossAmount).toFixed()
-    : "";
 
-  // Compute preview base amounts for display
+  // Compute display sum/gross safely
+  let computedSum = "";
+  let grossDisplay = "";
+  if (!hasInputErrors) {
+    try {
+      const { toDecimal } = require("@/src/lib/invoice-validation");
+      if (form.netAmount || form.vatAmount) {
+        computedSum = toDecimal(form.netAmount).plus(toDecimal(form.vatAmount)).toFixed();
+      }
+      if (form.grossAmount) {
+        grossDisplay = toDecimal(form.grossAmount).toFixed();
+      }
+    } catch {
+      // silently degrade — do not throw during render
+    }
+  }
+
+  // Compute preview base amounts for display using safe helpers
   const previewRate = currentIsSameCurrency ? "1" : (form.fxRateToBase || null);
-  const previewBaseNet = calculateBaseAmount(form.netAmount || null, previewRate);
-  const previewBaseVat = calculateBaseAmount(form.vatAmount || null, previewRate);
-  const previewBaseGross = calculateBaseAmount(form.grossAmount || null, previewRate);
+  const previewBaseNet = safeCalculateBaseAmount(form.netAmount || null, previewRate);
+  const previewBaseVat = safeCalculateBaseAmount(form.vatAmount || null, previewRate);
+  const previewBaseGross = safeCalculateBaseAmount(form.grossAmount || null, previewRate);
   const showBaseAmounts = previewBaseNet !== null || previewBaseVat !== null || previewBaseGross !== null;
 
   function set(k: string) {
@@ -127,6 +169,21 @@ export default function InvoiceReview({ invoice, documents, vendors, costCentres
       setForm((f) => ({ ...f, [k]: e.target.value }));
       setSaved(false);
     };
+  }
+
+  function handleCurrencyChange(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
+    const newCurrency = e.target.value;
+    setForm((f) => {
+      if (newCurrency === baseCurrency) {
+        return { ...f, currency: newCurrency, fxRateToBase: "1" };
+      }
+      // Any change to a foreign currency clears the rate
+      if (newCurrency !== f.currency) {
+        return { ...f, currency: newCurrency, fxRateToBase: "" };
+      }
+      return { ...f, currency: newCurrency };
+    });
+    setSaved(false);
   }
 
   async function save(action: "save" | "approve") {
@@ -148,20 +205,17 @@ export default function InvoiceReview({ invoice, documents, vendors, costCentres
         notes: form.notes || null,
       };
 
-      // Only set status explicitly when approving a draft.
-      // For "save" on an approved invoice, omit status so server preserves it.
       if (action === "approve") {
         body.status = "approved";
       } else if (!isApproved) {
         body.status = "draft";
       }
-      // When action === "save" && isApproved: omit status → server keeps "approved"
 
       if (addVendor && form.newVendorName) {
         body.newVendorName = form.newVendorName;
         body.vendorId = null;
-      } else if (form.vendorId) {
-        body.vendorId = Number(form.vendorId);
+      } else {
+        body.vendorId = form.vendorId ? Number(form.vendorId) : null;
       }
 
       const res = await fetch(`/api/invoices/${invoice.id}`, {
@@ -180,6 +234,7 @@ export default function InvoiceReview({ invoice, documents, vendors, costCentres
     }
   }
 
+  const approveDisabled = saving || mismatch || hasInputErrors;
   const expenseAccounts = accounts.filter((a) => a.type === "expense" && a.isActive);
 
   return (
@@ -316,13 +371,13 @@ export default function InvoiceReview({ invoice, documents, vendors, costCentres
             {field(
               "Currency",
               <div style={{ display: "flex", gap: 8 }}>
-                <select style={{ ...inputStyle, flex: 1 }} value={form.currency} onChange={set("currency")}>
+                <select style={{ ...inputStyle, flex: 1 }} value={form.currency} onChange={handleCurrencyChange}>
                   {CURRENCIES.map((c) => <option key={c}>{c}</option>)}
                 </select>
                 <input
                   style={{ ...inputStyle, flex: 1 }}
                   value={form.currency}
-                  onChange={set("currency")}
+                  onChange={handleCurrencyChange}
                   placeholder="Or type code"
                   title="Type a currency or asset code not in the list"
                 />
@@ -344,7 +399,12 @@ export default function InvoiceReview({ invoice, documents, vendors, costCentres
               currentIsSameCurrency ? (
                 <input style={readOnlyStyle} value="1" readOnly />
               ) : (
-                <input style={inputStyle} value={form.fxRateToBase} onChange={set("fxRateToBase")} placeholder="Enter rate" />
+                <input
+                  style={form.fxRateToBase && safeParseDecimal(form.fxRateToBase).error ? errorInputStyle : inputStyle}
+                  value={form.fxRateToBase}
+                  onChange={set("fxRateToBase")}
+                  placeholder="Enter rate"
+                />
               ),
               currentIsSameCurrency
                 ? `Same as base currency (${baseCurrency}) — rate is 1`
@@ -360,21 +420,53 @@ export default function InvoiceReview({ invoice, documents, vendors, costCentres
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
               <div>
                 <label style={{ display: "block", fontSize: 12, color: "#64748b", marginBottom: 4 }}>Net Amount</label>
-                <input style={inputStyle} value={form.netAmount} onChange={set("netAmount")} placeholder="0.00" />
+                <input
+                  style={form.netAmount && safeParseDecimal(form.netAmount).error ? errorInputStyle : inputStyle}
+                  value={form.netAmount}
+                  onChange={set("netAmount")}
+                  placeholder="0.00"
+                />
               </div>
               <div>
                 <label style={{ display: "block", fontSize: 12, color: "#64748b", marginBottom: 4 }}>VAT Amount</label>
-                <input style={inputStyle} value={form.vatAmount} onChange={set("vatAmount")} placeholder="0.00" />
+                <input
+                  style={form.vatAmount && safeParseDecimal(form.vatAmount).error ? errorInputStyle : inputStyle}
+                  value={form.vatAmount}
+                  onChange={set("vatAmount")}
+                  placeholder="0.00"
+                />
               </div>
               <div>
                 <label style={{ display: "block", fontSize: 12, color: "#64748b", marginBottom: 4 }}>
                   Gross Amount
                   {mismatch && " !!"}
                 </label>
-                <input style={mismatch ? warnStyle : inputStyle} value={form.grossAmount} onChange={set("grossAmount")} placeholder="0.00" />
+                <input
+                  style={form.grossAmount && safeParseDecimal(form.grossAmount).error
+                    ? errorInputStyle
+                    : mismatch ? warnStyle : inputStyle}
+                  value={form.grossAmount}
+                  onChange={set("grossAmount")}
+                  placeholder="0.00"
+                />
               </div>
             </div>
-            {mismatch && (
+            {hasInputErrors && (
+              <div
+                style={{
+                  marginTop: 10,
+                  padding: "8px 12px",
+                  background: "#fef2f2",
+                  border: "1px solid #fecaca",
+                  borderRadius: 6,
+                  fontSize: 13,
+                  color: "#dc2626",
+                }}
+              >
+                {inputErrors.map((e, i) => <div key={i}>{e}</div>)}
+              </div>
+            )}
+            {!hasInputErrors && mismatch && (
               <div
                 style={{
                   marginTop: 10,
@@ -484,15 +576,19 @@ export default function InvoiceReview({ invoice, documents, vendors, costCentres
             {!isApproved && (
               <button
                 onClick={() => save("approve")}
-                disabled={saving || mismatch}
-                title={mismatch ? "Fix amount mismatch before approving" : ""}
+                disabled={approveDisabled}
+                title={
+                  hasInputErrors ? "Fix invalid input before approving"
+                    : mismatch ? "Fix amount mismatch before approving"
+                    : ""
+                }
                 style={{
                   padding: "10px 20px",
-                  background: mismatch ? "#e2e8f0" : "#16a34a",
-                  color: mismatch ? "#94a3b8" : "#fff",
+                  background: approveDisabled ? "#e2e8f0" : "#16a34a",
+                  color: approveDisabled ? "#94a3b8" : "#fff",
                   border: "none",
                   borderRadius: 6,
-                  cursor: saving || mismatch ? "default" : "pointer",
+                  cursor: approveDisabled ? "default" : "pointer",
                   fontSize: 14,
                   fontWeight: 600,
                 }}
@@ -501,9 +597,11 @@ export default function InvoiceReview({ invoice, documents, vendors, costCentres
               </button>
             )}
           </div>
-          {!isApproved && mismatch && (
+          {!isApproved && (hasInputErrors || mismatch) && (
             <div style={{ marginTop: 8, fontSize: 12, color: "#d97706" }}>
-              Approve is disabled until the amount mismatch is resolved.
+              {hasInputErrors
+                ? "Approve is disabled until invalid input is corrected."
+                : "Approve is disabled until the amount mismatch is resolved."}
             </div>
           )}
         </div>
