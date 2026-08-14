@@ -5,6 +5,10 @@ interface Vendor { id: number; name: string; taxId: string | null; address: stri
 
 const inputStyle: React.CSSProperties = { padding: "6px 8px", border: "1px solid #e2e8f0", borderRadius: 5, fontSize: 13 };
 
+async function fetchVendors(): Promise<Vendor[]> {
+  return fetch("/api/settings/vendors").then((response) => response.json());
+}
+
 export default function VendorsPage() {
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [loading, setLoading] = useState(true);
@@ -16,11 +20,20 @@ export default function VendorsPage() {
   const [editData, setEditData] = useState<Partial<Vendor>>({});
 
   async function load() {
-    const data = await fetch("/api/settings/vendors").then((r) => r.json());
+    const data = await fetchVendors();
     setVendors(data);
     setLoading(false);
   }
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    let cancelled = false;
+    void fetchVendors().then((data) => {
+      if (!cancelled) {
+        setVendors(data);
+        setLoading(false);
+      }
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   async function addVendor(e: React.FormEvent) {
     e.preventDefault();

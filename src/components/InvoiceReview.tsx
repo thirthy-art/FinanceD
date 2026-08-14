@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { safeIsAmountMismatch, safeCalculateBaseAmount, safeParseDecimal, formatDisplayAmount } from "@/src/lib/invoice-validation";
+import { safeIsAmountMismatch, safeCalculateBaseAmount, safeParseDecimal, formatDisplayAmount, toDecimal } from "@/src/lib/invoice-validation";
 import type { MimoInvoiceExtraction } from "@/src/lib/mimo-extraction";
 
 interface Vendor { id: number; name: string; }
@@ -240,7 +240,6 @@ export default function InvoiceReview({ invoice, documents, vendors, costCentres
   let grossDisplay = "";
   if (!hasInputErrors) {
     try {
-      const { toDecimal } = require("@/src/lib/invoice-validation");
       if (form.netAmount || form.vatAmount) {
         computedSum = toDecimal(form.netAmount).plus(toDecimal(form.vatAmount)).toFixed();
       }

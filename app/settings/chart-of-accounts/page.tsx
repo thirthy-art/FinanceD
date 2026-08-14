@@ -13,6 +13,10 @@ const typeColors: Record<string, React.CSSProperties> = {
   expense:   { background: "#fee2e2", color: "#991b1b" },
 };
 
+async function fetchAccounts(): Promise<Account[]> {
+  return fetch("/api/settings/chart-of-accounts").then((response) => response.json());
+}
+
 export default function ChartOfAccountsPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
@@ -24,11 +28,20 @@ export default function ChartOfAccountsPage() {
   const [editData, setEditData] = useState<Partial<Account>>({});
 
   async function load() {
-    const data = await fetch("/api/settings/chart-of-accounts").then((r) => r.json());
+    const data = await fetchAccounts();
     setAccounts(data);
     setLoading(false);
   }
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    let cancelled = false;
+    void fetchAccounts().then((data) => {
+      if (!cancelled) {
+        setAccounts(data);
+        setLoading(false);
+      }
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   async function addAccount(e: React.FormEvent) {
     e.preventDefault();

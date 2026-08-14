@@ -13,7 +13,7 @@ export const runtime = "nodejs";
 const DEFAULT_BASE_URL = "https://api.xiaomimimo.com/v1";
 const DEFAULT_MODEL = "mimo-v2.5";
 const IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
-const MAX_IMAGE_BYTES = 50 * 1024 * 1024;
+const MAX_BASE64_IMAGE_BYTES = 50 * 1024 * 1024;
 
 const MimoModelSchema = z.enum(["mimo-v2.5", "mimo-v2.5-pro"]);
 const MimoResponseSchema = z.object({
@@ -89,8 +89,9 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
 
     try {
       const fileStats = await stat(document.storagePath);
-      if (fileStats.size > MAX_IMAGE_BYTES) {
-        return errorResponse("The invoice image exceeds MiMo's 50 MB image limit.", 413);
+      const base64Size = 4 * Math.ceil(fileStats.size / 3);
+      if (base64Size > MAX_BASE64_IMAGE_BYTES) {
+        return errorResponse("The Base64-encoded invoice image exceeds MiMo's 50 MiB limit.", 413);
       }
       const image = await readFile(document.storagePath);
       userContent = [
