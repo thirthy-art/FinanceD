@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { isAmountMismatch, toDecimal } from "@/src/lib/invoice-validation";
+import { isAmountMismatch, toDecimal, calculateBaseAmount, formatDisplayAmount } from "@/src/lib/invoice-validation";
 
 interface Vendor { id: number; name: string; }
 interface CostCentre { id: number; code: string; name: string; }
@@ -19,6 +19,9 @@ interface Invoice {
   netAmount: string | null;
   vatAmount: string | null;
   grossAmount: string | null;
+  baseNetAmount: string | null;
+  baseVatAmount: string | null;
+  baseGrossAmount: string | null;
   costCentreId: number | null;
   expenseAccountId: number | null;
   notes: string | null;
@@ -32,6 +35,7 @@ interface Props {
   costCentres: CostCentre[];
   accounts: Account[];
   extractedFields: Record<string, string>;
+  baseCurrency: string;
 }
 
 const CURRENCIES = ["EUR", "USD", "GBP", "CHF", "CAD", "AUD", "JPY", "SEK", "NOK", "DKK", "RON", "BTC", "ETH", "USDT", "USDC"];
@@ -58,14 +62,23 @@ const inputStyle: React.CSSProperties = {
   color: "#1a202c",
 };
 
+const readOnlyStyle: React.CSSProperties = {
+  ...inputStyle,
+  background: "#f8fafc",
+  color: "#64748b",
+};
+
 const warnStyle: React.CSSProperties = {
   ...inputStyle,
   borderColor: "#f59e0b",
   background: "#fffbeb",
 };
 
-export default function InvoiceReview({ invoice, documents, vendors, costCentres, accounts, extractedFields }: Props) {
+export default function InvoiceReview({ invoice, documents, vendors, costCentres, accounts, extractedFields, baseCurrency }: Props) {
   const router = useRouter();
+  const isApproved = invoice.status === "approved";
+  const isSameCurrency = invoice.currency === baseCurrency;
+
   const [form, setForm] = useState({
     vendorId: invoice.vendorId ? String(invoice.vendorId) : "",
     newVendorName: "",
@@ -74,7 +87,7 @@ export default function InvoiceReview({ invoice, documents, vendors, costCentres
     dueDate: invoice.dueDate ?? extractedFields.dueDate ?? "",
     currency: invoice.currency ?? extractedFields.currency ?? "EUR",
     currencyType: invoice.currencyType ?? "fiat" as "fiat" | "crypto",
-    fxRateToBase: invoice.fxRateToBase ?? "1",
+    fxRateToBase: invoice.fxRateToBase ?? (isSameCurrency ? "1" : ""),
     netAmount: invoice.netAmount ?? extractedFields.netAmount ?? "",
     vatAmount: invoice.vatAmount ?? extractedFields.vatAmount ?? "",
     grossAmount: invoice.grossAmount ?? extractedFields.grossAmount ?? "",
@@ -89,6 +102,8 @@ export default function InvoiceReview({ invoice, documents, vendors, costCentres
 
   const doc = documents[0];
 
+  const currentIsSameCurrency = form.currency === baseCurrency;
+
   // Arithmetic validation using decimal strings
   const mismatch = isAmountMismatch(
     form.netAmount, form.vatAmount, form.grossAmount, form.currencyType
@@ -100,6 +115,13 @@ export default function InvoiceReview({ invoice, documents, vendors, costCentres
     ? toDecimal(form.grossAmount).toFixed()
     : "";
 
+  // Compute preview base amounts for display
+  const previewRate = currentIsSameCurrency ? "1" : (form.fxRateToBase || null);
+  const previewBaseNet = calculateBaseAmount(form.netAmount || null, previewRate);
+  const previewBaseVat = calculateBaseAmount(form.vatAmount || null, previewRate);
+  const previewBaseGross = calculateBaseAmount(form.grossAmount || null, previewRate);
+  const showBaseAmounts = previewBaseNet !== null || previewBaseVat !== null || previewBaseGross !== null;
+
   function set(k: string) {
     return (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
       setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -107,7 +129,7 @@ export default function InvoiceReview({ invoice, documents, vendors, costCentres
     };
   }
 
-  async function save(status: "draft" | "approved") {
+  async function save(action: "save" | "approve") {
     setSaving(true);
     setSaveError("");
     try {
@@ -124,8 +146,17 @@ export default function InvoiceReview({ invoice, documents, vendors, costCentres
         costCentreId: form.costCentreId ? Number(form.costCentreId) : null,
         expenseAccountId: form.expenseAccountId ? Number(form.expenseAccountId) : null,
         notes: form.notes || null,
-        status,
       };
+
+      // Only set status explicitly when approving a draft.
+      // For "save" on an approved invoice, omit status so server preserves it.
+      if (action === "approve") {
+        body.status = "approved";
+      } else if (!isApproved) {
+        body.status = "draft";
+      }
+      // When action === "save" && isApproved: omit status → server keeps "approved"
+
       if (addVendor && form.newVendorName) {
         body.newVendorName = form.newVendorName;
         body.vendorId = null;
@@ -139,9 +170,9 @@ export default function InvoiceReview({ invoice, documents, vendors, costCentres
         body: JSON.stringify(body),
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(JSON.stringify(json.error));
+      if (!res.ok) throw new Error(typeof json.error === "string" ? json.error : JSON.stringify(json.error));
       setSaved(true);
-      if (status === "approved") router.push("/");
+      if (action === "approve") router.push("/");
     } catch (err: unknown) {
       setSaveError(err instanceof Error ? err.message : "Save failed");
     } finally {
@@ -226,8 +257,8 @@ export default function InvoiceReview({ invoice, documents, vendors, costCentres
                 borderRadius: 12,
                 fontSize: 12,
                 fontWeight: 600,
-                background: invoice.status === "approved" ? "#dcfce7" : "#fef9c3",
-                color: invoice.status === "approved" ? "#166534" : "#713f12",
+                background: isApproved ? "#dcfce7" : "#fef9c3",
+                color: isApproved ? "#166534" : "#713f12",
               }}
             >
               {invoice.status}
@@ -241,7 +272,7 @@ export default function InvoiceReview({ invoice, documents, vendors, costCentres
               {!addVendor ? (
                 <div style={{ display: "flex", gap: 8 }}>
                   <select style={{ ...inputStyle, flex: 1 }} value={form.vendorId} onChange={set("vendorId")}>
-                    <option value="">— select vendor —</option>
+                    <option value="">-- select vendor --</option>
                     {vendors.map((v) => (
                       <option key={v.id} value={v.id}>{v.name}</option>
                     ))}
@@ -310,8 +341,14 @@ export default function InvoiceReview({ invoice, documents, vendors, costCentres
             )}
             {field(
               "FX Rate to Base",
-              <input style={inputStyle} value={form.fxRateToBase} onChange={set("fxRateToBase")} placeholder="1" />,
-              "1 unit of invoice currency = ? units of base currency"
+              currentIsSameCurrency ? (
+                <input style={readOnlyStyle} value="1" readOnly />
+              ) : (
+                <input style={inputStyle} value={form.fxRateToBase} onChange={set("fxRateToBase")} placeholder="Enter rate" />
+              ),
+              currentIsSameCurrency
+                ? `Same as base currency (${baseCurrency}) — rate is 1`
+                : `1 ${form.currency} = ? ${baseCurrency}`
             )}
           </div>
 
@@ -357,12 +394,40 @@ export default function InvoiceReview({ invoice, documents, vendors, costCentres
             )}
           </div>
 
+          {/* Base amounts (read-only) */}
+          {showBaseAmounts && (
+            <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: 16, marginBottom: 16 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "#0369a1", marginBottom: 12, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                Base Amounts ({baseCurrency})
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+                <div>
+                  <label style={{ display: "block", fontSize: 12, color: "#64748b", marginBottom: 4 }}>Base Net</label>
+                  <input style={readOnlyStyle} value={previewBaseNet ? formatDisplayAmount(previewBaseNet, "fiat") : ""} readOnly />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: 12, color: "#64748b", marginBottom: 4 }}>Base VAT</label>
+                  <input style={readOnlyStyle} value={previewBaseVat ? formatDisplayAmount(previewBaseVat, "fiat") : ""} readOnly />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: 12, color: "#64748b", marginBottom: 4 }}>Base Gross</label>
+                  <input style={readOnlyStyle} value={previewBaseGross ? formatDisplayAmount(previewBaseGross, "fiat") : ""} readOnly />
+                </div>
+              </div>
+              {!currentIsSameCurrency && !form.fxRateToBase && (
+                <div style={{ marginTop: 8, fontSize: 12, color: "#0369a1" }}>
+                  Enter an FX rate to see base amounts.
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Cost centre + account */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
             {field(
               "Cost Centre (optional)",
               <select style={inputStyle} value={form.costCentreId} onChange={set("costCentreId")}>
-                <option value="">— none —</option>
+                <option value="">-- none --</option>
                 {costCentres.map((c) => (
                   <option key={c.id} value={c.id}>{c.code} · {c.name}</option>
                 ))}
@@ -371,7 +436,7 @@ export default function InvoiceReview({ invoice, documents, vendors, costCentres
             {field(
               "Expense Account (optional)",
               <select style={inputStyle} value={form.expenseAccountId} onChange={set("expenseAccountId")}>
-                <option value="">— none —</option>
+                <option value="">-- none --</option>
                 {expenseAccounts.map((a) => (
                   <option key={a.id} value={a.id}>{a.code} · {a.name}</option>
                 ))}
@@ -396,13 +461,13 @@ export default function InvoiceReview({ invoice, documents, vendors, costCentres
           )}
           {saved && (
             <div style={{ marginBottom: 16, padding: "10px 14px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 6, color: "#16a34a", fontSize: 13 }}>
-              Draft saved
+              {isApproved ? "Changes saved" : "Draft saved"}
             </div>
           )}
 
           <div style={{ display: "flex", gap: 12 }}>
             <button
-              onClick={() => save("draft")}
+              onClick={() => save("save")}
               disabled={saving}
               style={{
                 padding: "10px 20px",
@@ -414,27 +479,29 @@ export default function InvoiceReview({ invoice, documents, vendors, costCentres
                 fontWeight: 500,
               }}
             >
-              Save Draft
+              {isApproved ? "Save Changes" : "Save Draft"}
             </button>
-            <button
-              onClick={() => save("approved")}
-              disabled={saving || mismatch}
-              title={mismatch ? "Fix amount mismatch before approving" : ""}
-              style={{
-                padding: "10px 20px",
-                background: mismatch ? "#e2e8f0" : "#16a34a",
-                color: mismatch ? "#94a3b8" : "#fff",
-                border: "none",
-                borderRadius: 6,
-                cursor: saving || mismatch ? "default" : "pointer",
-                fontSize: 14,
-                fontWeight: 600,
-              }}
-            >
-              Approve Invoice
-            </button>
+            {!isApproved && (
+              <button
+                onClick={() => save("approve")}
+                disabled={saving || mismatch}
+                title={mismatch ? "Fix amount mismatch before approving" : ""}
+                style={{
+                  padding: "10px 20px",
+                  background: mismatch ? "#e2e8f0" : "#16a34a",
+                  color: mismatch ? "#94a3b8" : "#fff",
+                  border: "none",
+                  borderRadius: 6,
+                  cursor: saving || mismatch ? "default" : "pointer",
+                  fontSize: 14,
+                  fontWeight: 600,
+                }}
+              >
+                Approve Invoice
+              </button>
+            )}
           </div>
-          {mismatch && (
+          {!isApproved && mismatch && (
             <div style={{ marginTop: 8, fontSize: 12, color: "#d97706" }}>
               Approve is disabled until the amount mismatch is resolved.
             </div>

@@ -1,10 +1,10 @@
 /**
- * Integration tests for the supplier invoice save/approve flow.
+ * DB-level integration tests for the supplier invoice schema and data integrity.
  *
  * These tests require a PostgreSQL connection (DATABASE_URL from .env).
- * They are skipped when no database is available.
+ * They are explicitly skipped when no database is available.
  */
-import { describe, it, expect, afterEach, beforeAll } from "vitest";
+import { describe, it, expect, afterEach, beforeAll, afterAll } from "vitest";
 import "dotenv/config";
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -12,25 +12,26 @@ import { eq } from "drizzle-orm";
 import * as schema from "../db/schema";
 import { calculateBaseAmount } from "../lib/invoice-validation";
 
+const HAS_DB = !!process.env.DATABASE_URL;
+
 // ── DB setup ─────────────────────────────────────────────────────────────────
 
 let pool: Pool;
 let db: ReturnType<typeof drizzle>;
-let dbAvailable = false;
 
 beforeAll(async () => {
-  try {
-    pool = new Pool({ connectionString: process.env.DATABASE_URL });
-    await pool.query("SELECT 1");
-    db = drizzle(pool, { schema });
-    dbAvailable = true;
-  } catch {
-    console.warn("No PostgreSQL connection — DB integration tests will be skipped");
-  }
+  if (!HAS_DB) return;
+  pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  await pool.query("SELECT 1");
+  db = drizzle(pool, { schema });
+});
+
+afterAll(async () => {
+  if (pool) await pool.end();
 });
 
 afterEach(async () => {
-  if (!dbAvailable) return;
+  if (!HAS_DB) return;
   for (const id of createdInvoiceIds) {
     await db.delete(schema.supplierInvoices).where(eq(schema.supplierInvoices.id, id));
   }
@@ -73,15 +74,13 @@ async function createDraftInvoice(overrides: Partial<typeof schema.supplierInvoi
 // ── Draft save ────────────────────────────────────────────────────────────────
 
 describe("draft save", () => {
-  it("creates an invoice in draft status", async () => {
-    if (!dbAvailable) return;
+  it.skipIf(!HAS_DB)("creates an invoice in draft status", async () => {
     const inv = await createDraftInvoice();
     expect(inv.status).toBe("draft");
     expect(inv.invoiceNumber).toBe("TEST-001");
   });
 
-  it("allows saving a draft with mismatched amounts", async () => {
-    if (!dbAvailable) return;
+  it.skipIf(!HAS_DB)("allows saving a draft with mismatched amounts", async () => {
     const inv = await createDraftInvoice({
       netAmount: "100.00",
       vatAmount: "20.00",
@@ -91,8 +90,7 @@ describe("draft save", () => {
     expect(inv.grossAmount).toBe("999.000000000000000000");
   });
 
-  it("updates invoice fields on subsequent save", async () => {
-    if (!dbAvailable) return;
+  it.skipIf(!HAS_DB)("updates invoice fields on subsequent save", async () => {
     const inv = await createDraftInvoice();
     const [updated] = await db
       .update(schema.supplierInvoices)
@@ -107,8 +105,7 @@ describe("draft save", () => {
 // ── Approval ──────────────────────────────────────────────────────────────────
 
 describe("approval", () => {
-  it("approves an invoice when amounts are consistent", async () => {
-    if (!dbAvailable) return;
+  it.skipIf(!HAS_DB)("approves an invoice when amounts are consistent", async () => {
     const inv = await createDraftInvoice();
     const [approved] = await db
       .update(schema.supplierInvoices)
@@ -118,8 +115,7 @@ describe("approval", () => {
     expect(approved.status).toBe("approved");
   });
 
-  it("approved invoice retains its data", async () => {
-    if (!dbAvailable) return;
+  it.skipIf(!HAS_DB)("approved invoice retains its data", async () => {
     const inv = await createDraftInvoice({ invoiceDate: "2024-01-15" });
     await db
       .update(schema.supplierInvoices)
@@ -133,8 +129,7 @@ describe("approval", () => {
     expect(fetched.invoiceDate).toBe("2024-01-15");
   });
 
-  it("approved invoice remains approved after valid edit", async () => {
-    if (!dbAvailable) return;
+  it.skipIf(!HAS_DB)("approved invoice remains approved after valid edit", async () => {
     const inv = await createDraftInvoice();
     await db
       .update(schema.supplierInvoices)
@@ -152,8 +147,7 @@ describe("approval", () => {
 // ── Decimal precision ─────────────────────────────────────────────────────────
 
 describe("decimal precision in DB", () => {
-  it("0.000000000000000001 survives persistence unchanged", async () => {
-    if (!dbAvailable) return;
+  it.skipIf(!HAS_DB)("0.000000000000000001 survives persistence unchanged", async () => {
     const tiny = "0.000000000000000001";
     const inv = await createDraftInvoice({
       netAmount: tiny,
@@ -169,8 +163,7 @@ describe("decimal precision in DB", () => {
     expect(fetched.grossAmount).toBe("0.000000000000000001");
   });
 
-  it("value with >15 significant digits is not corrupted", async () => {
-    if (!dbAvailable) return;
+  it.skipIf(!HAS_DB)("value with >15 significant digits is not corrupted", async () => {
     const precise = "12345678901234567.123456789012345678";
     const inv = await createDraftInvoice({
       netAmount: precise,
@@ -185,8 +178,7 @@ describe("decimal precision in DB", () => {
     expect(fetched.netAmount).toBe(precise);
   });
 
-  it("FX rate with 18 decimals survives persistence", async () => {
-    if (!dbAvailable) return;
+  it.skipIf(!HAS_DB)("FX rate with 18 decimals survives persistence", async () => {
     const rate = "0.000034567890123456";
     const inv = await createDraftInvoice({ fxRateToBase: rate });
     const [fetched] = await db
@@ -196,8 +188,7 @@ describe("decimal precision in DB", () => {
     expect(fetched.fxRateToBase).toBe("0.000034567890123456");
   });
 
-  it("base amounts store 4 decimal places", async () => {
-    if (!dbAvailable) return;
+  it.skipIf(!HAS_DB)("base amounts store 4 decimal places", async () => {
     const inv = await createDraftInvoice({
       baseNetAmount: "1234.5678",
       baseVatAmount: "246.9136",
@@ -216,8 +207,7 @@ describe("decimal precision in DB", () => {
 // ── FX rate independence ──────────────────────────────────────────────────────
 
 describe("FX rate independence", () => {
-  it("two invoices on same date can have different rates", async () => {
-    if (!dbAvailable) return;
+  it.skipIf(!HAS_DB)("two invoices on same date can have different rates", async () => {
     const inv1 = await createDraftInvoice({
       invoiceDate: "2024-06-15",
       currency: "USD",
@@ -235,13 +225,11 @@ describe("FX rate independence", () => {
     expect(f1.fxRateToBase).not.toBe(f2.fxRateToBase);
   });
 
-  it("changing FX rate does not change original amounts", async () => {
-    if (!dbAvailable) return;
+  it.skipIf(!HAS_DB)("changing FX rate does not change original amounts", async () => {
     const inv = await createDraftInvoice({
       netAmount: "1000.50",
       fxRateToBase: "1.2",
     });
-    // Simulate rate change
     await db
       .update(schema.supplierInvoices)
       .set({
@@ -254,16 +242,12 @@ describe("FX rate independence", () => {
       .select()
       .from(schema.supplierInvoices)
       .where(eq(schema.supplierInvoices.id, inv.id));
-    // Original amount unchanged
     expect(fetched.netAmount).toBe("1000.500000000000000000");
-    // Rate changed
     expect(fetched.fxRateToBase).toBe("1.500000000000000000");
-    // Base recalculated
     expect(fetched.baseNetAmount).toBe("1500.7500");
   });
 
-  it("approved invoice stays approved after FX rate edit", async () => {
-    if (!dbAvailable) return;
+  it.skipIf(!HAS_DB)("approved invoice stays approved after FX rate edit", async () => {
     const inv = await createDraftInvoice();
     await db
       .update(schema.supplierInvoices)
@@ -290,8 +274,7 @@ describe("FX rate independence", () => {
 // ── Document immutability ─────────────────────────────────────────────────────
 
 describe("document immutability", () => {
-  it("document table has no updatedAt column", async () => {
-    if (!dbAvailable) return;
+  it.skipIf(!HAS_DB)("document table has no updatedAt column", async () => {
     const inv = await createDraftInvoice();
     await db.insert(schema.supplierInvoiceDocuments).values({
       invoiceId: inv.id,

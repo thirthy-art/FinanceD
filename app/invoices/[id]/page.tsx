@@ -6,6 +6,7 @@ import {
   vendors,
   costCentres,
   chartOfAccounts,
+  companies,
 } from "@/src/db/schema";
 import { eq } from "drizzle-orm";
 import InvoiceReview from "@/src/components/InvoiceReview";
@@ -23,11 +24,12 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
 
   if (!invoice) notFound();
 
-  const [docs, vendorList, ccList, acctList] = await Promise.all([
+  const [docs, vendorList, ccList, acctList, [company]] = await Promise.all([
     db.select().from(supplierInvoiceDocuments).where(eq(supplierInvoiceDocuments.invoiceId, invoice.id)),
     db.select({ id: vendors.id, name: vendors.name }).from(vendors).where(eq(vendors.companyId, invoice.companyId)),
     db.select().from(costCentres).where(eq(costCentres.companyId, invoice.companyId)),
     db.select().from(chartOfAccounts).where(eq(chartOfAccounts.companyId, invoice.companyId)),
+    db.select({ baseCurrency: companies.baseCurrency }).from(companies).where(eq(companies.id, invoice.companyId)),
   ]);
 
   const extractedText = docs[0]?.extractedText ?? "";
@@ -52,6 +54,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
         costCentres={ccList}
         accounts={acctList}
         extractedFields={extractedFields}
+        baseCurrency={company?.baseCurrency ?? "EUR"}
       />
     </div>
   );

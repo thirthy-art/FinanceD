@@ -6,8 +6,77 @@ import {
   calculateBaseAmount,
   formatDisplayAmount,
   decimalAdd,
+  parseDecimalInput,
+  validatePositiveRate,
+  validateAmount,
   FIAT_TOLERANCE,
 } from "../lib/invoice-validation";
+
+// ── parseDecimalInput ────────────────────────────────────────────────────────
+
+describe("parseDecimalInput", () => {
+  it("returns null for null/undefined/empty/whitespace", () => {
+    expect(parseDecimalInput(null)).toBeNull();
+    expect(parseDecimalInput(undefined)).toBeNull();
+    expect(parseDecimalInput("")).toBeNull();
+    expect(parseDecimalInput("   ")).toBeNull();
+  });
+
+  it("normalizes '1234.56' (period decimal)", () => {
+    expect(parseDecimalInput("1234.56")).toBe("1234.56");
+  });
+
+  it("normalizes '1,234.56' (US/UK thousands + period)", () => {
+    expect(parseDecimalInput("1,234.56")).toBe("1234.56");
+  });
+
+  it("normalizes '1234,56' (European comma decimal, <=2 frac digits)", () => {
+    expect(parseDecimalInput("1234,56")).toBe("1234.56");
+  });
+
+  it("normalizes '1.234,56' (European thousands + comma decimal)", () => {
+    expect(parseDecimalInput("1.234,56")).toBe("1234.56");
+  });
+
+  it("handles crypto-length comma decimal '1234,567890123456789012345678'", () => {
+    expect(parseDecimalInput("1234,567890123456789012345678")).toBe("1234.567890123456789012345678");
+  });
+
+  it("handles multiple commas as thousands separators '1,234,567'", () => {
+    expect(parseDecimalInput("1,234,567")).toBe("1234567");
+  });
+
+  it("rejects ambiguous '1,234' (3 digits after single comma)", () => {
+    expect(() => parseDecimalInput("1,234")).toThrow(/[Aa]mbiguous/);
+  });
+
+  it("throws on malformed input", () => {
+    expect(() => parseDecimalInput("abc")).toThrow(/[Ii]nvalid/);
+    expect(() => parseDecimalInput("...")).toThrow(/[Ii]nvalid/);
+    expect(() => parseDecimalInput("$")).toThrow(/[Ii]nvalid/);
+  });
+
+  it("strips currency symbols before parsing", () => {
+    expect(parseDecimalInput("$1200.00")).toBe("1200");
+    expect(parseDecimalInput("€500")).toBe("500");
+  });
+
+  it("preserves 18-decimal crypto value exactly", () => {
+    const crypto = "0.000000000000000001";
+    expect(parseDecimalInput(crypto)).toBe("0.000000000000000001");
+  });
+
+  it("preserves values with >15 significant digits", () => {
+    const precise = "123456789012345678.123456789012345678";
+    expect(parseDecimalInput(precise)).toBe("123456789012345678.123456789012345678");
+  });
+
+  it("handles negative values", () => {
+    expect(parseDecimalInput("-500.25")).toBe("-500.25");
+  });
+});
+
+// ── cleanAmount ──────────────────────────────────────────────────────────────
 
 describe("cleanAmount", () => {
   it("returns '0' for null/undefined/empty", () => {
@@ -18,17 +87,17 @@ describe("cleanAmount", () => {
   });
 
   it("strips currency symbols", () => {
-    expect(cleanAmount("$1200.00")).toBe("1200.00");
+    expect(cleanAmount("$1200.00")).toBe("1200");
     expect(cleanAmount("€500")).toBe("500");
   });
 
   it("handles thousand separators", () => {
-    expect(cleanAmount("1,200.50")).toBe("1200.50");
-    expect(cleanAmount("1,200,000.00")).toBe("1200000.00");
+    expect(cleanAmount("1,200.50")).toBe("1200.5");
+    expect(cleanAmount("1,200,000.00")).toBe("1200000");
   });
 
   it("handles European comma-decimal format", () => {
-    expect(cleanAmount("1200,50")).toBe("1200.50");
+    expect(cleanAmount("1200,50")).toBe("1200.5");
   });
 
   it("preserves 18-decimal crypto value exactly", () => {
@@ -45,17 +114,61 @@ describe("cleanAmount", () => {
     expect(cleanAmount("-500.25")).toBe("-500.25");
   });
 
-  it("returns '0' for non-numeric garbage", () => {
-    expect(cleanAmount("abc")).toBe("0");
-    expect(cleanAmount("...")).toBe("0");
+  it("throws on non-numeric garbage", () => {
+    expect(() => cleanAmount("abc")).toThrow();
+    expect(() => cleanAmount("...")).toThrow();
   });
 });
+
+// ── validatePositiveRate ─────────────────────────────────────────────────────
+
+describe("validatePositiveRate", () => {
+  it("accepts a valid positive rate", () => {
+    expect(validatePositiveRate("1.2345")).toBe("1.2345");
+  });
+
+  it("rejects zero", () => {
+    expect(() => validatePositiveRate("0")).toThrow(/greater than zero/);
+  });
+
+  it("rejects negative", () => {
+    expect(() => validatePositiveRate("-1")).toThrow(/greater than zero/);
+  });
+
+  it("normalizes European format", () => {
+    expect(validatePositiveRate("1,25")).toBe("1.25");
+  });
+});
+
+// ── validateAmount ───────────────────────────────────────────────────────────
+
+describe("validateAmount", () => {
+  it("accepts valid amounts", () => {
+    expect(validateAmount("1000.50", "Net")).toBe("1000.5");
+  });
+
+  it("rejects negative amounts", () => {
+    expect(() => validateAmount("-100", "Net")).toThrow(/must not be negative/);
+  });
+
+  it("rejects excessive scale", () => {
+    expect(() => validateAmount("1.1234567890123456789", "Net")).toThrow(/exceeds/);
+  });
+
+  it("accepts 18 decimal places", () => {
+    expect(validateAmount("0.000000000000000001", "Net")).toBe("0.000000000000000001");
+  });
+});
+
+// ── FIAT_TOLERANCE ───────────────────────────────────────────────────────────
 
 describe("FIAT_TOLERANCE", () => {
   it("is 0.01", () => {
     expect(FIAT_TOLERANCE).toBe("0.01");
   });
 });
+
+// ── isAmountMismatch — fiat ──────────────────────────────────────────────────
 
 describe("isAmountMismatch — fiat", () => {
   it("returns false when net + vat exactly equals gross", () => {
@@ -83,7 +196,6 @@ describe("isAmountMismatch — fiat", () => {
   });
 
   it("uses decimal arithmetic, not floating point", () => {
-    // 0.1 + 0.2 === 0.30000000000000004 in JS but must equal 0.3 in decimal
     expect(isAmountMismatch("0.1", "0.2", "0.3", "fiat")).toBe(false);
   });
 
@@ -91,6 +203,8 @@ describe("isAmountMismatch — fiat", () => {
     expect(isAmountMismatch("99999999999999.99", "0.01", "100000000000000.00", "fiat")).toBe(false);
   });
 });
+
+// ── isAmountMismatch — crypto ────────────────────────────────────────────────
 
 describe("isAmountMismatch — crypto", () => {
   it("returns false when amounts match exactly", () => {
@@ -102,12 +216,10 @@ describe("isAmountMismatch — crypto", () => {
   });
 
   it("does not apply fiat tolerance to crypto", () => {
-    // 0.005 difference would pass fiat tolerance but must fail for crypto
     expect(isAmountMismatch("1", "0", "1.005", "crypto")).toBe(true);
   });
 
   it("crypto values are not converted to cents", () => {
-    // This value has 18 decimal places — converting to cents would lose precision
     const tiny = "0.000000000000000001";
     expect(isAmountMismatch(tiny, "0", tiny, "crypto")).toBe(false);
     expect(isAmountMismatch(tiny, "0", "0.000000000000000002", "crypto")).toBe(true);
@@ -121,16 +233,20 @@ describe("isAmountMismatch — crypto", () => {
   });
 });
 
+// ── calculateBaseAmount ──────────────────────────────────────────────────────
+
 describe("calculateBaseAmount", () => {
   it("returns original × fxRate rounded to 4dp", () => {
     expect(calculateBaseAmount("100", "1.2345")).toBe("123.4500");
   });
 
-  it("uses banker's rounding (ROUND_HALF_EVEN)", () => {
-    // 1.23455 rounded to 4dp: 5 rounds to even → 1.2346
+  it("uses ROUND_HALF_UP", () => {
+    // 1.23455 rounded to 4dp with ROUND_HALF_UP → 1.2346
     expect(calculateBaseAmount("1", "1.23455")).toBe("1.2346");
-    // 1.23445 rounded to 4dp: 5 rounds to even → 1.2344
-    expect(calculateBaseAmount("1", "1.23445")).toBe("1.2344");
+    // 1.23445 rounded to 4dp with ROUND_HALF_UP → 1.2345
+    expect(calculateBaseAmount("1", "1.23445")).toBe("1.2345");
+    // 1.23465 → 1.2347 (ROUND_HALF_UP: 5 always rounds up)
+    expect(calculateBaseAmount("1", "1.23465")).toBe("1.2347");
   });
 
   it("handles crypto amount × fiat rate", () => {
@@ -154,7 +270,6 @@ describe("calculateBaseAmount", () => {
   });
 
   it("uses decimal arithmetic, not floating point", () => {
-    // 0.1 * 3 = 0.3, not 0.30000000000000004
     expect(calculateBaseAmount("0.1", "3")).toBe("0.3000");
   });
 
@@ -166,10 +281,11 @@ describe("calculateBaseAmount", () => {
     const base2 = calculateBaseAmount(original, rate2);
     expect(base1).toBe("1200.6000");
     expect(base2).toBe("1500.7500");
-    // Original is never modified — it's a pure function
     expect(original).toBe("1000.50");
   });
 });
+
+// ── decimalAdd ───────────────────────────────────────────────────────────────
 
 describe("decimalAdd", () => {
   it("adds two decimal strings exactly", () => {
@@ -185,6 +301,8 @@ describe("decimalAdd", () => {
     expect(decimalAdd("3", undefined)).toBe("3");
   });
 });
+
+// ── formatDisplayAmount ──────────────────────────────────────────────────────
 
 describe("formatDisplayAmount", () => {
   it("formats fiat with 2 decimal places", () => {
@@ -216,6 +334,8 @@ describe("formatDisplayAmount", () => {
   });
 });
 
+// ── Full validation path ─────────────────────────────────────────────────────
+
 describe("decimal string survives full validation path", () => {
   it("18-decimal value is not corrupted through cleanAmount → toDecimal → validation", () => {
     const value = "0.000000000000000001";
@@ -236,16 +356,15 @@ describe("decimal string survives full validation path", () => {
 
   it("exact decimal strings survive API/form transformations without Number conversion", () => {
     const value = "123456789.123456789012345678";
-    // Simulate: form string → JSON body → zod validation → DB write → DB read → form
     const jsonBody = JSON.stringify({ netAmount: value });
     const parsed = JSON.parse(jsonBody);
-    // The critical assertion: the value remains a string, never goes through Number()
     expect(typeof parsed.netAmount).toBe("string");
     expect(parsed.netAmount).toBe(value);
-    // Validation accepts it
     expect(isAmountMismatch(parsed.netAmount, "0", parsed.netAmount, "crypto")).toBe(false);
   });
 });
+
+// ── FX rate independence ─────────────────────────────────────────────────────
 
 describe("FX rate independence", () => {
   it("two invoices on the same date can have different rates", () => {
@@ -263,5 +382,41 @@ describe("FX rate independence", () => {
     const amount = "500.25";
     const base = calculateBaseAmount(amount, "1");
     expect(base).toBe("500.2500");
+  });
+});
+
+// ── Decimal separator rules ──────────────────────────────────────────────────
+
+describe("decimal separator rules", () => {
+  it("period decimal: '1234.56' → 1234.56", () => {
+    expect(parseDecimalInput("1234.56")).toBe("1234.56");
+  });
+
+  it("US/UK thousands + period: '1,234.56' → 1234.56", () => {
+    expect(parseDecimalInput("1,234.56")).toBe("1234.56");
+  });
+
+  it("European comma decimal: '1234,56' → 1234.56", () => {
+    expect(parseDecimalInput("1234,56")).toBe("1234.56");
+  });
+
+  it("European thousands + comma: '1.234,56' → 1234.56", () => {
+    expect(parseDecimalInput("1.234,56")).toBe("1234.56");
+  });
+
+  it("single comma followed by >3 digits is decimal: '1234,5678' → 1234.5678", () => {
+    expect(parseDecimalInput("1234,5678")).toBe("1234.5678");
+  });
+
+  it("ambiguous single comma + exactly 3 digits rejects: '1,234'", () => {
+    expect(() => parseDecimalInput("1,234")).toThrow(/[Aa]mbiguous/);
+  });
+
+  it("multiple commas are thousands: '1,234,567' → 1234567", () => {
+    expect(parseDecimalInput("1,234,567")).toBe("1234567");
+  });
+
+  it("crypto with European comma: '0,000000000000000001'", () => {
+    expect(parseDecimalInput("0,000000000000000001")).toBe("0.000000000000000001");
   });
 });

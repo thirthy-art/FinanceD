@@ -51,8 +51,11 @@ Next.js (App Router), TypeScript, PostgreSQL, Drizzle ORM, Tailwind. Single repo
 - Original documents are immutable
 
 ## Development
-- Work on `main` unless explicitly directed otherwise
+- Never commit or push directly to `main`
+- Start from the latest `main`; work in an isolated task or review branch
 - Run `npm test`, `npm run lint`, `npm run build` before committing
+- Commit and push only the review branch; do not merge without owner approval
+- Destructive database changes require explicit owner approval
 - Versioned migrations: `npm run db:migrate` (do not use `drizzle-kit push`)
 - Idempotent seed: `npm run db:seed`
 - Preserve existing behaviour outside the approved task scope

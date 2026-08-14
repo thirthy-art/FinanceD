@@ -37,7 +37,10 @@ Not in V1: internal double-entry ledger, journal posting, period closing, revers
 - Each invoice owns its saved FX rate (`fxRateToBase`)
 - Direction: 1 unit of invoice currency = fxRateToBase units of company base currency
 - Base amount = original amount × fxRateToBase
+- If invoice currency equals company base currency, fxRateToBase is set to "1"
+- If invoice currency differs, fxRateToBase is left null until the user provides it
 - Saved rates are never automatically refreshed or overwritten
+- Market rates are never fetched automatically
 - Invoices on the same date can have different rates
 - Changing a rate recalculates only base amounts, never original amounts
 - Changing a rate does not change the invoice status
@@ -54,16 +57,35 @@ Not in V1: internal double-entry ledger, journal posting, period closing, revers
 - Fiat: net + VAT must equal gross within 0.01 tolerance (per-line rounding)
 - Crypto: net + VAT must equal gross exactly (no tolerance)
 - All arithmetic uses `decimal.js`, never floating-point
-- A meaningless empty invoice should not be approved, but due date is not required
+- Invalid nonblank decimal input returns a controlled 400/422 error, never a DB 500
+- Blank optional monetary fields become null, not "0"
+- fxRateToBase, when present, must be greater than zero
+- Ambiguous decimal formats (e.g. "1,234") are rejected with a request for correction
+
+## Approval Requirements
+- Approval requires: vendor, invoice number, invoice date, currency, net amount, VAT amount (including valid zero), gross amount, attached source document
+- Foreign-currency invoices also require a positive FX rate
+- Due date is optional
+- A meaningless empty invoice cannot be approved
+- Vendor creation and invoice update are wrapped in a DB transaction
+- An approved→draft downgrade via the ordinary edit form is blocked
 
 ## Database & Migrations
 - Versioned migrations via Drizzle (`npm run db:migrate`)
 - Do not use `drizzle-kit push` after initial setup
 - Seed is idempotent (`npm run db:seed`)
 
+## Rounding
+- Base-amount conversion (original × fxRateToBase → 4dp) uses `ROUND_HALF_UP`
+- Rounding is applied explicitly via a local argument, not through a global Decimal config
+- The rounding constant is exported from `src/lib/decimal.ts` as `BASE_ROUNDING`
+
 ## Development Workflow
-- Work directly on `main`
-- Do not create `claude/...` branches without explicit approval
-- Preserve existing behaviour outside the approved task
-- Run relevant verification (test, lint, build) before and after changes
+- Never commit or push directly to `main`
+- Start from the latest `main`; work in an isolated task or review branch
+- Run verification (test, lint, build) before committing
+- Commit and push only the review branch
+- Do not merge into `main` without explicit owner approval
+- Destructive database changes require explicit owner approval
+- Preserve existing behaviour outside the approved task scope
 - No speculative enterprise workflow or features
