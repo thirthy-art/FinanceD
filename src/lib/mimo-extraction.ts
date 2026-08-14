@@ -1,0 +1,79 @@
+import { z } from "zod";
+
+const nullableText = z.string().nullable();
+const nullableDecimal = z
+  .string()
+  .regex(/^-?(?:\d+(?:\.\d+)?|\.\d+)$/, "Expected a plain decimal string")
+  .nullable();
+
+export const MimoInvoiceLineSchema = z
+  .object({
+    lineNumber: nullableText,
+    descriptionOriginal: nullableText,
+    description: nullableText,
+    quantity: nullableDecimal,
+    unit: nullableText,
+    unitPrice: nullableDecimal,
+    netAmount: nullableDecimal,
+    vatRate: nullableDecimal,
+    vatAmount: nullableDecimal,
+    grossAmount: nullableDecimal,
+    sourcePage: z.number().int().positive().nullable(),
+  })
+  .strict();
+
+export const MimoInvoiceExtractionSchema = z
+  .object({
+    vendorOriginal: nullableText,
+    vendorNormalized: nullableText,
+    invoiceNumber: nullableText,
+    invoiceDate: nullableText,
+    dueDate: nullableText,
+    currency: nullableText,
+    netAmount: nullableDecimal,
+    vatAmount: nullableDecimal,
+    grossAmount: nullableDecimal,
+    lines: z.array(MimoInvoiceLineSchema),
+  })
+  .strict();
+
+export type MimoInvoiceExtraction = z.infer<typeof MimoInvoiceExtractionSchema>;
+
+export const MIMO_EXTRACTION_PROMPT = `Extract this supplier invoice and return JSON only, with no Markdown or explanation.
+
+Use exactly this shape and include every field:
+{
+  "vendorOriginal": string | null,
+  "vendorNormalized": string | null,
+  "invoiceNumber": string | null,
+  "invoiceDate": string | null,
+  "dueDate": string | null,
+  "currency": string | null,
+  "netAmount": decimal-string | null,
+  "vatAmount": decimal-string | null,
+  "grossAmount": decimal-string | null,
+  "lines": [{
+    "lineNumber": string | null,
+    "descriptionOriginal": string | null,
+    "description": string | null,
+    "quantity": decimal-string | null,
+    "unit": string | null,
+    "unitPrice": decimal-string | null,
+    "netAmount": decimal-string | null,
+    "vatRate": decimal-string | null,
+    "vatAmount": decimal-string | null,
+    "grossAmount": decimal-string | null,
+    "sourcePage": positive-integer | null
+  }]
+}
+
+Rules:
+- Never invent, infer, or calculate a missing or unreadable value. Use null.
+- Preserve original-language vendor and line-description text exactly in vendorOriginal and descriptionOriginal.
+- Put English-normalized vendor and description text only in vendorNormalized and description.
+- Extract every invoice table row in document order. Do not combine or reorder rows.
+- Keep discounts, fees, credits, surcharges, shipping, and adjustments as distinct lines.
+- Do not perform inventory, SKU, stock, catalog, accounting, tax-code, or expense categorization.
+- All money, percentage, and quantity values must be plain decimal strings without currency symbols, grouping separators, or percent signs. Never return numbers for them.
+- sourcePage must be a JSON integer when the page is known, otherwise null.
+- Return an empty lines array only when there are no invoice rows to extract.`;

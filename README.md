@@ -1,29 +1,32 @@
 # FinanceD
 
-Supplier invoice capture and review application.
+Modular pre-accounting and cash-visibility software for SMEs.
 
 ## Prerequisites
 
-- Node.js 18+
-- PostgreSQL 14+
+- Node.js 22 (see `.nvmrc`)
+- PostgreSQL 15+
 
 ## Setup
 
 ```bash
-# 1. Install dependencies
+# 1. Use correct Node version
+nvm use
+
+# 2. Install dependencies
 npm install
 
-# 2. Copy and configure environment
+# 3. Copy and configure environment
 cp .env.example .env
-# Edit .env with your database URL
+# Edit .env with your DATABASE_URL
 
-# 3. Push schema to database
-npm run db:push
+# 4. Apply versioned migrations
+npm run db:migrate
 
-# 4. Seed initial data (chart of accounts, cost centres)
-npx tsx src/db/seed.ts
+# 5. Seed demo data (idempotent — safe to run multiple times)
+npm run db:seed
 
-# 5. Run development server
+# 6. Run development server
 npm run dev
 ```
 
@@ -43,6 +46,25 @@ Open [http://localhost:3000](http://localhost:3000).
 |---|---|---|
 | `DATABASE_URL` | — | PostgreSQL connection string |
 | `UPLOAD_DIR` | `./uploads` | Directory for storing uploaded documents |
+
+## Commands
+
+```
+npm run dev          # development server
+npm test             # run tests
+npm run lint         # lint
+npm run build        # production build
+npm run db:generate  # generate new migration after schema changes
+npm run db:migrate   # apply versioned migrations
+npm run db:seed      # seed demo data (idempotent)
+```
+
+## Monetary precision
+
+- Original-currency amounts support up to 18 decimal places (crypto-safe)
+- Base-currency amounts use 4 decimal places (fiat)
+- All monetary arithmetic uses `decimal.js` — never JavaScript floating-point
+- Each invoice stores its own FX rate; rates are never auto-refreshed
 
 ## OCR support
 

@@ -10,9 +10,8 @@ VAT Amount: 200.00 USD
 Total: 1200.00 USD`;
 
 describe("parseInvoiceFields", () => {
-  it("returns empty object for empty string (extraction failure path)", () => {
-    const fields = parseInvoiceFields("");
-    expect(fields).toEqual({});
+  it("returns empty object for empty string", () => {
+    expect(parseInvoiceFields("")).toEqual({});
   });
 
   it("returns empty object for whitespace-only string", () => {
@@ -44,22 +43,25 @@ describe("parseInvoiceFields", () => {
     expect(fields.currency).toBe("USD");
   });
 
-  it("extracts net amount", () => {
+  it("extracts net amount as decimal string", () => {
     const fields = parseInvoiceFields(SAMPLE_INVOICE_TEXT);
     expect(fields.netAmount).toBe("1000.00");
+    expect(typeof fields.netAmount).toBe("string");
   });
 
-  it("extracts VAT amount", () => {
+  it("extracts VAT amount as decimal string", () => {
     const fields = parseInvoiceFields(SAMPLE_INVOICE_TEXT);
     expect(fields.vatAmount).toBe("200.00");
+    expect(typeof fields.vatAmount).toBe("string");
   });
 
-  it("extracts gross amount from 'Total' line", () => {
+  it("extracts gross amount as decimal string", () => {
     const fields = parseInvoiceFields(SAMPLE_INVOICE_TEXT);
     expect(fields.grossAmount).toBe("1200.00");
+    expect(typeof fields.grossAmount).toBe("string");
   });
 
-  it("handles ISO date format in invoice date", () => {
+  it("handles ISO date format", () => {
     const text = "Supplier Inc\nInvoice No: S-001\nDate: 2024-03-20\nTotal: 500.00";
     const fields = parseInvoiceFields(text);
     expect(fields.invoiceDate).toBe("2024-03-20");
@@ -69,22 +71,24 @@ describe("parseInvoiceFields", () => {
     expect(() => parseInvoiceFields("!@#$%^&*()")).not.toThrow();
   });
 
-  it("returns only the fields it can detect, not invented data", () => {
+  it("returns only detected fields, not fabricated data", () => {
     const fields = parseInvoiceFields("Random line\nAnother line");
-    // Should not fabricate amounts
     expect(fields.netAmount).toBeUndefined();
     expect(fields.vatAmount).toBeUndefined();
     expect(fields.grossAmount).toBeUndefined();
   });
-});
 
-// ── Extraction failure → manual entry is still possible ────────────────────────
-//
-// When extraction returns empty text (scanned PDF, corrupt file, OCR failure),
-// the upload route returns `fields: {}` and the UI pre-fills nothing.
-// The user can enter every field manually. This test verifies that the
-// parseInvoiceFields function does not throw or return invalid data for the
-// empty-text case — the behaviour contract the upload route relies on.
+  it("all returned amount values are strings, never numbers", () => {
+    const fields = parseInvoiceFields(SAMPLE_INVOICE_TEXT);
+    for (const [key, v] of Object.entries(fields)) {
+      expect(typeof v).toBe("string");
+      if (key.includes("Amount")) {
+        // Amount strings should be valid decimal representations
+        expect(v).toMatch(/^\d+\.?\d*$/);
+      }
+    }
+  });
+});
 
 describe("extraction failure contract", () => {
   it("empty extracted text produces empty fields without error", () => {
