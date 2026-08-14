@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { safeIsAmountMismatch, safeCalculateBaseAmount, safeParseDecimal, formatDisplayAmount } from "@/src/lib/invoice-validation";
+import type { MimoInvoiceExtraction } from "@/src/lib/mimo-extraction";
 
 interface Vendor { id: number; name: string; }
 interface CostCentre { id: number; code: string; name: string; }
@@ -101,6 +102,97 @@ function validateMonetaryFields(form: { netAmount: string; vatAmount: string; gr
   return fieldErrors;
 }
 
+function extractionValue(value: string | number | null) {
+  return value === null ? <span style={{ color: "#94a3b8" }}>—</span> : String(value);
+}
+
+function MimoExtractionPreview({ extraction }: { extraction: MimoInvoiceExtraction }) {
+  const headerFields: Array<[string, string | null]> = [
+    ["Vendor (original)", extraction.vendorOriginal],
+    ["Vendor (English)", extraction.vendorNormalized],
+    ["Invoice number", extraction.invoiceNumber],
+    ["Invoice date", extraction.invoiceDate],
+    ["Due date", extraction.dueDate],
+    ["Currency", extraction.currency],
+    ["Net amount", extraction.netAmount],
+    ["VAT amount", extraction.vatAmount],
+    ["Gross amount", extraction.grossAmount],
+  ];
+
+  const cellStyle: React.CSSProperties = {
+    padding: "8px 10px",
+    borderBottom: "1px solid #e2e8f0",
+    verticalAlign: "top",
+    fontSize: 12,
+    whiteSpace: "nowrap",
+  };
+
+  return (
+    <div style={{ background: "#fff", border: "1px solid #bfdbfe", borderRadius: 8, marginBottom: 16, overflow: "hidden" }}>
+      <div style={{ padding: "14px 16px", background: "#eff6ff", borderBottom: "1px solid #bfdbfe" }}>
+        <div style={{ fontWeight: 700, color: "#1e3a5f" }}>MiMo extraction preview</div>
+        <div style={{ marginTop: 3, fontSize: 12, color: "#64748b" }}>
+          Read-only AI output. Nothing below has been copied into the invoice fields or saved.
+        </div>
+      </div>
+
+      <div style={{ padding: 16 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 10 }}>
+          Invoice header
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10, marginBottom: 20 }}>
+          {headerFields.map(([label, value]) => (
+            <div key={label} style={{ background: "#f8fafc", borderRadius: 6, padding: "9px 10px", minWidth: 0 }}>
+              <div style={{ color: "#64748b", fontSize: 10, fontWeight: 600, textTransform: "uppercase" }}>{label}</div>
+              <div style={{ color: "#1e293b", fontSize: 13, marginTop: 3, overflowWrap: "anywhere" }}>{extractionValue(value)}</div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ fontSize: 12, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 10 }}>
+          Invoice lines ({extraction.lines.length})
+        </div>
+        {extraction.lines.length === 0 ? (
+          <div style={{ color: "#64748b", fontSize: 13 }}>MiMo did not find any invoice lines.</div>
+        ) : (
+          <div style={{ overflowX: "auto", border: "1px solid #e2e8f0", borderRadius: 6 }}>
+            <table style={{ borderCollapse: "collapse", minWidth: 1180, width: "100%", textAlign: "left" }}>
+              <thead style={{ background: "#f8fafc", color: "#475569" }}>
+                <tr>
+                  {[
+                    "#", "Line", "Description (original)", "Description (English)", "Qty", "Unit",
+                    "Unit price", "Net", "VAT rate", "VAT", "Gross", "Page",
+                  ].map((heading) => (
+                    <th key={heading} style={{ ...cellStyle, fontWeight: 700 }}>{heading}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {extraction.lines.map((line, index) => (
+                  <tr key={`${line.lineNumber ?? "line"}-${index}`}>
+                    <td style={cellStyle}>{index + 1}</td>
+                    <td style={cellStyle}>{extractionValue(line.lineNumber)}</td>
+                    <td style={{ ...cellStyle, minWidth: 220, whiteSpace: "normal" }}>{extractionValue(line.descriptionOriginal)}</td>
+                    <td style={{ ...cellStyle, minWidth: 220, whiteSpace: "normal" }}>{extractionValue(line.description)}</td>
+                    <td style={cellStyle}>{extractionValue(line.quantity)}</td>
+                    <td style={cellStyle}>{extractionValue(line.unit)}</td>
+                    <td style={cellStyle}>{extractionValue(line.unitPrice)}</td>
+                    <td style={cellStyle}>{extractionValue(line.netAmount)}</td>
+                    <td style={cellStyle}>{extractionValue(line.vatRate)}</td>
+                    <td style={cellStyle}>{extractionValue(line.vatAmount)}</td>
+                    <td style={cellStyle}>{extractionValue(line.grossAmount)}</td>
+                    <td style={cellStyle}>{extractionValue(line.sourcePage)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function InvoiceReview({ invoice, documents, vendors, costCentres, accounts, extractedFields, baseCurrency }: Props) {
   const router = useRouter();
   const isApproved = invoice.status === "approved";
@@ -126,6 +218,9 @@ export default function InvoiceReview({ invoice, documents, vendors, costCentres
   const [saveError, setSaveError] = useState("");
   const [saved, setSaved] = useState(false);
   const [addVendor, setAddVendor] = useState(false);
+  const [extracting, setExtracting] = useState(false);
+  const [extractionError, setExtractionError] = useState("");
+  const [mimoExtraction, setMimoExtraction] = useState<MimoInvoiceExtraction | null>(null);
 
   const doc = documents[0];
 
@@ -234,6 +329,30 @@ export default function InvoiceReview({ invoice, documents, vendors, costCentres
     }
   }
 
+  async function tryMimoExtraction() {
+    setExtracting(true);
+    setExtractionError("");
+    setMimoExtraction(null);
+    try {
+      const response = await fetch(`/api/invoices/${invoice.id}/extract`, { method: "POST" });
+      let json: { error?: unknown; extraction?: MimoInvoiceExtraction };
+      try {
+        json = await response.json();
+      } catch {
+        throw new Error("AI extraction returned an unreadable response.");
+      }
+      if (!response.ok) {
+        throw new Error(typeof json.error === "string" ? json.error : "AI extraction failed.");
+      }
+      if (!json.extraction) throw new Error("AI extraction returned no preview data.");
+      setMimoExtraction(json.extraction);
+    } catch (error: unknown) {
+      setExtractionError(error instanceof Error ? error.message : "AI extraction failed.");
+    } finally {
+      setExtracting(false);
+    }
+  }
+
   const approveDisabled = saving || mismatch || hasInputErrors;
   const expenseAccounts = accounts.filter((a) => a.type === "expense" && a.isActive);
 
@@ -296,6 +415,39 @@ export default function InvoiceReview({ invoice, documents, vendors, costCentres
 
       {/* Editable fields */}
       <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: 16, marginBottom: 16 }}>
+          <div style={{ fontWeight: 700, color: "#1e3a5f", marginBottom: 5 }}>AI extraction preview</div>
+          <div style={{ fontSize: 13, lineHeight: 1.5, color: "#475569", marginBottom: 12 }}>
+            Before sending: this invoice document will be processed by <strong>Xiaomi MiMo</strong>.
+            The result is a preview only and will not change saved or manually entered invoice values.
+          </div>
+          <button
+            type="button"
+            onClick={tryMimoExtraction}
+            disabled={!doc || extracting}
+            style={{
+              padding: "9px 14px",
+              border: "none",
+              borderRadius: 6,
+              background: !doc || extracting ? "#cbd5e1" : "#2563eb",
+              color: "#fff",
+              cursor: !doc || extracting ? "default" : "pointer",
+              fontSize: 13,
+              fontWeight: 600,
+            }}
+          >
+            {extracting ? "Extracting with MiMo…" : "Try AI extraction"}
+          </button>
+          {!doc && <div style={{ marginTop: 8, color: "#64748b", fontSize: 12 }}>Attach a document before trying AI extraction.</div>}
+          {extractionError && (
+            <div style={{ marginTop: 12, padding: "9px 12px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 6, color: "#b91c1c", fontSize: 13 }}>
+              {extractionError}
+            </div>
+          )}
+        </div>
+
+        {mimoExtraction && <MimoExtractionPreview extraction={mimoExtraction} />}
+
         <div
           style={{
             background: "#fff",
