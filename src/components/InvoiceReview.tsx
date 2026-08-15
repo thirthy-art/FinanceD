@@ -5,8 +5,7 @@ import { safeIsAmountMismatch, safeCalculateBaseAmount, safeParseDecimal, format
 import type { AiInvoiceExtraction } from "@/src/lib/ai-extraction";
 import type { EditableInvoiceLine } from "@/src/lib/invoice-lines";
 import { editableLineToInput } from "@/src/lib/invoice-lines";
-import { cohereAiInvoiceLines, type AiLineCoherenceResult } from "@/src/lib/ai-line-coherence";
-import { aiLinesToEditable, applyExtractionLines, applyExtractionToDraft } from "@/src/lib/apply-ai-extraction";
+import { applyExtractionLines, applyExtractionToDraft, extractionLinesToEditable } from "@/src/lib/apply-ai-extraction";
 import InvoiceLinesEditor from "@/src/components/InvoiceLinesEditor";
 import { selectableExpenseAccounts } from "@/src/lib/coa-hierarchy";
 
@@ -113,7 +112,7 @@ function extractionValue(value: string | number | null) {
   return value === null ? <span style={{ color: "#94a3b8" }}>—</span> : String(value);
 }
 
-function AiExtractionPreview({ extraction, lineCoherence }: { extraction: AiInvoiceExtraction; lineCoherence: AiLineCoherenceResult }) {
+function AiExtractionPreview({ extraction }: { extraction: AiInvoiceExtraction }) {
   const headerFields: Array<[string, string | null]> = [
     ["Vendor (original)", extraction.vendorOriginal],
     ["Vendor (English)", extraction.vendorNormalized],
@@ -155,25 +154,25 @@ function AiExtractionPreview({ extraction, lineCoherence }: { extraction: AiInvo
         </div>
 
         <div style={{ fontSize: 12, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 10 }}>
-          Invoice lines ({lineCoherence.previewLines.length})
+          Invoice lines ({extraction.lines.length})
         </div>
-        {lineCoherence.previewLines.length === 0 ? (
+        {extraction.lines.length === 0 ? (
           <div style={{ color: "#64748b", fontSize: 13 }}>AI extraction did not find any invoice lines.</div>
         ) : (
           <div style={{ overflowX: "auto", border: "1px solid #e2e8f0", borderRadius: 6 }}>
-            <table style={{ borderCollapse: "collapse", minWidth: 1420, width: "100%", textAlign: "left" }}>
+            <table style={{ borderCollapse: "collapse", minWidth: 1180, width: "100%", textAlign: "left" }}>
               <thead style={{ background: "#f8fafc", color: "#475569" }}>
                 <tr>
                   {[
                     "#", "Line", "Description (original)", "Description (English)", "Qty", "Unit",
-                    "Unit price", "Price", "Amount", "Net", "VAT rate", "VAT", "Gross", "Page", "Warning",
+                    "Unit price", "Net", "VAT rate", "VAT", "Gross", "Page",
                   ].map((heading) => (
                     <th key={heading} style={{ ...cellStyle, fontWeight: 700 }}>{heading}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {lineCoherence.previewLines.map((line, index) => (
+                {extraction.lines.map((line, index) => (
                   <tr key={`${line.lineNumber ?? "line"}-${index}`}>
                     <td style={cellStyle}>{index + 1}</td>
                     <td style={cellStyle}>{extractionValue(line.lineNumber)}</td>
@@ -182,27 +181,17 @@ function AiExtractionPreview({ extraction, lineCoherence }: { extraction: AiInvo
                     <td style={cellStyle}>{extractionValue(line.quantity)}</td>
                     <td style={cellStyle}>{extractionValue(line.unit)}</td>
                     <td style={cellStyle}>{extractionValue(line.unitPrice)}</td>
-                    <td style={cellStyle}>{extractionValue(line.extendedPrice)}</td>
-                    <td style={cellStyle}>{extractionValue(line.sourceAmount)}</td>
                     <td style={cellStyle}>{extractionValue(line.netAmount)}</td>
                     <td style={cellStyle}>{extractionValue(line.vatRate)}</td>
                     <td style={cellStyle}>{extractionValue(line.vatAmount)}</td>
                     <td style={cellStyle}>{extractionValue(line.grossAmount)}</td>
                     <td style={cellStyle}>{extractionValue(line.sourcePage)}</td>
-                    <td style={{ ...cellStyle, minWidth: 220, whiteSpace: "normal", color: "#b45309" }}>
-                      {lineCoherence.warnings.filter((warning) => warning.lineIndex === index).map((warning) => warning.message).join(" ") || "-"}
-                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         )}
-        {lineCoherence.warnings.filter((warning) => warning.lineIndex === null).map((warning) => (
-          <div key={warning.message} style={{ marginTop: 10, padding: "8px 10px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 5, color: "#92400e", fontSize: 12 }}>
-            {warning.message}
-          </div>
-        ))}
       </div>
     </div>
   );
@@ -249,13 +238,6 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
   const doc = documents[0];
 
   const currentIsSameCurrency = form.currency === baseCurrency;
-  const lineCoherence = aiExtraction
-    ? cohereAiInvoiceLines(aiExtraction.lines, {
-      invoiceNetAmount: (aiExtraction.netAmount ?? form.netAmount) || null,
-      invoiceGrossAmount: (aiExtraction.grossAmount ?? form.grossAmount) || null,
-      currencyType: form.currencyType,
-    })
-    : null;
 
   // Validate monetary fields defensively — never throws
   const inputErrors = validateMonetaryFields(form);
@@ -399,21 +381,18 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
   }
 
   function applyAiExtraction() {
-    if (!aiExtraction || !lineCoherence) return;
+    if (!aiExtraction) return;
     const draftResult = applyExtractionToDraft(form, aiExtraction, vendorOptions);
     const lineResult = applyExtractionLines(
       editableLines,
-      aiLinesToEditable(lineCoherence.applicationLines),
+      extractionLinesToEditable(aiExtraction),
       lastAppliedLineSignature,
     );
 
     const applied = [...draftResult.appliedFields];
     const skipped = draftResult.skippedFields.filter((field) => !field.includes("(unrecognized date)"));
-    const warnings = [
-      ...draftResult.skippedFields.filter((field) => field.includes("(unrecognized date)")),
-      ...lineCoherence.warnings.map((warning) => warning.message),
-    ];
-    if (lineCoherence.applicationLines.length > 0) {
+    const warnings = draftResult.skippedFields.filter((field) => field.includes("(unrecognized date)"));
+    if (aiExtraction.lines.length > 0) {
       if (lineResult.applied) applied.push("Invoice lines");
       else skipped.push("Invoice lines");
     }
@@ -600,7 +579,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
           )}
         </div>
 
-        {aiExtraction && lineCoherence && <AiExtractionPreview extraction={aiExtraction} lineCoherence={lineCoherence} />}
+        {aiExtraction && <AiExtractionPreview extraction={aiExtraction} />}
 
         <div
           style={{

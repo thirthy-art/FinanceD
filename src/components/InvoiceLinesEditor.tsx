@@ -1,7 +1,7 @@
 "use client";
 
 import type { EditableInvoiceLine } from "@/src/lib/invoice-lines";
-import { emptyEditableInvoiceLine, summarizeInvoiceLineNetAmounts } from "@/src/lib/invoice-lines";
+import { emptyEditableInvoiceLine, sumInvoiceLineAmounts } from "@/src/lib/invoice-lines";
 import { safeParseDecimal, toDecimal } from "@/src/lib/invoice-validation";
 
 interface Props {
@@ -20,11 +20,11 @@ const inputStyle: React.CSSProperties = {
 };
 
 export default function InvoiceLinesEditor({ lines, invoiceNetAmount, onChange }: Props) {
-  const lineAmountSummary = summarizeInvoiceLineNetAmounts(lines);
+  const lineAmountSummary = sumInvoiceLineAmounts(lines);
   const parsedInvoiceNet = safeParseDecimal(invoiceNetAmount);
   const comparableInvoiceNet = parsedInvoiceNet.error ? null : parsedInvoiceNet.value;
   const amountsMismatch = lines.length > 0
-    && lineAmountSummary.isComplete
+    && lineAmountSummary.invalidLineNumbers.length === 0
     && comparableInvoiceNet !== null
     && !toDecimal(lineAmountSummary.sum).equals(toDecimal(comparableInvoiceNet));
 
@@ -91,7 +91,7 @@ export default function InvoiceLinesEditor({ lines, invoiceNetAmount, onChange }
       <div style={{ marginTop: 12, padding: 12, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 6, fontSize: 13 }}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 16 }}>
           <span style={{ color: "#475569" }}>Sum of invoice lines</span>
-          <strong style={{ color: "#1e293b" }}>{lineAmountSummary.sum ?? "Incomplete / unavailable"}</strong>
+          <strong style={{ color: "#1e293b" }}>{lineAmountSummary.sum}</strong>
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 16, marginTop: 5 }}>
           <span style={{ color: "#475569" }}>Invoice net amount</span>
@@ -99,12 +99,7 @@ export default function InvoiceLinesEditor({ lines, invoiceNetAmount, onChange }
         </div>
         {lineAmountSummary.invalidLineNumbers.length > 0 && (
           <div style={{ marginTop: 9, padding: "8px 10px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 5, color: "#b91c1c" }}>
-            Enter a valid line net amount for line{lineAmountSummary.invalidLineNumbers.length === 1 ? "" : "s"} {lineAmountSummary.invalidLineNumbers.join(", ")} before comparing totals.
-          </div>
-        )}
-        {lineAmountSummary.missingLineNumbers.length > 0 && (
-          <div style={{ marginTop: 9, padding: "8px 10px", background: "#f8fafc", border: "1px solid #cbd5e1", borderRadius: 5, color: "#475569" }}>
-            Line-net total is incomplete because net amounts are unavailable for line{lineAmountSummary.missingLineNumbers.length === 1 ? "" : "s"} {lineAmountSummary.missingLineNumbers.join(", ")}.
+            Enter a valid line amount for line{lineAmountSummary.invalidLineNumbers.length === 1 ? "" : "s"} {lineAmountSummary.invalidLineNumbers.join(", ")} before comparing totals.
           </div>
         )}
         {amountsMismatch && (

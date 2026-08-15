@@ -111,35 +111,3 @@ export function sumInvoiceLineAmounts(lines: EditableInvoiceLine[]): { sum: stri
 
   return { sum: sum.toFixed(), invalidLineNumbers };
 }
-
-export function summarizeInvoiceLineNetAmounts(lines: EditableInvoiceLine[]): {
-  sum: string | null;
-  invalidLineNumbers: number[];
-  missingLineNumbers: number[];
-  isComplete: boolean;
-} {
-  let sum = toDecimal(null);
-  const invalidLineNumbers: number[] = [];
-  const missingLineNumbers: number[] = [];
-
-  lines.forEach((line, index) => {
-    if (!line.netAmount.trim()) {
-      missingLineNumbers.push(index + 1);
-      return;
-    }
-    const parsed = safeParseDecimal(line.netAmount);
-    if (parsed.error || parsed.value === null) {
-      invalidLineNumbers.push(index + 1);
-      return;
-    }
-    sum = sum.plus(toDecimal(parsed.value));
-  });
-
-  const isComplete = lines.length > 0 && invalidLineNumbers.length === 0 && missingLineNumbers.length === 0;
-  return {
-    sum: isComplete ? sum.toFixed() : null,
-    invalidLineNumbers,
-    missingLineNumbers,
-    isComplete,
-  };
-}
