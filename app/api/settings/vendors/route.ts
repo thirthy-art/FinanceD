@@ -21,6 +21,7 @@ export async function GET() {
       normalizedTaxId: vendors.normalizedTaxId,
       address: vendors.address,
       defaultCurrency: vendors.defaultCurrency,
+      externalVendorNumber: vendors.externalVendorNumber,
       isActive: vendors.isActive,
       invoiceCount: count(supplierInvoices.id),
     })
@@ -41,6 +42,7 @@ const CreateSchema = z.object({
   taxId: z.string().trim().max(50).optional(),
   address: z.string().max(10_000).optional(),
   defaultCurrency: z.string().trim().min(1).max(10).optional(),
+  externalVendorNumber: z.string().trim().max(100).optional(),
 });
 
 export async function POST(req: NextRequest) {

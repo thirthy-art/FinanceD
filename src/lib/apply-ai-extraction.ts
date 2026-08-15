@@ -103,6 +103,10 @@ export function extractionLinesToEditable(extraction: AiInvoiceExtraction): Edit
     vatAmount: line.vatAmount ?? "",
     grossAmount: line.grossAmount ?? "",
     sourcePage: line.sourcePage === null ? "" : String(line.sourcePage),
+    recognitionTreatment: "Immediate" as const,
+    recognitionStartDate: "",
+    recognitionEndDate: "",
+    accountingAccountNumber: "",
   }));
 }
 

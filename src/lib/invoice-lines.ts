@@ -16,6 +16,10 @@ export const InvoiceLineInputSchema = z.object({
   vatAmount: nullableDecimalInput,
   grossAmount: nullableDecimalInput,
   sourcePage: z.number().int().positive().nullable(),
+  recognitionTreatment: z.enum(["Immediate", "Prepaid"]).default("Immediate"),
+  recognitionStartDate: nullableText(10),
+  recognitionEndDate: nullableText(10),
+  accountingAccountNumber: nullableText(50),
 });
 
 export type InvoiceLineInput = z.infer<typeof InvoiceLineInputSchema>;
@@ -33,6 +37,10 @@ export interface EditableInvoiceLine {
   vatAmount: string;
   grossAmount: string;
   sourcePage: string;
+  recognitionTreatment: "Immediate" | "Prepaid";
+  recognitionStartDate: string;
+  recognitionEndDate: string;
+  accountingAccountNumber: string;
 }
 
 const DECIMAL_FIELDS = [
@@ -60,6 +68,11 @@ export function normalizeInvoiceLineInput(line: InvoiceLineInput, index: number)
     }
     normalized[field] = value;
   }
+  // Carry recognition fields through unchanged
+  normalized.recognitionTreatment = line.recognitionTreatment ?? "Immediate";
+  normalized.recognitionStartDate = line.recognitionStartDate ?? null;
+  normalized.recognitionEndDate = line.recognitionEndDate ?? null;
+  normalized.accountingAccountNumber = line.accountingAccountNumber ?? null;
   return normalized;
 }
 
@@ -76,6 +89,10 @@ export function emptyEditableInvoiceLine(): EditableInvoiceLine {
     vatAmount: "",
     grossAmount: "",
     sourcePage: "",
+    recognitionTreatment: "Immediate",
+    recognitionStartDate: "",
+    recognitionEndDate: "",
+    accountingAccountNumber: "",
   };
 }
 
@@ -93,7 +110,29 @@ export function editableLineToInput(line: EditableInvoiceLine): InvoiceLineInput
     vatAmount: nullable(line.vatAmount),
     grossAmount: nullable(line.grossAmount),
     sourcePage: line.sourcePage.trim() ? Number(line.sourcePage) : null,
+    recognitionTreatment: line.recognitionTreatment,
+    recognitionStartDate: nullable(line.recognitionStartDate),
+    recognitionEndDate: nullable(line.recognitionEndDate),
+    accountingAccountNumber: nullable(line.accountingAccountNumber),
   };
+}
+
+/**
+ * Validate recognition fields for an invoice line at approval time.
+ * Returns an error message or null if valid.
+ */
+export function validateLineRecognitionForApproval(
+  line: InvoiceLineInput,
+  lineNumber: number
+): string | null {
+  if (line.recognitionTreatment !== "Prepaid") return null;
+  if (!line.recognitionStartDate || !line.recognitionEndDate) {
+    return `Line ${lineNumber}: Prepaid treatment requires both start and end dates.`;
+  }
+  if (line.recognitionEndDate < line.recognitionStartDate) {
+    return `Line ${lineNumber}: Recognition end date must be on or after start date.`;
+  }
+  return null;
 }
 
 export function sumInvoiceLineAmounts(lines: EditableInvoiceLine[]): { sum: string; invalidLineNumbers: number[] } {

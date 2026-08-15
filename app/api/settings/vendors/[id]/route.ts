@@ -10,6 +10,7 @@ const UpdateSchema = z.object({
   taxId: z.string().trim().max(50).nullable().optional(),
   address: z.string().max(10_000).nullable().optional(),
   defaultCurrency: z.string().trim().min(1).max(10).nullable().optional(),
+  externalVendorNumber: z.string().trim().max(100).nullable().optional(),
   isActive: z.boolean().optional(),
 });
 

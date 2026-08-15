@@ -29,6 +29,11 @@ export const accountTypeEnum = pgEnum("account_type", [
   "expense",
 ]);
 
+export const recognitionTreatmentEnum = pgEnum("recognition_treatment", [
+  "Immediate",
+  "Prepaid",
+]);
+
 export const currencyTypeEnum = pgEnum("currency_type", [
   "fiat",
   "crypto",
@@ -90,6 +95,7 @@ export const vendors = pgTable("vendors", {
   normalizedTaxId: varchar("normalized_tax_id", { length: 50 }),
   address: text("address"),
   defaultCurrency: varchar("default_currency", { length: 10 }),
+  externalVendorNumber: varchar("external_vendor_number", { length: 100 }),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -162,6 +168,10 @@ export const supplierInvoiceLines = pgTable("supplier_invoice_lines", {
   vatAmount: numeric("vat_amount", { precision: 38, scale: 18 }),
   grossAmount: numeric("gross_amount", { precision: 38, scale: 18 }),
   sourcePage: integer("source_page"),
+  recognitionTreatment: recognitionTreatmentEnum("recognition_treatment").notNull().default("Immediate"),
+  recognitionStartDate: varchar("recognition_start_date", { length: 10 }),
+  recognitionEndDate: varchar("recognition_end_date", { length: 10 }),
+  accountingAccountNumber: varchar("accounting_account_number", { length: 50 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => ({

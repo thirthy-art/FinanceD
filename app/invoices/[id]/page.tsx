@@ -76,6 +76,10 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
           vatAmount: line.vatAmount ?? "",
           grossAmount: line.grossAmount ?? "",
           sourcePage: line.sourcePage === null ? "" : String(line.sourcePage),
+          recognitionTreatment: line.recognitionTreatment ?? "Immediate",
+          recognitionStartDate: line.recognitionStartDate ?? "",
+          recognitionEndDate: line.recognitionEndDate ?? "",
+          accountingAccountNumber: line.accountingAccountNumber ?? "",
         }))}
         vendors={vendorList}
         costCentres={ccList}

@@ -5,6 +5,7 @@ export interface InvoiceExportRow {
   id: number;
   vendorName: string | null;
   vendorTaxId: string | null;
+  vendorExternalNumber: string | null;
   invoiceNumber: string | null;
   invoiceDate: string | null;
   dueDate: string | null;
@@ -39,6 +40,10 @@ export interface InvoiceLineExportRow {
   vatAmount: string | null;
   grossAmount: string | null;
   sourcePage: number | null;
+  recognitionTreatment: "Immediate" | "Prepaid";
+  recognitionStartDate: string | null;
+  recognitionEndDate: string | null;
+  accountingAccountNumber: string | null;
 }
 
 const fiatFormat = "0.00";
@@ -93,6 +98,7 @@ export function createInvoiceExportWorkbook(invoices: InvoiceExportRow[], lines:
     { header: "Invoice ID", key: "invoiceId", width: 12 },
     { header: "Vendor Name", key: "vendorName", width: 28 },
     { header: "Vendor VAT/Tax ID", key: "vendorTaxId", width: 20 },
+    { header: "Vendor External No.", key: "vendorExternalNumber", width: 20 },
     { header: "Invoice Number", key: "invoiceNumber", width: 20 },
     { header: "Invoice Date", key: "invoiceDate", width: 14 },
     { header: "Due Date", key: "dueDate", width: 14 },
@@ -111,6 +117,7 @@ export function createInvoiceExportWorkbook(invoices: InvoiceExportRow[], lines:
       invoiceId: invoice.id,
       vendorName: invoice.vendorName,
       vendorTaxId: invoice.vendorTaxId,
+      vendorExternalNumber: invoice.vendorExternalNumber,
       invoiceNumber: invoice.invoiceNumber,
       currency: invoice.currency,
       status: invoice.status,
@@ -147,6 +154,10 @@ export function createInvoiceExportWorkbook(invoices: InvoiceExportRow[], lines:
     { header: "VAT Amount", key: "vatAmount", width: 18 },
     { header: "Gross Amount", key: "grossAmount", width: 18 },
     { header: "Source Page", key: "sourcePage", width: 14 },
+    { header: "Recognition Treatment", key: "recognitionTreatment", width: 22 },
+    { header: "Recognition Start Date", key: "recognitionStartDate", width: 22 },
+    { header: "Recognition End Date", key: "recognitionEndDate", width: 20 },
+    { header: "Accounting Account No.", key: "accountingAccountNumber", width: 24 },
   ];
 
   for (const line of lines) {
@@ -162,8 +173,12 @@ export function createInvoiceExportWorkbook(invoices: InvoiceExportRow[], lines:
       description: line.description,
       unit: line.unit,
       sourcePage: line.sourcePage,
+      recognitionTreatment: line.recognitionTreatment,
+      accountingAccountNumber: line.accountingAccountNumber,
     });
     setDateCell(row.getCell("invoiceDate"), line.invoiceDate);
+    setDateCell(row.getCell("recognitionStartDate"), line.recognitionStartDate);
+    setDateCell(row.getCell("recognitionEndDate"), line.recognitionEndDate);
     const invoiceFormat = line.currencyType === "crypto" ? precisionFormat : fiatFormat;
     setDecimalCell(row.getCell("quantity"), line.quantity, precisionFormat);
     setDecimalCell(row.getCell("unitPrice"), line.unitPrice, invoiceFormat);

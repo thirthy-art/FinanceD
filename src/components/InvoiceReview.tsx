@@ -436,7 +436,12 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
     }
   }
 
-  const approveDisabled = saving || mismatch || hasInputErrors;
+  const prepaidLinesInvalid = editableLines.some((line) => {
+    if (line.recognitionTreatment !== "Prepaid") return false;
+    if (!line.recognitionStartDate || !line.recognitionEndDate) return true;
+    return line.recognitionEndDate < line.recognitionStartDate;
+  });
+  const approveDisabled = saving || mismatch || hasInputErrors || prepaidLinesInvalid;
   const expenseAccounts = selectableExpenseAccounts(accounts);
 
   return (
@@ -780,6 +785,10 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
           <InvoiceLinesEditor
             lines={editableLines}
             invoiceNetAmount={form.netAmount}
+            invoiceDate={form.invoiceDate}
+            invoiceFxRate={form.fxRateToBase || "1"}
+            invoiceCurrency={form.currency}
+            baseCurrency={baseCurrency}
             onChange={(nextLines) => {
               setEditableLines(nextLines);
               setSaved(false);
@@ -880,6 +889,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
                 title={
                   hasInputErrors ? "Fix invalid input before approving"
                     : mismatch ? "Fix amount mismatch before approving"
+                    : prepaidLinesInvalid ? "Fix prepaid recognition dates before approving"
                     : ""
                 }
                 style={{
@@ -921,11 +931,13 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
               </button>
             )}
           </div>
-          {!isApproved && (hasInputErrors || mismatch) && (
+          {!isApproved && (hasInputErrors || mismatch || prepaidLinesInvalid) && (
             <div style={{ marginTop: 8, fontSize: 12, color: "#d97706" }}>
               {hasInputErrors
                 ? "Approve is disabled until invalid input is corrected."
-                : "Approve is disabled until the amount mismatch is resolved."}
+                : mismatch
+                ? "Approve is disabled until the amount mismatch is resolved."
+                : "Approve is disabled until all prepaid recognition dates are valid."}
             </div>
           )}
         </div>

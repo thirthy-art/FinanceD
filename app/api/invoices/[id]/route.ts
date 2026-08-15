@@ -19,7 +19,7 @@ import {
   validateAmount,
   validateBaseAmount,
 } from "@/src/lib/invoice-validation";
-import { InvoiceLineInputSchema, normalizeInvoiceLineInput } from "@/src/lib/invoice-lines";
+import { InvoiceLineInputSchema, normalizeInvoiceLineInput, validateLineRecognitionForApproval } from "@/src/lib/invoice-lines";
 import { resolveSafeUploadPath } from "@/src/lib/safe-upload-path";
 import { findVendorIdentityMatches, normalizeVendorTaxId } from "@/src/lib/vendor-identity";
 
@@ -281,6 +281,32 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         { error: "Cannot approve: net + VAT does not match gross within the accepted tolerance." },
         { status: 422 }
       );
+    }
+
+    // Validate recognition fields on submitted lines
+    const linesToValidate = normalizedLines ?? [];
+    for (let i = 0; i < linesToValidate.length; i++) {
+      const err = validateLineRecognitionForApproval(linesToValidate[i], i + 1);
+      if (err) return NextResponse.json({ error: `Cannot approve: ${err}` }, { status: 422 });
+    }
+    // Also check persisted lines if no lines submitted in this request
+    if (!normalizedLines) {
+      const persistedLines = await db
+        .select({
+          recognitionTreatment: supplierInvoiceLines.recognitionTreatment,
+          recognitionStartDate: supplierInvoiceLines.recognitionStartDate,
+          recognitionEndDate: supplierInvoiceLines.recognitionEndDate,
+        })
+        .from(supplierInvoiceLines)
+        .where(eq(supplierInvoiceLines.invoiceId, Number(id)));
+      for (let i = 0; i < persistedLines.length; i++) {
+        const pl = persistedLines[i];
+        const err = validateLineRecognitionForApproval(
+          { recognitionTreatment: pl.recognitionTreatment, recognitionStartDate: pl.recognitionStartDate, recognitionEndDate: pl.recognitionEndDate } as Parameters<typeof validateLineRecognitionForApproval>[0],
+          i + 1
+        );
+        if (err) return NextResponse.json({ error: `Cannot approve: ${err}` }, { status: 422 });
+      }
     }
   }
 

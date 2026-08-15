@@ -10,6 +10,7 @@ export async function GET() {
       id: supplierInvoices.id,
       vendorName: vendors.name,
       vendorTaxId: vendors.taxId,
+      vendorExternalNumber: vendors.externalVendorNumber,
       invoiceNumber: supplierInvoices.invoiceNumber,
       invoiceDate: supplierInvoices.invoiceDate,
       dueDate: supplierInvoices.dueDate,
@@ -45,6 +46,10 @@ export async function GET() {
       vatAmount: supplierInvoiceLines.vatAmount,
       grossAmount: supplierInvoiceLines.grossAmount,
       sourcePage: supplierInvoiceLines.sourcePage,
+      recognitionTreatment: supplierInvoiceLines.recognitionTreatment,
+      recognitionStartDate: supplierInvoiceLines.recognitionStartDate,
+      recognitionEndDate: supplierInvoiceLines.recognitionEndDate,
+      accountingAccountNumber: supplierInvoiceLines.accountingAccountNumber,
     }).from(supplierInvoiceLines)
       .innerJoin(supplierInvoices, eq(supplierInvoiceLines.invoiceId, supplierInvoices.id))
       .leftJoin(vendors, eq(supplierInvoices.vendorId, vendors.id))
