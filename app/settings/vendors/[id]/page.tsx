@@ -12,8 +12,14 @@ function displayAmount(value: string | null) {
   try { return new Decimal(value).toFixed(); } catch { return value; }
 }
 
-export default async function VendorDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
+export default async function VendorDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ action?: string | string[] }>;
+}) {
+  const [{ id }, query] = await Promise.all([params, searchParams]);
   const vendorId = Number(id);
   if (!Number.isInteger(vendorId) || vendorId <= 0) notFound();
   const db = getDb();
@@ -88,7 +94,11 @@ export default async function VendorDetailPage({ params }: { params: Promise<{ i
             ))}</tbody>
           </table>
         )}
-        <VendorActions source={{ id: vendor.id, name: vendor.name, taxId: vendor.taxId, invoiceCount: invoiceRows.length }} targets={targets} />
+        <VendorActions
+          source={{ id: vendor.id, name: vendor.name, taxId: vendor.taxId, invoiceCount: invoiceRows.length }}
+          targets={targets}
+          initialMode={query.action === "merge" ? "merge" : "idle"}
+        />
       </section>
     </div>
   );

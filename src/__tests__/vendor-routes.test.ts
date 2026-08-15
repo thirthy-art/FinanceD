@@ -49,6 +49,7 @@ describe("vendor deletion and merge", () => {
   it.skipIf(!HAS_DB)("allows deletion only when the vendor has zero invoice references", async () => {
     const unreferenced = await vendor(`Unreferenced ${Date.now()}`);
     expect((await DELETE_VENDOR(new Request("http://localhost", { method: "DELETE" }), context(unreferenced.id))).status).toBe(200);
+    expect(await db.select().from(schema.vendors).where(eq(schema.vendors.id, unreferenced.id))).toHaveLength(0);
     vendorIds.splice(vendorIds.indexOf(unreferenced.id), 1);
 
     const referenced = await vendor(`Referenced ${Date.now()}`);

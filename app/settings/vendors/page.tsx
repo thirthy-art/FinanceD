@@ -2,6 +2,7 @@
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import VendorListActions from "@/src/components/VendorListActions";
 
 interface Vendor {
   id: number;
@@ -28,6 +29,7 @@ function VendorsContent() {
   const [newTaxId, setNewTaxId] = useState("");
   const [newCurrency, setNewCurrency] = useState("");
   const [addError, setAddError] = useState("");
+  const [actionError, setActionError] = useState("");
   const [editId, setEditId] = useState<number | null>(null);
   const [editData, setEditData] = useState<Partial<Vendor>>({});
   const action = searchParams.get("action");
@@ -83,6 +85,7 @@ function VendorsContent() {
     <div>
       <h1 style={{ fontSize: 20, fontWeight: 700, color: "#1e3a5f", marginBottom: 24 }}>Vendors</h1>
       {notice && <div style={{ marginBottom: 16, padding: 12, borderRadius: 6, background: "#ecfdf5", color: "#166534" }}>{notice}</div>}
+      {actionError && <div role="alert" style={{ marginBottom: 16, padding: 12, borderRadius: 6, background: "#fef2f2", color: "#b91c1c" }}>{actionError}</div>}
 
       <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden", marginBottom: 32 }}>
         {vendors.length === 0 ? (
@@ -130,7 +133,7 @@ function VendorsContent() {
                       <td style={{ padding: "10px 16px", color: v.possibleDuplicate ? "#b45309" : "#94a3b8" }}>
                         {v.possibleDuplicate ? "Possible duplicate" : "—"}
                       </td>
-                      <td style={{ padding: "10px 16px", display: "flex", gap: 8 }}>
+                      <td style={{ padding: "10px 16px", display: "flex", gap: 8, flexWrap: "wrap" }}>
                         <button onClick={() => { setEditId(v.id); setEditData({}); }} style={{ ...inputStyle, cursor: "pointer", fontSize: 12 }}>Edit</button>
                         <button
                           onClick={() => fetch(`/api/settings/vendors/${v.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ isActive: !v.isActive }) }).then(load)}
@@ -138,6 +141,7 @@ function VendorsContent() {
                         >
                           {v.isActive ? "Deactivate" : "Activate"}
                         </button>
+                        <VendorListActions vendor={v} onDeleted={load} onError={setActionError} />
                       </td>
                     </>
                   )}

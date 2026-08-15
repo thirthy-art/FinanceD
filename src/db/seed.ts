@@ -2,14 +2,14 @@ import "dotenv/config";
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import * as schema from "./schema";
-import { companies, chartOfAccounts, costCentres } from "./schema";
-import { seedCleaningAccounts } from "./seed-coa";
+import { companies, costCentres } from "./schema";
+import { seedExpenseAccounts } from "./seed-coa";
 
 async function seed() {
   const pool = new Pool({ connectionString: process.env.DATABASE_URL });
   const db = drizzle(pool, { schema });
 
-  // Reuse existing company or create one
+  // Reuse existing company or create one.
   const existing = await db.select().from(companies).limit(1);
   let companyId: number;
   if (existing.length) {
@@ -24,25 +24,10 @@ async function seed() {
     console.log("Created company, id:", companyId);
   }
 
-  // Chart of accounts — unique on (companyId, code) prevents duplicates
-  await db
-    .insert(chartOfAccounts)
-    .values([
-      { companyId, code: "1000", name: "Cash", type: "asset" as const },
-      { companyId, code: "1200", name: "Accounts Receivable", type: "asset" as const },
-      { companyId, code: "2000", name: "Accounts Payable", type: "liability" as const },
-      { companyId, code: "2100", name: "VAT Payable", type: "liability" as const },
-      { companyId, code: "4000", name: "Operating Expenses", type: "expense" as const },
-      { companyId, code: "4100", name: "Office Supplies", type: "expense" as const },
-      { companyId, code: "4200", name: "Professional Services", type: "expense" as const },
-      { companyId, code: "4300", name: "Travel & Entertainment", type: "expense" as const },
-      { companyId, code: "5000", name: "Revenue", type: "revenue" as const },
-    ])
-    .onConflictDoNothing();
+  // Chart of accounts: unique on (companyId, code) prevents duplicates.
+  await seedExpenseAccounts(db, companyId);
 
-  await seedCleaningAccounts(db, companyId);
-
-  // Cost centres — unique on (companyId, code) prevents duplicates
+  // Cost centres: unique on (companyId, code) prevents duplicates.
   await db
     .insert(costCentres)
     .values([

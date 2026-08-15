@@ -10,9 +10,17 @@ interface VendorSummary {
   invoiceCount: number;
 }
 
-export default function VendorActions({ source, targets }: { source: VendorSummary; targets: VendorSummary[] }) {
+export default function VendorActions({
+  source,
+  targets,
+  initialMode = "idle",
+}: {
+  source: VendorSummary;
+  targets: VendorSummary[];
+  initialMode?: "idle" | "merge";
+}) {
   const router = useRouter();
-  const [mode, setMode] = useState<"idle" | "delete" | "merge">("idle");
+  const [mode, setMode] = useState<"idle" | "delete" | "merge">(initialMode);
   const [targetId, setTargetId] = useState("");
   const [mergeReviewed, setMergeReviewed] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -54,7 +62,7 @@ export default function VendorActions({ source, targets }: { source: VendorSumma
   }
 
   return (
-    <div style={{ marginTop: 24, paddingTop: 20, borderTop: "1px solid #e2e8f0" }}>
+    <div id="vendor-actions" style={{ marginTop: 24, paddingTop: 20, borderTop: "1px solid #e2e8f0" }}>
       <div style={{ display: "flex", gap: 10 }}>
         <button onClick={() => { setMode("merge"); setError(""); }} style={buttonStyle}>Merge vendor</button>
         <button onClick={() => { setMode("delete"); setError(""); }} style={{ ...buttonStyle, color: "#fff", background: "#dc2626", borderColor: "#dc2626" }}>Delete vendor</button>
