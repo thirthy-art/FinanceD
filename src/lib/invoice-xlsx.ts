@@ -18,6 +18,8 @@ export interface InvoiceExportRow {
   baseVatAmount: string | null;
   baseGrossAmount: string | null;
   status: "draft" | "approved";
+  paymentStatus: "Unpaid" | "Paid";
+  paidDate: string | null;
 }
 
 export interface InvoiceLineExportRow {
@@ -110,6 +112,8 @@ export function createInvoiceExportWorkbook(invoices: InvoiceExportRow[], lines:
     { header: "Base VAT Amount", key: "baseVatAmount", width: 18 },
     { header: "Base Gross Amount", key: "baseGrossAmount", width: 19 },
     { header: "Status", key: "status", width: 12 },
+    { header: "Payment Status", key: "paymentStatus", width: 16 },
+    { header: "Paid Date", key: "paidDate", width: 14 },
   ];
 
   for (const invoice of invoices) {
@@ -121,9 +125,11 @@ export function createInvoiceExportWorkbook(invoices: InvoiceExportRow[], lines:
       invoiceNumber: invoice.invoiceNumber,
       currency: invoice.currency,
       status: invoice.status,
+      paymentStatus: invoice.paymentStatus,
     });
     setDateCell(row.getCell("invoiceDate"), invoice.invoiceDate);
     setDateCell(row.getCell("dueDate"), invoice.dueDate);
+    setDateCell(row.getCell("paidDate"), invoice.paidDate);
     const invoiceFormat = invoice.currencyType === "crypto" ? precisionFormat : fiatFormat;
     setDecimalCell(row.getCell("netAmount"), invoice.netAmount, invoiceFormat);
     setDecimalCell(row.getCell("vatAmount"), invoice.vatAmount, invoiceFormat);

@@ -34,6 +34,11 @@ export const recognitionTreatmentEnum = pgEnum("recognition_treatment", [
   "Prepaid",
 ]);
 
+export const paymentStatusEnum = pgEnum("payment_status", [
+  "Unpaid",
+  "Paid",
+]);
+
 export const currencyTypeEnum = pgEnum("currency_type", [
   "fiat",
   "crypto",
@@ -132,6 +137,8 @@ export const supplierInvoices = pgTable("supplier_invoices", {
   ),
   notes: text("notes"),
   status: invoiceStatusEnum("status").notNull().default("draft"),
+  paymentStatus: paymentStatusEnum("payment_status").notNull().default("Unpaid"),
+  paidDate: varchar("paid_date", { length: 10 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

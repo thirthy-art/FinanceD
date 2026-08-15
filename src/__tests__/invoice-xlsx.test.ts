@@ -10,6 +10,7 @@ describe("invoice XLSX export", () => {
       currency: "EUR", currencyType: "fiat" as const,
       netAmount: "52.000000000000000000", vatAmount: "9.88", grossAmount: "61.88",
       baseNetAmount: "52", baseVatAmount: "9.88", baseGrossAmount: "61.88", status: "approved" as const,
+      paymentStatus: "Unpaid" as const, paidDate: null,
     };
     const lines: InvoiceLineExportRow[] = Array.from({ length: 6 }, (_, index) => ({
       invoiceId: 7, vendorName: "ACME", vendorTaxId: "CY123", invoiceNumber: "INV-7",

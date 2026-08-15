@@ -42,6 +42,8 @@ const UpdateSchema = z.object({
   expenseAccountId: z.number().nullable().optional(),
   notes: z.string().nullable().optional(),
   status: z.enum(["draft", "approved"]).optional(),
+  paymentStatus: z.enum(["Unpaid", "Paid"]).optional(),
+  paidDate: z.string().nullable().optional(),
   lines: z.array(InvoiceLineInputSchema).max(1_000).optional(),
 });
 
@@ -480,6 +482,12 @@ function buildUpdateValues(
   if (data.costCentreId !== undefined) updateValues.costCentreId = data.costCentreId;
   if (data.expenseAccountId !== undefined) updateValues.expenseAccountId = data.expenseAccountId;
   if (data.notes !== undefined) updateValues.notes = data.notes;
+  if (data.paymentStatus !== undefined) updateValues.paymentStatus = data.paymentStatus;
+  if (data.paymentStatus === "Unpaid") {
+    updateValues.paidDate = null;
+  } else if (data.paidDate !== undefined) {
+    updateValues.paidDate = data.paidDate;
+  }
 
   // Recalculate base amounts when any monetary field or FX rate changes
   const monetaryFieldChanged =

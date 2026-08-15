@@ -32,6 +32,8 @@ interface Invoice {
   expenseAccountId: number | null;
   notes: string | null;
   status: "draft" | "approved";
+  paymentStatus: "Unpaid" | "Paid";
+  paidDate: string | null;
 }
 
 interface Props {
@@ -234,6 +236,11 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+  const [paymentStatus, setPaymentStatus] = useState<"Unpaid" | "Paid">(invoice.paymentStatus ?? "Unpaid");
+  const [paidDate, setPaidDate] = useState(invoice.paidDate ?? "");
+  const [pendingPaidDate, setPendingPaidDate] = useState(invoice.paidDate ?? "");
+  const [paymentSaving, setPaymentSaving] = useState(false);
+  const [paymentError, setPaymentError] = useState("");
 
   const doc = documents[0];
 
@@ -436,6 +443,49 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
     }
   }
 
+  async function markPaid() {
+    setPaymentSaving(true);
+    setPaymentError("");
+    try {
+      const res = await fetch(`/api/invoices/${invoice.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paymentStatus: "Paid", paidDate: pendingPaidDate || null }),
+      });
+      const json = await res.json() as { error?: unknown };
+      if (!res.ok) throw new Error(typeof json.error === "string" ? json.error : "Failed to update payment status");
+      setPaymentStatus("Paid");
+      setPaidDate(pendingPaidDate);
+      router.refresh();
+    } catch (err) {
+      setPaymentError(err instanceof Error ? err.message : "Failed to update payment status");
+    } finally {
+      setPaymentSaving(false);
+    }
+  }
+
+  async function markUnpaid() {
+    setPaymentSaving(true);
+    setPaymentError("");
+    try {
+      const res = await fetch(`/api/invoices/${invoice.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paymentStatus: "Unpaid" }),
+      });
+      const json = await res.json() as { error?: unknown };
+      if (!res.ok) throw new Error(typeof json.error === "string" ? json.error : "Failed to update payment status");
+      setPaymentStatus("Unpaid");
+      setPaidDate("");
+      setPendingPaidDate("");
+      router.refresh();
+    } catch (err) {
+      setPaymentError(err instanceof Error ? err.message : "Failed to update payment status");
+    } finally {
+      setPaymentSaving(false);
+    }
+  }
+
   const prepaidLinesInvalid = editableLines.some((line) => {
     if (line.recognitionTreatment !== "Prepaid") return false;
     if (!line.recognitionStartDate || !line.recognitionEndDate) return true;
@@ -594,20 +644,79 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
             padding: 24,
           }}
         >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
             <h2 style={{ fontSize: 18, fontWeight: 700, color: "#1e3a5f" }}>Invoice Details</h2>
-            <span
-              style={{
-                padding: "3px 12px",
-                borderRadius: 12,
-                fontSize: 12,
-                fontWeight: 600,
-                background: isApproved ? "#dcfce7" : "#fef9c3",
-                color: isApproved ? "#166534" : "#713f12",
-              }}
-            >
-              {invoice.status}
-            </span>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <span
+                style={{
+                  padding: "3px 12px",
+                  borderRadius: 12,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  background: isApproved ? "#dcfce7" : "#fef9c3",
+                  color: isApproved ? "#166534" : "#713f12",
+                }}
+              >
+                {invoice.status}
+              </span>
+              <span
+                style={{
+                  padding: "3px 12px",
+                  borderRadius: 12,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  background: paymentStatus === "Paid" ? "#dcfce7" : "#f1f5f9",
+                  color: paymentStatus === "Paid" ? "#166534" : "#475569",
+                }}
+              >
+                {paymentStatus}
+              </span>
+            </div>
+          </div>
+
+          {/* Payment status controls */}
+          <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: 12, marginBottom: 16 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: "#64748b", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+              Payment
+            </div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              {paymentStatus === "Unpaid" ? (
+                <>
+                  <input
+                    type="date"
+                    aria-label="Paid date"
+                    value={pendingPaidDate}
+                    onChange={(e) => setPendingPaidDate(e.target.value)}
+                    style={{ padding: "6px 8px", border: "1px solid #e2e8f0", borderRadius: 5, fontSize: 13 }}
+                  />
+                  <button
+                    type="button"
+                    onClick={markPaid}
+                    disabled={paymentSaving}
+                    style={{ padding: "6px 14px", border: "none", borderRadius: 5, background: paymentSaving ? "#cbd5e1" : "#16a34a", color: "#fff", cursor: paymentSaving ? "default" : "pointer", fontSize: 13, fontWeight: 600 }}
+                  >
+                    Mark paid
+                  </button>
+                </>
+              ) : (
+                <>
+                  {paidDate && <span style={{ fontSize: 13, color: "#475569" }}>Paid {paidDate}</span>}
+                  <button
+                    type="button"
+                    onClick={markUnpaid}
+                    disabled={paymentSaving}
+                    style={{ padding: "6px 14px", border: "1px solid #e2e8f0", borderRadius: 5, background: paymentSaving ? "#f1f5f9" : "#fff", color: "#475569", cursor: paymentSaving ? "default" : "pointer", fontSize: 13 }}
+                  >
+                    Mark unpaid
+                  </button>
+                </>
+              )}
+            </div>
+            {paymentError && (
+              <div style={{ marginTop: 8, padding: "6px 10px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 5, color: "#dc2626", fontSize: 12 }}>
+                {paymentError}
+              </div>
+            )}
           </div>
 
           {/* Vendor */}

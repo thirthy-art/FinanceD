@@ -23,6 +23,8 @@ export async function GET() {
       baseVatAmount: supplierInvoices.baseVatAmount,
       baseGrossAmount: supplierInvoices.baseGrossAmount,
       status: supplierInvoices.status,
+      paymentStatus: supplierInvoices.paymentStatus,
+      paidDate: supplierInvoices.paidDate,
     }).from(supplierInvoices)
       .leftJoin(vendors, eq(supplierInvoices.vendorId, vendors.id))
       .orderBy(desc(supplierInvoices.createdAt)),

@@ -36,6 +36,13 @@
       "when": 1786806357156,
       "tag": "0004_expense_recognition",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1786808419546,
+      "tag": "0005_minimal_paid_status",
+      "breakpoints": true
     }
   ]
 }
