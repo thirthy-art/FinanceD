@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { AiInvoiceExtraction } from "@/src/lib/ai-extraction";
 import { AiInvoiceExtractionSchema } from "@/src/lib/ai-extraction";
+import { cohereAiInvoiceLines } from "@/src/lib/ai-line-coherence";
 import { applyExtractionLines, applyExtractionToDraft, extractionLinesToEditable } from "@/src/lib/apply-ai-extraction";
-import { sumInvoiceLineAmounts } from "@/src/lib/invoice-lines";
+import { summarizeInvoiceLineNetAmounts, sumInvoiceLineAmounts } from "@/src/lib/invoice-lines";
 
 const extraction: AiInvoiceExtraction = {
   vendorOriginal: "ACME LTD",
@@ -22,6 +23,8 @@ const extraction: AiInvoiceExtraction = {
     quantity: "2.5",
     unit: "hours",
     unitPrice: "40.04",
+    extendedPrice: null,
+    sourceAmount: null,
     netAmount: "100.10",
     vatRate: "20",
     vatAmount: "20.02",
@@ -149,5 +152,102 @@ describe("applying AI extraction", () => {
     });
 
     expect(sumInvoiceLineAmounts(lines)).toEqual({ sum: "0.3", invalidLineNumbers: [] });
+  });
+});
+
+describe("AI invoice-line coherence", () => {
+  const highTechLine = {
+    ...extraction.lines[0],
+    lineNumber: "13010001",
+    descriptionOriginal: "HighTech item",
+    description: "HighTech item",
+    quantity: "3",
+    unit: "pcs",
+    unitPrice: "3.69",
+    extendedPrice: "11.07",
+    sourceAmount: "10.97",
+    netAmount: null,
+    vatRate: "19.00",
+    vatAmount: null,
+    grossAmount: null,
+  };
+
+  it("validates Qty × U.Price against Price without treating Price as the unit price", () => {
+    const result = cohereAiInvoiceLines([highTechLine], {
+      invoiceNetAmount: null,
+      invoiceGrossAmount: "10.97",
+    });
+
+    expect(result.warnings).toEqual([]);
+    expect(result.previewLines[0]).toMatchObject({ quantity: "3", unitPrice: "3.69", extendedPrice: "11.07", sourceAmount: "10.97" });
+    expect(result.applicationLines[0].unitPrice).toBe("3.69");
+    expect(result.applicationLines[0].unitPrice).not.toBe("11.07");
+  });
+
+  it("maps a complete source Amount column to gross when it reconciles with invoice gross", () => {
+    const result = cohereAiInvoiceLines([
+      highTechLine,
+      {
+        ...highTechLine,
+        lineNumber: "13010002",
+        descriptionOriginal: "Second item",
+        description: "Second item",
+        quantity: null,
+        unitPrice: null,
+        extendedPrice: null,
+        sourceAmount: "1039.03",
+        vatRate: null,
+      },
+    ], {
+      invoiceNetAmount: "882.37",
+      invoiceGrossAmount: "1050.00",
+    });
+
+    expect(result.sourceAmountMeaning).toBe("gross");
+    expect(result.applicationLines.map((line) => line.grossAmount)).toEqual(["10.97", "1039.03"]);
+    expect(result.applicationLines.map((line) => line.netAmount)).toEqual([null, null]);
+    expect(result.applicationLines.map((line) => line.vatAmount)).toEqual([null, null]);
+    expect(result.previewLines[0].extendedPrice).toBe("11.07");
+    expect(result.previewLines[0].sourceAmount).toBe("10.97");
+  });
+
+  it("preserves decimal quantities exactly", () => {
+    const result = cohereAiInvoiceLines([
+      { ...highTechLine, lineNumber: "1", quantity: "1.75", unitPrice: null, extendedPrice: null, sourceAmount: null },
+      { ...highTechLine, lineNumber: "2", quantity: "4.50", unitPrice: null, extendedPrice: null, sourceAmount: null },
+      { ...highTechLine, lineNumber: "3", quantity: "3.800", unitPrice: null, extendedPrice: null, sourceAmount: null },
+    ], { invoiceNetAmount: null, invoiceGrossAmount: null });
+
+    expect(result.applicationLines.map((line) => line.quantity)).toEqual(["1.75", "4.50", "3.800"]);
+  });
+
+  it("preserves a suspicious row's text and order but does not apply its numerical fields", () => {
+    const result = cohereAiInvoiceLines([
+      { ...highTechLine, extendedPrice: "11.09" },
+      { ...highTechLine, lineNumber: "13010002", descriptionOriginal: "Second item", description: "Second item", sourceAmount: null },
+    ], { invoiceNetAmount: null, invoiceGrossAmount: null });
+
+    expect(result.previewLines.map((line) => line.descriptionOriginal)).toEqual(["HighTech item", "Second item"]);
+    expect(result.previewLines[0]).toMatchObject({ lineNumber: "13010001", quantity: "3", unitPrice: "3.69", extendedPrice: "11.09", sourcePage: 1 });
+    expect(result.applicationLines[0]).toMatchObject({
+      quantity: null,
+      unitPrice: null,
+      netAmount: null,
+      vatRate: null,
+      vatAmount: null,
+      grossAmount: null,
+    });
+    expect(result.warnings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ lineIndex: 0, message: expect.stringContaining("Row 13010001") }),
+    ]));
+  });
+
+  it("reports an incomplete line-net total instead of a false net mismatch", () => {
+    const summary = summarizeInvoiceLineNetAmounts(extractionLinesToEditable({
+      ...extraction,
+      lines: [highTechLine],
+    }));
+
+    expect(summary).toMatchObject({ sum: null, isComplete: false, missingLineNumbers: [1] });
   });
 });

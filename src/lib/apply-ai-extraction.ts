@@ -90,8 +90,8 @@ export function applyExtractionToDraft<T extends ExtractionDraftFields>(
   return { draft, appliedFields, skippedFields, vendorResolution };
 }
 
-export function extractionLinesToEditable(extraction: AiInvoiceExtraction): EditableInvoiceLine[] {
-  return extraction.lines.map((line) => ({
+export function aiLinesToEditable(lines: AiInvoiceExtraction["lines"]): EditableInvoiceLine[] {
+  return lines.map((line) => ({
     lineNumber: line.lineNumber ?? "",
     descriptionOriginal: line.descriptionOriginal ?? "",
     description: line.description ?? "",
@@ -104,6 +104,10 @@ export function extractionLinesToEditable(extraction: AiInvoiceExtraction): Edit
     grossAmount: line.grossAmount ?? "",
     sourcePage: line.sourcePage === null ? "" : String(line.sourcePage),
   }));
+}
+
+export function extractionLinesToEditable(extraction: AiInvoiceExtraction): EditableInvoiceLine[] {
+  return aiLinesToEditable(extraction.lines);
 }
 
 export function invoiceLinesSignature(lines: EditableInvoiceLine[]): string {

@@ -13,6 +13,8 @@ export const AiInvoiceLineSchema = z.object({
   quantity: nullableDecimal,
   unit: nullableText,
   unitPrice: nullableDecimal,
+  extendedPrice: nullableDecimal,
+  sourceAmount: nullableDecimal,
   netAmount: nullableDecimal,
   vatRate: nullableDecimal,
   vatAmount: nullableDecimal,
@@ -57,6 +59,8 @@ Use exactly this shape and include every field:
     "quantity": decimal-string | null,
     "unit": string | null,
     "unitPrice": decimal-string | null,
+    "extendedPrice": decimal-string | null,
+    "sourceAmount": decimal-string | null,
     "netAmount": decimal-string | null,
     "vatRate": decimal-string | null,
     "vatAmount": decimal-string | null,
@@ -75,6 +79,9 @@ Rules:
 - vendorOriginal and vendorNormalized must contain only the vendor's legal or trading name. Never include its postal address, contact details, VAT/Tax labels, Tax ID value, or the entire document header in either vendor-name field.
 - Extract vendorTaxId only when a VAT or Tax ID is explicitly visible in the document. Preserve its displayed value exactly; never infer or invent it.
 - Extract every invoice table row in document order. Do not combine or reorder rows.
+- Respect explicit document column headers including Qty, Quantity, U.Price, Unit Price, Price, Amount, and VAT %. Preserve decimal quantities exactly as printed.
+- When both U.Price/Unit Price and Price are visible, U.Price/Unit Price is unitPrice and Price is extendedPrice. Never put an extended Price into unitPrice. Use quantity × unitPrice only as a decimal coherence check against an explicit extendedPrice.
+- Put an explicit document Amount column in sourceAmount first. Do not assume Amount is line net: determine whether its aggregate reconciles with the invoice net or gross header. Do not infer or calculate line net, VAT, or gross values that are not explicitly printed.
 - Keep discounts, fees, credits, surcharges, shipping, and adjustments as distinct lines.
 - Do not perform inventory, SKU, stock, catalog, accounting, tax-code, or expense categorization.
 - All money, percentage, and quantity values must be plain decimal strings without currency symbols, grouping separators, or percent signs. Never return numbers for them.
