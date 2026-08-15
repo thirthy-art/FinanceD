@@ -1,6 +1,7 @@
 import type { AiInvoiceExtraction } from "./ai-extraction";
 import { normalizeDateForInput } from "./date";
 import type { EditableInvoiceLine } from "./invoice-lines";
+import { findVendorIdentityMatches, type VendorIdentityCandidate } from "./vendor-identity";
 
 export interface ExtractionDraftFields {
   vendorId: string;
@@ -11,26 +12,33 @@ export interface ExtractionDraftFields {
   netAmount: string;
   vatAmount: string;
   grossAmount: string;
+  newVendorName?: string;
+  newVendorTaxId?: string;
 }
 
-interface VendorOption { id: number; name: string }
+export type VendorApplyResolution =
+  | { kind: "preserved" }
+  | { kind: "selected"; vendor: VendorIdentityCandidate }
+  | { kind: "new"; name: string; taxId: string }
+  | { kind: "ambiguous"; candidates: VendorIdentityCandidate[]; matchedOn: "taxId" | "name" }
+  | { kind: "none" };
 
 export interface ApplyExtractionResult<T extends ExtractionDraftFields> {
   draft: T;
   appliedFields: string[];
   skippedFields: string[];
-  unmatchedVendorName: string | null;
+  vendorResolution: VendorApplyResolution;
 }
 
 export function applyExtractionToDraft<T extends ExtractionDraftFields>(
   current: T,
   extraction: AiInvoiceExtraction,
-  vendors: VendorOption[],
+  vendors: VendorIdentityCandidate[],
 ): ApplyExtractionResult<T> {
   const draft = { ...current };
   const appliedFields: string[] = [];
   const skippedFields: string[] = [];
-  let unmatchedVendorName: string | null = null;
+  let vendorResolution: VendorApplyResolution = { kind: "none" };
 
   const fill = (field: keyof T, label: string, value: string | null) => {
     if (!value) return;
@@ -42,20 +50,23 @@ export function applyExtractionToDraft<T extends ExtractionDraftFields>(
     appliedFields.push(label);
   };
 
-  const vendorNames = [extraction.vendorOriginal, extraction.vendorNormalized]
-    .filter((value): value is string => Boolean(value?.trim()));
-  if (vendorNames.length > 0) {
-    if (current.vendorId.trim()) {
+  const vendorName = extraction.vendorNormalized?.trim() || extraction.vendorOriginal?.trim() || "";
+  const vendorTaxId = extraction.vendorTaxId?.trim() || "";
+  if (vendorName || vendorTaxId) {
+    if (current.vendorId.trim() || current.newVendorName?.trim() || current.newVendorTaxId?.trim()) {
       skippedFields.push("Vendor");
+      vendorResolution = { kind: "preserved" };
     } else {
-      const match = vendors.find((vendor) =>
-        vendorNames.some((name) => vendor.name.trim().toLocaleLowerCase() === name.trim().toLocaleLowerCase())
-      );
-      if (match) {
-        draft.vendorId = String(match.id);
+      const match = findVendorIdentityMatches(vendorName, vendorTaxId, vendors);
+      if (match.candidates.length === 1) {
+        draft.vendorId = String(match.candidates[0].id);
         appliedFields.push("Vendor");
+        vendorResolution = { kind: "selected", vendor: match.candidates[0] };
+      } else if (match.candidates.length > 1 && match.matchedOn) {
+        vendorResolution = { kind: "ambiguous", candidates: match.candidates, matchedOn: match.matchedOn };
       } else {
-        unmatchedVendorName = extraction.vendorOriginal ?? extraction.vendorNormalized;
+        appliedFields.push("Vendor draft");
+        vendorResolution = { kind: "new", name: vendorName, taxId: vendorTaxId };
       }
     }
   }
@@ -80,7 +91,7 @@ export function applyExtractionToDraft<T extends ExtractionDraftFields>(
   fill("vatAmount", "VAT amount", extraction.vatAmount);
   fill("grossAmount", "Gross amount", extraction.grossAmount);
 
-  return { draft, appliedFields, skippedFields, unmatchedVendorName };
+  return { draft, appliedFields, skippedFields, vendorResolution };
 }
 
 export function extractionLinesToEditable(extraction: AiInvoiceExtraction): EditableInvoiceLine[] {

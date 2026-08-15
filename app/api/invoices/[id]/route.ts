@@ -21,12 +21,14 @@ import {
 } from "@/src/lib/invoice-validation";
 import { InvoiceLineInputSchema, normalizeInvoiceLineInput } from "@/src/lib/invoice-lines";
 import { resolveSafeUploadPath } from "@/src/lib/safe-upload-path";
+import { findVendorIdentityMatches, normalizeVendorTaxId } from "@/src/lib/vendor-identity";
 
 const UPLOAD_DIR = process.env.UPLOAD_DIR ?? "./uploads";
 
 const UpdateSchema = z.object({
   vendorId: z.number().nullable().optional(),
-  newVendorName: z.string().optional(),
+  newVendorName: z.string().trim().min(1).max(255).optional(),
+  newVendorTaxId: z.string().trim().max(50).nullable().optional(),
   invoiceNumber: z.string().nullable().optional(),
   invoiceDate: z.string().nullable().optional(),
   dueDate: z.string().nullable().optional(),
@@ -57,7 +59,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const [docs, lines, vendorList, costCentreList, accountList, [company]] = await Promise.all([
     db.select().from(supplierInvoiceDocuments).where(eq(supplierInvoiceDocuments.invoiceId, invoice.id)),
     db.select().from(supplierInvoiceLines).where(eq(supplierInvoiceLines.invoiceId, invoice.id)).orderBy(asc(supplierInvoiceLines.position)),
-    db.select({ id: vendors.id, name: vendors.name }).from(vendors).where(eq(vendors.companyId, invoice.companyId)),
+    db.select({ id: vendors.id, name: vendors.name, taxId: vendors.taxId, normalizedTaxId: vendors.normalizedTaxId }).from(vendors).where(eq(vendors.companyId, invoice.companyId)),
     db.select().from(costCentres).where(eq(costCentres.companyId, invoice.companyId)),
     db.select().from(chartOfAccounts).where(eq(chartOfAccounts.companyId, invoice.companyId)),
     db.select({ baseCurrency: companies.baseCurrency }).from(companies).where(eq(companies.id, invoice.companyId)),
@@ -177,13 +179,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   if (data.expenseAccountId !== undefined && data.expenseAccountId !== null) {
     const [acct] = await db
-      .select({ id: chartOfAccounts.id, type: chartOfAccounts.type })
+      .select({ id: chartOfAccounts.id, type: chartOfAccounts.type, isActive: chartOfAccounts.isActive, isPosting: chartOfAccounts.isPosting })
       .from(chartOfAccounts)
       .where(and(eq(chartOfAccounts.id, data.expenseAccountId), eq(chartOfAccounts.companyId, existing.companyId)));
     if (!acct) {
       refErrors.push("Expense account does not exist or does not belong to this company.");
-    } else if (acct.type !== "expense") {
-      refErrors.push("The selected account is not an expense account.");
+    } else if (acct.type !== "expense" || !acct.isActive || !acct.isPosting) {
+      refErrors.push("The selected account is not an active posting expense account.");
     }
   }
 
@@ -296,14 +298,87 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   // ── Vendor creation inside a transaction ───────────────────────────────────
   try {
     const result = await db.transaction(async (tx) => {
-      let vendorId = data.vendorId;
-      if (data.newVendorName && !vendorId) {
-        const [v] = await tx
-          .insert(vendors)
-          .values({ companyId: existing.companyId, name: data.newVendorName! })
-          .returning();
+      let vendorId = data.vendorId !== undefined ? data.vendorId : existing.vendorId;
+      let resolvedVendor: {
+        id: number;
+        name: string;
+        taxId: string | null;
+        normalizedTaxId: string | null;
+        invoiceCount: number;
+      } | null = null;
 
-        vendorId = v.id;
+      if (data.newVendorName && !vendorId) {
+        const companyVendors = await tx
+          .select({
+            id: vendors.id,
+            name: vendors.name,
+            taxId: vendors.taxId,
+            normalizedTaxId: vendors.normalizedTaxId,
+          })
+          .from(vendors)
+          .where(eq(vendors.companyId, existing.companyId));
+        const match = findVendorIdentityMatches(data.newVendorName, data.newVendorTaxId, companyVendors);
+
+        if (match.candidates.length > 1) {
+          return { kind: "ambiguous" as const };
+        }
+
+        if (match.candidates.length === 1) {
+          vendorId = match.candidates[0].id;
+          resolvedVendor = { ...match.candidates[0], normalizedTaxId: match.candidates[0].normalizedTaxId ?? null, invoiceCount: 0 };
+        } else {
+          const displayTaxId = data.newVendorTaxId?.trim() || null;
+          const normalizedTaxId = normalizeVendorTaxId(displayTaxId);
+          const [created] = await tx
+            .insert(vendors)
+            .values({
+              companyId: existing.companyId,
+              name: data.newVendorName,
+              taxId: displayTaxId,
+              normalizedTaxId,
+            })
+            .onConflictDoNothing()
+            .returning({
+              id: vendors.id,
+              name: vendors.name,
+              taxId: vendors.taxId,
+              normalizedTaxId: vendors.normalizedTaxId,
+            });
+
+          if (created) {
+            vendorId = created.id;
+            resolvedVendor = { ...created, invoiceCount: 0 };
+          } else {
+            const afterConflict = await tx
+              .select({
+                id: vendors.id,
+                name: vendors.name,
+                taxId: vendors.taxId,
+                normalizedTaxId: vendors.normalizedTaxId,
+              })
+              .from(vendors)
+              .where(eq(vendors.companyId, existing.companyId));
+            const conflictMatch = findVendorIdentityMatches(data.newVendorName, displayTaxId, afterConflict);
+            if (conflictMatch.candidates.length !== 1) {
+              return { kind: "ambiguous" as const };
+            }
+            vendorId = conflictMatch.candidates[0].id;
+            resolvedVendor = { ...conflictMatch.candidates[0], normalizedTaxId: conflictMatch.candidates[0].normalizedTaxId ?? null, invoiceCount: 0 };
+          }
+        }
+      }
+
+      if (vendorId && !resolvedVendor) {
+        const [selectedVendor] = await tx
+          .select({
+            id: vendors.id,
+            name: vendors.name,
+            taxId: vendors.taxId,
+            normalizedTaxId: vendors.normalizedTaxId,
+          })
+          .from(vendors)
+          .where(and(eq(vendors.id, vendorId), eq(vendors.companyId, existing.companyId)));
+        if (selectedVendor) resolvedVendor = { ...selectedVendor, invoiceCount: 0 };
       }
 
       const updateValues = buildUpdateValues(
@@ -318,7 +393,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         .where(eq(supplierInvoices.id, Number(id)))
         .returning();
 
-      if (!updated) return null;
+      if (!updated) return { kind: "not-found" as const };
       if (normalizedLines !== undefined) {
         await tx.delete(supplierInvoiceLines).where(eq(supplierInvoiceLines.invoiceId, existing.id));
         if (normalizedLines.length > 0) {
@@ -328,11 +403,17 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         }
       }
 
-      return updated;
+      return { kind: "updated" as const, invoice: updated, resolvedVendor };
     });
 
-    if (!result) return NextResponse.json({ error: "Not found" }, { status: 404 });
-    return NextResponse.json(result);
+    if (result.kind === "not-found") return NextResponse.json({ error: "Not found" }, { status: 404 });
+    if (result.kind === "ambiguous") {
+      return NextResponse.json(
+        { error: "More than one vendor matches these details. Select the vendor to use before saving." },
+        { status: 409 },
+      );
+    }
+    return NextResponse.json({ ...result.invoice, resolvedVendor: result.resolvedVendor });
   } catch {
     return NextResponse.json({ error: "Save failed" }, { status: 500 });
   }

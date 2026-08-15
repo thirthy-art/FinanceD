@@ -9,8 +9,10 @@ import {
   integer,
   pgEnum,
   unique,
+  uniqueIndex,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 
 // ─── Enums ────────────────────────────────────────────────────────────────────
 
@@ -52,6 +54,8 @@ export const chartOfAccounts = pgTable("chart_of_accounts", {
   code: varchar("code", { length: 20 }).notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   type: accountTypeEnum("type").notNull(),
+  parentId: integer("parent_id").references((): AnyPgColumn => chartOfAccounts.id),
+  isPosting: boolean("is_posting").notNull().default(true),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -83,12 +87,17 @@ export const vendors = pgTable("vendors", {
     .references(() => companies.id),
   name: varchar("name", { length: 255 }).notNull(),
   taxId: varchar("tax_id", { length: 50 }),
+  normalizedTaxId: varchar("normalized_tax_id", { length: 50 }),
   address: text("address"),
   defaultCurrency: varchar("default_currency", { length: 10 }),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyNormalizedTaxIdUnique: uniqueIndex("uq_vendors_company_normalized_tax_id")
+    .on(table.companyId, table.normalizedTaxId)
+    .where(sql`${table.normalizedTaxId} is not null`),
+}));
 
 // ─── Supplier Invoices ────────────────────────────────────────────────────────
 

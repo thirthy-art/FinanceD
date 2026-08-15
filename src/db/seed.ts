@@ -1,11 +1,13 @@
 import "dotenv/config";
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
+import * as schema from "./schema";
 import { companies, chartOfAccounts, costCentres } from "./schema";
+import { seedCleaningAccounts } from "./seed-coa";
 
 async function seed() {
   const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-  const db = drizzle(pool);
+  const db = drizzle(pool, { schema });
 
   // Reuse existing company or create one
   const existing = await db.select().from(companies).limit(1);
@@ -37,6 +39,8 @@ async function seed() {
       { companyId, code: "5000", name: "Revenue", type: "revenue" as const },
     ])
     .onConflictDoNothing();
+
+  await seedCleaningAccounts(db, companyId);
 
   // Cost centres — unique on (companyId, code) prevents duplicates
   await db

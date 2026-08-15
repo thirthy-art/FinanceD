@@ -9,7 +9,7 @@ import {
   chartOfAccounts,
   companies,
 } from "@/src/db/schema";
-import { eq, asc } from "drizzle-orm";
+import { eq, asc, count } from "drizzle-orm";
 import InvoiceReview from "@/src/components/InvoiceReview";
 import Link from "next/link";
 import { parseInvoiceFields } from "@/src/lib/extract";
@@ -28,7 +28,18 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
   const [docs, lines, vendorList, ccList, acctList, [company]] = await Promise.all([
     db.select().from(supplierInvoiceDocuments).where(eq(supplierInvoiceDocuments.invoiceId, invoice.id)),
     db.select().from(supplierInvoiceLines).where(eq(supplierInvoiceLines.invoiceId, invoice.id)).orderBy(asc(supplierInvoiceLines.position)),
-    db.select({ id: vendors.id, name: vendors.name }).from(vendors).where(eq(vendors.companyId, invoice.companyId)),
+    db.select({
+      id: vendors.id,
+      name: vendors.name,
+      taxId: vendors.taxId,
+      normalizedTaxId: vendors.normalizedTaxId,
+      invoiceCount: count(supplierInvoices.id),
+    })
+      .from(vendors)
+      .leftJoin(supplierInvoices, eq(supplierInvoices.vendorId, vendors.id))
+      .where(eq(vendors.companyId, invoice.companyId))
+      .groupBy(vendors.id)
+      .orderBy(asc(vendors.name)),
     db.select().from(costCentres).where(eq(costCentres.companyId, invoice.companyId)),
     db.select().from(chartOfAccounts).where(eq(chartOfAccounts.companyId, invoice.companyId)),
     db.select({ baseCurrency: companies.baseCurrency }).from(companies).where(eq(companies.id, invoice.companyId)),

@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { AiInvoiceExtraction } from "@/src/lib/ai-extraction";
+import { AiInvoiceExtractionSchema } from "@/src/lib/ai-extraction";
 import { applyExtractionLines, applyExtractionToDraft, extractionLinesToEditable } from "@/src/lib/apply-ai-extraction";
 import { sumInvoiceLineAmounts } from "@/src/lib/invoice-lines";
 
 const extraction: AiInvoiceExtraction = {
   vendorOriginal: "ACME LTD",
   vendorNormalized: "Acme Ltd",
+  vendorTaxId: "CY 123-456",
   invoiceNumber: "AI-42",
   invoiceDate: "15/07/2026",
   dueDate: "2026-08-15",
@@ -29,6 +31,10 @@ const extraction: AiInvoiceExtraction = {
 };
 
 describe("applying AI extraction", () => {
+  it("accepts and returns an explicitly extracted vendor VAT/Tax ID", () => {
+    expect(AiInvoiceExtractionSchema.parse(extraction).vendorTaxId).toBe("CY 123-456");
+  });
+
   it("fills empty fields, matches a vendor case-insensitively, and preserves manual values", () => {
     const result = applyExtractionToDraft({
       vendorId: "",
@@ -39,7 +45,7 @@ describe("applying AI extraction", () => {
       netAmount: "",
       vatAmount: "5.00",
       grossAmount: "",
-    }, extraction, [{ id: 9, name: "acme ltd" }]);
+    }, extraction, [{ id: 9, name: "acme ltd", taxId: "CY123456", invoiceCount: 2 }]);
 
     expect(result.draft.vendorId).toBe("9");
     expect(result.draft.invoiceNumber).toBe("MANUAL-7");

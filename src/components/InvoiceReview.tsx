@@ -7,10 +7,11 @@ import type { EditableInvoiceLine } from "@/src/lib/invoice-lines";
 import { editableLineToInput } from "@/src/lib/invoice-lines";
 import { applyExtractionLines, applyExtractionToDraft, extractionLinesToEditable } from "@/src/lib/apply-ai-extraction";
 import InvoiceLinesEditor from "@/src/components/InvoiceLinesEditor";
+import { selectableExpenseAccounts } from "@/src/lib/coa-hierarchy";
 
-interface Vendor { id: number; name: string; }
+interface Vendor { id: number; name: string; taxId: string | null; normalizedTaxId?: string | null; invoiceCount?: number; }
 interface CostCentre { id: number; code: string; name: string; }
-interface Account { id: number; code: string; name: string; type: string; isActive: boolean; }
+interface Account { id: number; code: string; name: string; type: string; parentId: number | null; isPosting: boolean; isActive: boolean; }
 interface Document { id: number; mimeType: string; originalFilename: string; ocrPerformed: boolean; }
 interface Invoice {
   id: number;
@@ -115,6 +116,7 @@ function AiExtractionPreview({ extraction }: { extraction: AiInvoiceExtraction }
   const headerFields: Array<[string, string | null]> = [
     ["Vendor (original)", extraction.vendorOriginal],
     ["Vendor (English)", extraction.vendorNormalized],
+    ["Vendor Tax ID", extraction.vendorTaxId],
     ["Invoice number", extraction.invoiceNumber],
     ["Invoice date", extraction.invoiceDate],
     ["Due date", extraction.dueDate],
@@ -203,6 +205,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
   const [form, setForm] = useState({
     vendorId: invoice.vendorId ? String(invoice.vendorId) : "",
     newVendorName: "",
+    newVendorTaxId: "",
     invoiceNumber: invoice.invoiceNumber ?? extractedFields.invoiceNumber ?? "",
     invoiceDate: invoice.invoiceDate ?? extractedFields.invoiceDate ?? "",
     dueDate: invoice.dueDate ?? extractedFields.dueDate ?? "",
@@ -220,13 +223,14 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
   const [saveError, setSaveError] = useState("");
   const [saved, setSaved] = useState(false);
   const [addVendor, setAddVendor] = useState(false);
+  const [vendorOptions, setVendorOptions] = useState(vendors);
+  const [vendorCandidates, setVendorCandidates] = useState<Vendor[]>([]);
   const [extracting, setExtracting] = useState(false);
   const [extractionError, setExtractionError] = useState("");
   const [aiExtraction, setAiExtraction] = useState<AiInvoiceExtraction | null>(null);
   const [editableLines, setEditableLines] = useState<EditableInvoiceLine[]>(lines);
   const [lastAppliedLineSignature, setLastAppliedLineSignature] = useState<string | null>(null);
   const [applyNotice, setApplyNotice] = useState<{ applied: string[]; skipped: string[]; warnings: string[] } | null>(null);
-  const [unmatchedVendorName, setUnmatchedVendorName] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
@@ -317,6 +321,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
 
       if (addVendor && form.newVendorName) {
         body.newVendorName = form.newVendorName;
+        body.newVendorTaxId = form.newVendorTaxId || null;
         body.vendorId = null;
       } else {
         body.vendorId = form.vendorId ? Number(form.vendorId) : null;
@@ -327,8 +332,18 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const json = await res.json();
+      const json = await res.json() as { error?: unknown; vendorId?: number | null; resolvedVendor?: Vendor | null };
       if (!res.ok) throw new Error(typeof json.error === "string" ? json.error : JSON.stringify(json.error));
+      if (json.vendorId) {
+        setForm((current) => ({ ...current, vendorId: String(json.vendorId), newVendorName: "", newVendorTaxId: "" }));
+        setAddVendor(false);
+        setVendorCandidates([]);
+        if (json.resolvedVendor) {
+          setVendorOptions((current) => current.some((vendor) => vendor.id === json.resolvedVendor!.id)
+            ? current.map((vendor) => vendor.id === json.resolvedVendor!.id ? json.resolvedVendor! : vendor)
+            : [...current, json.resolvedVendor!].sort((left, right) => left.name.localeCompare(right.name)));
+        }
+      }
       setSaved(true);
       router.refresh();
       if (action === "approve") router.push("/");
@@ -344,7 +359,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
     setExtractionError("");
     setAiExtraction(null);
     setApplyNotice(null);
-    setUnmatchedVendorName(null);
+    setVendorCandidates([]);
     try {
       const response = await fetch(`/api/invoices/${invoice.id}/extract`, { method: "POST" });
       let json: { error?: unknown; extraction?: AiInvoiceExtraction };
@@ -367,7 +382,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
 
   function applyAiExtraction() {
     if (!aiExtraction) return;
-    const draftResult = applyExtractionToDraft(form, aiExtraction, vendors);
+    const draftResult = applyExtractionToDraft(form, aiExtraction, vendorOptions);
     const lineResult = applyExtractionLines(
       editableLines,
       extractionLinesToEditable(aiExtraction),
@@ -384,6 +399,14 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
 
     setForm((current) => {
       const next = { ...current, ...draftResult.draft };
+      if (draftResult.vendorResolution.kind === "new") {
+        next.vendorId = "";
+        next.newVendorName = draftResult.vendorResolution.name;
+        next.newVendorTaxId = draftResult.vendorResolution.taxId;
+      } else if (draftResult.vendorResolution.kind === "selected") {
+        next.newVendorName = "";
+        next.newVendorTaxId = "";
+      }
       if (draftResult.appliedFields.includes("Currency")) {
         next.fxRateToBase = next.currency === baseCurrency ? "1" : "";
       }
@@ -391,7 +414,8 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
     });
     setEditableLines(lineResult.lines);
     setLastAppliedLineSignature(lineResult.signature);
-    setUnmatchedVendorName(draftResult.unmatchedVendorName);
+    setAddVendor(draftResult.vendorResolution.kind === "new");
+    setVendorCandidates(draftResult.vendorResolution.kind === "ambiguous" ? draftResult.vendorResolution.candidates : []);
     setApplyNotice({ applied, skipped, warnings });
     setSaved(false);
   }
@@ -413,7 +437,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
   }
 
   const approveDisabled = saving || mismatch || hasInputErrors;
-  const expenseAccounts = accounts.filter((a) => a.type === "expense" && a.isActive);
+  const expenseAccounts = selectableExpenseAccounts(accounts);
 
   return (
     <div style={{ display: "flex", gap: 24, alignItems: "flex-start", minHeight: "calc(100vh - 100px)" }}>
@@ -533,9 +557,24 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
               )}
             </div>
           )}
-          {unmatchedVendorName && (
+          {vendorCandidates.length > 1 && (
             <div style={{ marginTop: 10, padding: "9px 12px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 6, color: "#92400e", fontSize: 13 }}>
-              Extracted vendor: <strong>{unmatchedVendorName}</strong>. No existing vendor matched; please select one manually.
+              <div style={{ fontWeight: 700, marginBottom: 6 }}>Multiple vendors match. Select one or merge duplicates from Vendor settings.</div>
+              {vendorCandidates.map((candidate) => (
+                <button
+                  key={candidate.id}
+                  type="button"
+                  onClick={() => {
+                    setForm((current) => ({ ...current, vendorId: String(candidate.id), newVendorName: "", newVendorTaxId: "" }));
+                    setAddVendor(false);
+                    setVendorCandidates([]);
+                    setSaved(false);
+                  }}
+                  style={{ display: "block", width: "100%", textAlign: "left", marginTop: 5, padding: "7px 9px", border: "1px solid #fde68a", borderRadius: 5, background: "#fff", cursor: "pointer" }}
+                >
+                  {candidate.name} {candidate.taxId ? `· ${candidate.taxId}` : ""} · {candidate.invoiceCount} invoice{candidate.invoiceCount === 1 ? "" : "s"}
+                </button>
+              ))}
             </div>
           )}
         </div>
@@ -572,14 +611,21 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
             <>
               {!addVendor ? (
                 <div style={{ display: "flex", gap: 8 }}>
-                  <select style={{ ...inputStyle, flex: 1 }} value={form.vendorId} onChange={set("vendorId")}>
+                  <select style={{ ...inputStyle, flex: 1 }} value={form.vendorId} onChange={(event) => {
+                    set("vendorId")(event);
+                    setVendorCandidates([]);
+                  }}>
                     <option value="">-- select vendor --</option>
-                    {vendors.map((v) => (
+                    {vendorOptions.map((v) => (
                       <option key={v.id} value={v.id}>{v.name}</option>
                     ))}
                   </select>
                   <button
-                    onClick={() => setAddVendor(true)}
+                    onClick={() => {
+                      setAddVendor(true);
+                      setVendorCandidates([]);
+                      setForm((current) => ({ ...current, vendorId: "" }));
+                    }}
                     style={{ padding: "8px 12px", border: "1px solid #e2e8f0", borderRadius: 6, background: "#f8fafc", cursor: "pointer", fontSize: 13 }}
                     type="button"
                   >
@@ -587,15 +633,14 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
                   </button>
                 </div>
               ) : (
-                <div style={{ display: "flex", gap: 8 }}>
-                  <input
-                    style={{ ...inputStyle, flex: 1 }}
-                    placeholder="Vendor name"
-                    value={form.newVendorName}
-                    onChange={set("newVendorName")}
-                  />
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 160px auto", gap: 8 }}>
+                  <input style={inputStyle} placeholder="Vendor name" aria-label="New vendor name" value={form.newVendorName} onChange={set("newVendorName")} />
+                  <input style={inputStyle} placeholder="VAT / Tax ID" aria-label="New vendor VAT or Tax ID" value={form.newVendorTaxId} onChange={set("newVendorTaxId")} />
                   <button
-                    onClick={() => setAddVendor(false)}
+                    onClick={() => {
+                      setAddVendor(false);
+                      setForm((current) => ({ ...current, newVendorName: "", newVendorTaxId: "" }));
+                    }}
                     style={{ padding: "8px 12px", border: "1px solid #e2e8f0", borderRadius: 6, background: "#f8fafc", cursor: "pointer", fontSize: 13 }}
                     type="button"
                   >
@@ -785,7 +830,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
               <select style={inputStyle} value={form.expenseAccountId} onChange={set("expenseAccountId")}>
                 <option value="">-- none --</option>
                 {expenseAccounts.map((a) => (
-                  <option key={a.id} value={a.id}>{a.code} · {a.name}</option>
+                  <option key={a.id} value={a.id}>{"— ".repeat(a.depth)}{a.code} · {a.name}</option>
                 ))}
               </select>
             )}

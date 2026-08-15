@@ -381,6 +381,56 @@ describe("DELETE /api/invoices/[id] — draft-only", () => {
     expect(await db.select().from(schema.supplierInvoiceLines).where(eq(schema.supplierInvoiceLines.invoiceId, inv.id))).toHaveLength(0);
   });
 
+  it.skipIf(!HAS_DB)("repeated saves reuse the vendor created by the first save", async () => {
+    const inv = await createTestInvoice();
+    const name = `Idempotent Vendor ${inv.id}`;
+    const body = { newVendorName: name, newVendorTaxId: `CY-${inv.id}-A` };
+
+    const first = await PATCH(patchRequest(inv.id, body), params(inv.id));
+    const second = await PATCH(patchRequest(inv.id, body), params(inv.id));
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    const firstJson = await first.json();
+    const secondJson = await second.json();
+    expect(secondJson.vendorId).toBe(firstJson.vendorId);
+
+    const matches = await db.select().from(schema.vendors).where(eq(schema.vendors.name, name));
+    expect(matches).toHaveLength(1);
+    createdVendorIds.push(matches[0].id);
+  });
+
+  it.skipIf(!HAS_DB)("an exact normalized Tax ID match reuses an existing vendor", async () => {
+    const companyId = await getCompanyId();
+    const inv = await createTestInvoice();
+    const [vendor] = await db.insert(schema.vendors).values({
+      companyId,
+      name: `Tax Match ${inv.id}`,
+      taxId: `CY-${inv.id}-T`,
+      normalizedTaxId: `CY${inv.id}T`,
+    }).returning();
+    createdVendorIds.push(vendor.id);
+
+    const response = await PATCH(patchRequest(inv.id, {
+      newVendorName: "Different display name",
+      newVendorTaxId: ` cy ${inv.id} t `,
+    }), params(inv.id));
+    expect(response.status).toBe(200);
+    expect((await response.json()).vendorId).toBe(vendor.id);
+  });
+
+  it.skipIf(!HAS_DB)("an exact normalized name match does not create another vendor", async () => {
+    const companyId = await getCompanyId();
+    const inv = await createTestInvoice();
+    const name = `Name Match ${inv.id}`;
+    const [vendor] = await db.insert(schema.vendors).values({ companyId, name }).returning();
+    createdVendorIds.push(vendor.id);
+
+    const response = await PATCH(patchRequest(inv.id, { newVendorName: `  ${name.toLowerCase()}  ` }), params(inv.id));
+    expect(response.status).toBe(200);
+    expect((await response.json()).vendorId).toBe(vendor.id);
+    expect(await db.select().from(schema.vendors).where(eq(schema.vendors.name, name))).toHaveLength(1);
+  });
+
   it.skipIf(!HAS_DB)("refuses to hard-delete an approved invoice", async () => {
     const inv = await createTestInvoice({ status: "approved" });
     const res = await DELETE(new Request(`http://localhost/api/invoices/${inv.id}`, { method: "DELETE" }), params(inv.id));

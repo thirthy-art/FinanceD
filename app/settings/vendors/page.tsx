@@ -1,7 +1,18 @@
 "use client";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 
-interface Vendor { id: number; name: string; taxId: string | null; address: string | null; defaultCurrency: string | null; isActive: boolean; }
+interface Vendor {
+  id: number;
+  name: string;
+  taxId: string | null;
+  address: string | null;
+  defaultCurrency: string | null;
+  isActive: boolean;
+  invoiceCount: number;
+  possibleDuplicate: boolean;
+}
 
 const inputStyle: React.CSSProperties = { padding: "6px 8px", border: "1px solid #e2e8f0", borderRadius: 5, fontSize: 13 };
 
@@ -9,7 +20,8 @@ async function fetchVendors(): Promise<Vendor[]> {
   return fetch("/api/settings/vendors").then((response) => response.json());
 }
 
-export default function VendorsPage() {
+function VendorsContent() {
+  const searchParams = useSearchParams();
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [loading, setLoading] = useState(true);
   const [newName, setNewName] = useState("");
@@ -18,6 +30,10 @@ export default function VendorsPage() {
   const [addError, setAddError] = useState("");
   const [editId, setEditId] = useState<number | null>(null);
   const [editData, setEditData] = useState<Partial<Vendor>>({});
+  const action = searchParams.get("action");
+  const notice = action === "deleted"
+    ? "Vendor deleted successfully."
+    : action === "merged" ? "Vendors merged successfully." : "";
 
   async function load() {
     const data = await fetchVendors();
@@ -66,6 +82,7 @@ export default function VendorsPage() {
   return (
     <div>
       <h1 style={{ fontSize: 20, fontWeight: 700, color: "#1e3a5f", marginBottom: 24 }}>Vendors</h1>
+      {notice && <div style={{ marginBottom: 16, padding: 12, borderRadius: 6, background: "#ecfdf5", color: "#166534" }}>{notice}</div>}
 
       <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden", marginBottom: 32 }}>
         {vendors.length === 0 ? (
@@ -74,7 +91,7 @@ export default function VendorsPage() {
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
-                {["Name", "Tax ID", "Currency", "Active", ""].map((h) => (
+                {["Vendor Name", "VAT/Tax ID", "Default Currency", "Active", "Invoices", "Possible Duplicate", ""].map((h) => (
                   <th key={h} style={{ padding: "10px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, color: "#64748b", textTransform: "uppercase" }}>{h}</th>
                 ))}
               </tr>
@@ -94,6 +111,8 @@ export default function VendorsPage() {
                         <input style={{ ...inputStyle, width: 60 }} value={editData.defaultCurrency ?? v.defaultCurrency ?? ""} maxLength={3} onChange={(e) => setEditData((d) => ({ ...d, defaultCurrency: e.target.value.toUpperCase() }))} />
                       </td>
                       <td />
+                      <td />
+                      <td />
                       <td style={{ padding: "8px 16px", display: "flex", gap: 8 }}>
                         <button onClick={() => saveEdit(v.id)} style={{ ...inputStyle, background: "#2563eb", color: "#fff", border: "none", cursor: "pointer" }}>Save</button>
                         <button onClick={() => setEditId(null)} style={{ ...inputStyle, cursor: "pointer" }}>Cancel</button>
@@ -101,10 +120,16 @@ export default function VendorsPage() {
                     </>
                   ) : (
                     <>
-                      <td style={{ padding: "10px 16px", fontWeight: 500 }}>{v.name}</td>
+                      <td style={{ padding: "10px 16px", fontWeight: 500 }}>
+                        <Link href={`/settings/vendors/${v.id}`} style={{ color: "#2563eb", textDecoration: "underline" }}>{v.name}</Link>
+                      </td>
                       <td style={{ padding: "10px 16px", color: "#64748b" }}>{v.taxId ?? "—"}</td>
                       <td style={{ padding: "10px 16px", color: "#64748b" }}>{v.defaultCurrency ?? "—"}</td>
                       <td style={{ padding: "10px 16px" }}>{v.isActive ? "✓" : "—"}</td>
+                      <td style={{ padding: "10px 16px" }}>{v.invoiceCount}</td>
+                      <td style={{ padding: "10px 16px", color: v.possibleDuplicate ? "#b45309" : "#94a3b8" }}>
+                        {v.possibleDuplicate ? "Possible duplicate" : "—"}
+                      </td>
                       <td style={{ padding: "10px 16px", display: "flex", gap: 8 }}>
                         <button onClick={() => { setEditId(v.id); setEditData({}); }} style={{ ...inputStyle, cursor: "pointer", fontSize: 12 }}>Edit</button>
                         <button
@@ -146,4 +171,8 @@ export default function VendorsPage() {
       </div>
     </div>
   );
+}
+
+export default function VendorsPage() {
+  return <Suspense fallback={<div style={{ color: "#94a3b8" }}>Loading…</div>}><VendorsContent /></Suspense>;
 }

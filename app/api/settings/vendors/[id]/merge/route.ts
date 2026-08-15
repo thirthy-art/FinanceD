@@ -1,0 +1,70 @@
+import { NextRequest, NextResponse } from "next/server";
+import { count, eq } from "drizzle-orm";
+import { z } from "zod";
+import { getDb } from "@/src/db";
+import { supplierInvoices, vendors } from "@/src/db/schema";
+import { normalizeVendorTaxId } from "@/src/lib/vendor-identity";
+
+const MergeSchema = z.object({ targetVendorId: z.number().int().positive() });
+
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const sourceVendorId = Number(id);
+  const parsed = MergeSchema.safeParse(await req.json());
+  if (!Number.isInteger(sourceVendorId) || sourceVendorId <= 0 || !parsed.success) {
+    return NextResponse.json({ error: "Invalid vendor merge request." }, { status: 400 });
+  }
+  if (sourceVendorId === parsed.data.targetVendorId) {
+    return NextResponse.json({ error: "A vendor cannot be merged into itself." }, { status: 400 });
+  }
+
+  const db = getDb();
+  try {
+    const result = await db.transaction(async (tx) => {
+      const [source] = await tx.select().from(vendors).where(eq(vendors.id, sourceVendorId));
+      const [target] = await tx.select().from(vendors).where(eq(vendors.id, parsed.data.targetVendorId));
+      if (!source || !target) return { kind: "not-found" as const };
+      if (source.companyId !== target.companyId) return { kind: "cross-company" as const };
+
+      const sourceTaxId = normalizeVendorTaxId(source.normalizedTaxId ?? source.taxId);
+      const targetTaxId = normalizeVendorTaxId(target.normalizedTaxId ?? target.taxId);
+      if (sourceTaxId && targetTaxId && sourceTaxId !== targetTaxId) {
+        return { kind: "tax-conflict" as const };
+      }
+
+      const [sourceReferences] = await tx
+        .select({ invoiceCount: count(supplierInvoices.id) })
+        .from(supplierInvoices)
+        .where(eq(supplierInvoices.vendorId, source.id));
+      const [targetReferences] = await tx
+        .select({ invoiceCount: count(supplierInvoices.id) })
+        .from(supplierInvoices)
+        .where(eq(supplierInvoices.vendorId, target.id));
+
+      await tx.update(supplierInvoices).set({ vendorId: target.id }).where(eq(supplierInvoices.vendorId, source.id));
+      await tx.delete(vendors).where(eq(vendors.id, source.id));
+
+      if (!targetTaxId && sourceTaxId) {
+        await tx.update(vendors).set({
+          taxId: source.taxId,
+          normalizedTaxId: sourceTaxId,
+          updatedAt: new Date(),
+        }).where(eq(vendors.id, target.id));
+      }
+
+      return {
+        kind: "merged" as const,
+        sourceInvoiceCount: sourceReferences?.invoiceCount ?? 0,
+        targetInvoiceCount: targetReferences?.invoiceCount ?? 0,
+        targetVendorId: target.id,
+      };
+    });
+
+    if (result.kind === "not-found") return NextResponse.json({ error: "Vendor not found." }, { status: 404 });
+    if (result.kind === "cross-company") return NextResponse.json({ error: "Vendors from different companies cannot be merged." }, { status: 422 });
+    if (result.kind === "tax-conflict") return NextResponse.json({ error: "The vendors have conflicting VAT/Tax IDs and cannot be merged." }, { status: 422 });
+    return NextResponse.json(result);
+  } catch {
+    return NextResponse.json({ error: "Vendor merge failed. No records were changed." }, { status: 409 });
+  }
+}

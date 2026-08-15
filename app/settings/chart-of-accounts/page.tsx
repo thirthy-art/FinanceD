@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
+import { flattenAccountHierarchy } from "@/src/lib/coa-hierarchy";
 
-interface Account { id: number; code: string; name: string; type: string; isActive: boolean; }
+interface Account { id: number; code: string; name: string; type: string; parentId: number | null; isPosting: boolean; isActive: boolean; }
 
 const TYPES = ["asset", "liability", "equity", "revenue", "expense"];
 const inputStyle: React.CSSProperties = { padding: "6px 8px", border: "1px solid #e2e8f0", borderRadius: 5, fontSize: 13 };
@@ -85,6 +86,7 @@ export default function ChartOfAccountsPage() {
   }
 
   if (loading) return <div style={{ color: "#94a3b8" }}>Loading…</div>;
+  const hierarchicalAccounts = flattenAccountHierarchy(accounts);
 
   return (
     <div>
@@ -94,27 +96,28 @@ export default function ChartOfAccountsPage() {
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
-              {["Code", "Name", "Type", "Active", ""].map((h) => (
+              {["Code", "Name", "Type", "Posting", "Active", ""].map((h) => (
                 <th key={h} style={{ padding: "10px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, color: "#64748b", textTransform: "uppercase" }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {accounts.map((a, i) => (
-              <tr key={a.id} style={{ borderBottom: i < accounts.length - 1 ? "1px solid #f1f5f9" : "none", opacity: a.isActive ? 1 : 0.45 }}>
+            {hierarchicalAccounts.map((a, i) => (
+              <tr key={a.id} style={{ borderBottom: i < hierarchicalAccounts.length - 1 ? "1px solid #f1f5f9" : "none", opacity: a.isActive ? 1 : 0.45, background: a.isPosting ? "#fff" : "#f8fafc", fontWeight: a.isPosting ? 400 : 600 }}>
                 {editId === a.id ? (
                   <>
                     <td style={{ padding: "8px 16px" }}>
                       <input style={{ ...inputStyle, width: 80 }} value={editData.code ?? a.code} onChange={(e) => setEditData((d) => ({ ...d, code: e.target.value }))} />
                     </td>
                     <td style={{ padding: "8px 16px" }}>
-                      <input style={{ ...inputStyle, width: 200 }} value={editData.name ?? a.name} onChange={(e) => setEditData((d) => ({ ...d, name: e.target.value }))} />
+                      <input style={{ ...inputStyle, width: 200, marginLeft: a.depth * 18 }} value={editData.name ?? a.name} onChange={(e) => setEditData((d) => ({ ...d, name: e.target.value }))} />
                     </td>
                     <td style={{ padding: "8px 16px" }}>
                       <select style={inputStyle} value={editData.type ?? a.type} onChange={(e) => setEditData((d) => ({ ...d, type: e.target.value }))}>
                         {TYPES.map((t) => <option key={t}>{t}</option>)}
                       </select>
                     </td>
+                    <td style={{ padding: "8px 16px" }}>{a.isPosting ? "Posting" : "Header"}</td>
                     <td />
                     <td style={{ padding: "8px 16px", display: "flex", gap: 8 }}>
                       <button onClick={() => saveEdit(a.id)} style={{ ...inputStyle, background: "#2563eb", color: "#fff", border: "none", cursor: "pointer" }}>Save</button>
@@ -124,10 +127,14 @@ export default function ChartOfAccountsPage() {
                 ) : (
                   <>
                     <td style={{ padding: "10px 16px", fontFamily: "monospace", fontWeight: 600 }}>{a.code}</td>
-                    <td style={{ padding: "10px 16px" }}>{a.name}</td>
+                    <td style={{ padding: "10px 16px" }}>
+                      <span style={{ display: "inline-block", paddingLeft: a.depth * 18 }}>{a.name}</span>
+                      {!a.isPosting && <span style={{ marginLeft: 8, padding: "2px 7px", borderRadius: 10, background: "#e2e8f0", color: "#475569", fontSize: 10 }}>Non-posting header</span>}
+                    </td>
                     <td style={{ padding: "10px 16px" }}>
                       <span style={{ padding: "2px 8px", borderRadius: 10, fontSize: 11, fontWeight: 600, ...typeColors[a.type] }}>{a.type}</span>
                     </td>
+                    <td style={{ padding: "10px 16px" }}>{a.isPosting ? "Yes" : "No"}</td>
                     <td style={{ padding: "10px 16px" }}>{a.isActive ? "✓" : "—"}</td>
                     <td style={{ padding: "10px 16px", display: "flex", gap: 8 }}>
                       <button onClick={() => { setEditId(a.id); setEditData({}); }} style={{ ...inputStyle, cursor: "pointer", fontSize: 12 }}>Edit</button>
