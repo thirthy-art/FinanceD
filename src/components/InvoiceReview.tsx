@@ -464,6 +464,26 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
     }
   }
 
+  async function savePaidDate() {
+    setPaymentSaving(true);
+    setPaymentError("");
+    try {
+      const res = await fetch(`/api/invoices/${invoice.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paidDate: pendingPaidDate || null }),
+      });
+      const json = await res.json() as { error?: unknown };
+      if (!res.ok) throw new Error(typeof json.error === "string" ? json.error : "Failed to save paid date");
+      setPaidDate(pendingPaidDate);
+      router.refresh();
+    } catch (err) {
+      setPaymentError(err instanceof Error ? err.message : "Failed to save paid date");
+    } finally {
+      setPaymentSaving(false);
+    }
+  }
+
   async function markUnpaid() {
     setPaymentSaving(true);
     setPaymentError("");
@@ -700,7 +720,23 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
                 </>
               ) : (
                 <>
-                  {paidDate && <span style={{ fontSize: 13, color: "#475569" }}>Paid {paidDate}</span>}
+                  <input
+                    type="date"
+                    aria-label="Paid date"
+                    value={pendingPaidDate}
+                    onChange={(e) => setPendingPaidDate(e.target.value)}
+                    style={{ padding: "6px 8px", border: "1px solid #e2e8f0", borderRadius: 5, fontSize: 13 }}
+                  />
+                  {pendingPaidDate !== paidDate && (
+                    <button
+                      type="button"
+                      onClick={savePaidDate}
+                      disabled={paymentSaving}
+                      style={{ padding: "6px 14px", border: "none", borderRadius: 5, background: paymentSaving ? "#cbd5e1" : "#2563eb", color: "#fff", cursor: paymentSaving ? "default" : "pointer", fontSize: 13, fontWeight: 600 }}
+                    >
+                      Save date
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={markUnpaid}
