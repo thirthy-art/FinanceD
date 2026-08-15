@@ -86,7 +86,10 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
         422,
       );
     }
-    userContent = `${AI_EXTRACTION_PROMPT}\n\nINVOICE TEXT START\n${extractedText}\nINVOICE TEXT END`;
+    const textFormatNote =
+      "TEXT FORMAT: Each line is one row. Tab characters (\\t) separate columns within the same row. " +
+      'Lines matching "-- N of M --" are page-break markers and are not invoice data.';
+    userContent = `${AI_EXTRACTION_PROMPT}\n\n${textFormatNote}\n\nINVOICE TEXT START\n${extractedText}\nINVOICE TEXT END`;
   } else {
     return errorResponse("AI extraction supports JPEG, PNG, WebP, and digital PDF documents only.", 415);
   }
