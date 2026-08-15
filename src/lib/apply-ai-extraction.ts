@@ -41,11 +41,7 @@ export function applyExtractionToDraft<T extends ExtractionDraftFields>(
   let vendorResolution: VendorApplyResolution = { kind: "none" };
 
   const fill = (field: keyof T, label: string, value: string | null) => {
-    if (!value) return;
-    if (String(current[field]).trim()) {
-      skippedFields.push(label);
-      return;
-    }
+    if (value === null) return;
     draft[field] = value as T[keyof T];
     appliedFields.push(label);
   };
@@ -77,7 +73,7 @@ export function applyExtractionToDraft<T extends ExtractionDraftFields>(
     ["invoiceDate", "Invoice date", extraction.invoiceDate],
     ["dueDate", "Due date", extraction.dueDate],
   ] as const) {
-    if (!extracted) continue;
+    if (extracted === null) continue;
     const normalized = normalizeDateForInput(extracted);
     if (!normalized) {
       skippedFields.push(`${label} (unrecognized date)`);

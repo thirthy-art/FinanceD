@@ -67,9 +67,12 @@ Use exactly this shape and include every field:
 
 Rules:
 - Never invent, infer, or calculate a missing or unreadable value. Use null.
+- Read each visible invoice total and its label independently. Use net/subtotal + VAT/tax = gross/total only as a consistency check when OCR text contains ambiguous competing readings.
+- Use total arithmetic only to choose between values that are actually visible in the document. Never calculate, infer, or invent a total that is absent or unreadable; return null instead.
 - Return invoiceDate and dueDate as YYYY-MM-DD when the date is unambiguous; otherwise return null.
 - Preserve original-language vendor and line-description text exactly in vendorOriginal and descriptionOriginal.
 - Put English-normalized vendor and description text only in vendorNormalized and description.
+- vendorOriginal and vendorNormalized must contain only the vendor's legal or trading name. Never include its postal address, contact details, VAT/Tax labels, Tax ID value, or the entire document header in either vendor-name field.
 - Extract vendorTaxId only when a VAT or Tax ID is explicitly visible in the document. Preserve its displayed value exactly; never infer or invent it.
 - Extract every invoice table row in document order. Do not combine or reorder rows.
 - Keep discounts, fees, credits, surcharges, shipping, and adjustments as distinct lines.

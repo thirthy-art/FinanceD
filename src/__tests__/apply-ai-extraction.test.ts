@@ -30,30 +30,103 @@ const extraction: AiInvoiceExtraction = {
   }],
 };
 
+const currentDraft = {
+  vendorId: "",
+  invoiceNumber: "OCR-7",
+  invoiceDate: "2026-01-01",
+  dueDate: "2026-01-31",
+  currency: "EUR",
+  netAmount: "90.00",
+  vatAmount: "18.00",
+  grossAmount: "108.00",
+};
+
+function headerExtraction(overrides: Partial<AiInvoiceExtraction>): AiInvoiceExtraction {
+  return {
+    vendorOriginal: null,
+    vendorNormalized: null,
+    vendorTaxId: null,
+    invoiceNumber: null,
+    invoiceDate: null,
+    dueDate: null,
+    currency: null,
+    netAmount: null,
+    vatAmount: null,
+    grossAmount: null,
+    lines: [],
+    ...overrides,
+  };
+}
+
 describe("applying AI extraction", () => {
   it("accepts and returns an explicitly extracted vendor VAT/Tax ID", () => {
     expect(AiInvoiceExtractionSchema.parse(extraction).vendorTaxId).toBe("CY 123-456");
   });
 
-  it("fills empty fields, matches a vendor case-insensitively, and preserves manual values", () => {
-    const result = applyExtractionToDraft({
-      vendorId: "",
-      invoiceNumber: "MANUAL-7",
-      invoiceDate: "",
-      dueDate: "",
-      currency: "",
-      netAmount: "",
-      vatAmount: "5.00",
-      grossAmount: "",
-    }, extraction, [{ id: 9, name: "acme ltd", taxId: "CY123456", invoiceCount: 2 }]);
+  it("replaces non-empty invoice-header values with reviewed non-null AI values", () => {
+    const result = applyExtractionToDraft(currentDraft, extraction, [
+      { id: 9, name: "acme ltd", taxId: "CY123456", invoiceCount: 2 },
+    ]);
 
-    expect(result.draft.vendorId).toBe("9");
-    expect(result.draft.invoiceNumber).toBe("MANUAL-7");
+    expect(result.draft).toMatchObject({
+      vendorId: "9",
+      invoiceNumber: "AI-42",
+      invoiceDate: "2026-07-15",
+      dueDate: "2026-08-15",
+      currency: "USD",
+      netAmount: "100.10",
+      vatAmount: "20.02",
+      grossAmount: "120.12",
+    });
+    expect(result.appliedFields).toEqual(expect.arrayContaining([
+      "Invoice number", "Invoice date", "Due date", "Currency", "Net amount", "VAT amount", "Gross amount",
+    ]));
+  });
+
+  it("fills an empty invoice-header field with a non-null AI value", () => {
+    const result = applyExtractionToDraft(
+      { ...currentDraft, invoiceNumber: "" },
+      headerExtraction({ invoiceNumber: "AI-99" }),
+      [],
+    );
+    expect(result.draft.invoiceNumber).toBe("AI-99");
+    expect(result.appliedFields).toContain("Invoice number");
+  });
+
+  it("preserves existing invoice-header fields when the AI value is null", () => {
+    const result = applyExtractionToDraft(currentDraft, headerExtraction({}), []);
+    expect(result.draft).toEqual(currentDraft);
+    expect(result.appliedFields).toEqual([]);
+  });
+
+  it("normalizes recognized AI dates before replacing current dates", () => {
+    const result = applyExtractionToDraft(
+      currentDraft,
+      headerExtraction({ invoiceDate: "15/07/2026", dueDate: "2026/08/15" }),
+      [],
+    );
     expect(result.draft.invoiceDate).toBe("2026-07-15");
-    expect(result.draft.currency).toBe("USD");
-    expect(result.draft.netAmount).toBe("100.10");
-    expect(result.draft.vatAmount).toBe("5.00");
-    expect(result.skippedFields).toEqual(expect.arrayContaining(["Invoice number", "VAT amount"]));
+    expect(result.draft.dueDate).toBe("2026-08-15");
+  });
+
+  it("preserves an existing date and warning when the AI date is unrecognized", () => {
+    const result = applyExtractionToDraft(
+      currentDraft,
+      headerExtraction({ invoiceDate: "July 15, 2026" }),
+      [],
+    );
+    expect(result.draft.invoiceDate).toBe("2026-01-01");
+    expect(result.skippedFields).toContain("Invoice date (unrecognized date)");
+  });
+
+  it("keeps manually edited invoice lines protected", () => {
+    const extractedLines = extractionLinesToEditable(extraction);
+    const manualLines = [{ ...extractedLines[0], description: "Manual description" }];
+    const result = applyExtractionLines(manualLines, extractedLines, null);
+
+    expect(result.applied).toBe(false);
+    expect(result.lines).toBe(manualLines);
+    expect(result.lines[0].description).toBe("Manual description");
   });
 
   it("reapplying the same extraction replaces its lines without duplicating them", () => {

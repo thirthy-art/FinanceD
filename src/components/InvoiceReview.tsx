@@ -502,7 +502,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
           <div style={{ fontWeight: 700, color: "#1e3a5f", marginBottom: 5 }}>AI extraction preview</div>
           <div style={{ fontSize: 13, lineHeight: 1.5, color: "#475569", marginBottom: 12 }}>
             Before sending: this invoice document will be processed by the configured AI extraction service.
-            The result is a preview only and will not change saved or manually entered invoice values.
+            AI extraction produces a preview only. Clicking Apply replaces current invoice-header fields where AI returned a value; null AI values leave current values unchanged. Applying the preview does not save or approve the invoice automatically.
           </div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <button
@@ -549,7 +549,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
               {applyNotice.applied.length > 0 && <div>Applied: {applyNotice.applied.join(", ")}.</div>}
               {applyNotice.skipped.length > 0 && (
                 <div style={{ color: "#92400e", marginTop: 4 }}>
-                  The following non-empty draft fields were not overwritten: {applyNotice.skipped.join(", ")}.
+                  Not applied: {applyNotice.skipped.join(", ")}.
                 </div>
               )}
               {applyNotice.warnings.length > 0 && (
