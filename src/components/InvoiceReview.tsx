@@ -515,11 +515,37 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
   const expenseAccounts = selectableExpenseAccounts(accounts);
 
   return (
-    <div style={{ display: "flex", gap: 24, alignItems: "flex-start", minHeight: "calc(100vh - 100px)" }}>
-      {/* Document preview */}
+    <div className="invoice-layout">
+      {/* Narrow-screen: link to open document without the full side panel */}
+      {doc && (
+        <div className="invoice-doc-link">
+          <a
+            href={`/api/invoices/${invoice.id}/document`}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "8px 14px",
+              border: "1px solid #e2e8f0",
+              borderRadius: 6,
+              background: "#fff",
+              color: "#2563eb",
+              fontSize: 13,
+              fontWeight: 500,
+              textDecoration: "none",
+            }}
+          >
+            📄 View Original Document
+          </a>
+        </div>
+      )}
+
+      {/* Document preview (wide screens) */}
       <div
+        className="invoice-doc-panel"
         style={{
-          flex: "0 0 48%",
           background: "#fff",
           border: "1px solid #e2e8f0",
           borderRadius: 8,

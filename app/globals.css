@@ -22,3 +22,32 @@ body {
 }
 
 * { box-sizing: border-box; }
+
+/* Responsive invoice review layout */
+.invoice-layout {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+  min-height: calc(100vh - 100px);
+}
+
+.invoice-doc-panel {
+  flex: 0 0 48%;
+}
+
+.invoice-doc-link {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .invoice-layout {
+    flex-direction: column;
+  }
+  .invoice-doc-panel {
+    display: none;
+  }
+  .invoice-doc-link {
+    display: block;
+    margin-bottom: 12px;
+  }
+}
