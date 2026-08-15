@@ -1,13 +1,14 @@
 /**
- * Targeted tests for the VAT-inclusive line-amount rules added to
- * AI_EXTRACTION_PROMPT (difficult-invoice-import fix, round 2).
+ * Targeted tests for the VAT-inclusive line-amount rules in AI_EXTRACTION_PROMPT.
+ * Updated in round 3 to match narrowed VAT-rate-column rule and structural
+ * layout pattern (replaces the removed sum-reconciliation rule).
  *
  * Coverage:
  * 1. Prompt contains every key instruction required by the task.
  * 2. AiInvoiceExtractionSchema accepts a correctly-derived VAT-inclusive line.
  * 3. AiInvoiceExtractionSchema accepts a line with explicit net/VAT amounts.
- * 4. Schema rejects a line where grossAmount is present but netAmount is the
- *    same value (shifted, not derived).
+ * 4. Schema accepts a line where all per-line amounts are null.
+ * 5. Schema rejects a line where netAmount is a non-decimal string.
  */
 import { describe, it, expect } from "vitest";
 import { AI_EXTRACTION_PROMPT, AiInvoiceExtractionSchema } from "@/src/lib/ai-extraction";
@@ -16,21 +17,27 @@ import { Decimal } from "@/src/lib/decimal";
 // ── 1. Prompt content ─────────────────────────────────────────────────────────
 
 describe("AI_EXTRACTION_PROMPT — VAT-inclusive line rules", () => {
-  it("instructs the model that a Vat% column is a rate, not an amount", () => {
-    expect(AI_EXTRACTION_PROMPT).toMatch(/Vat %.*VAT rate, not a VAT amount/i);
+  it("identifies VAT rate columns by tax-specific keywords only", () => {
+    // Must mention the accepted tax keywords.
+    expect(AI_EXTRACTION_PROMPT).toMatch(/VAT.*Vat.*Tax.*GST.*TVA/);
     expect(AI_EXTRACTION_PROMPT).toContain("line.vatRate");
-    // The rule explicitly names vatAmount as the field NOT to use for a Vat% column.
-    expect(AI_EXTRACTION_PROMPT).toMatch(/line\.vatRate, not line\.vatAmount/);
+    // Must explicitly exclude discount/surcharge/fee percentage columns.
+    expect(AI_EXTRACTION_PROMPT).toMatch(/Disc\.%/);
+    expect(AI_EXTRACTION_PROMPT).toMatch(/do not treat discount.*surcharge.*fee.*rebate/i);
   });
 
   it("instructs the model not to assume 'Amount' is always net", () => {
     expect(AI_EXTRACTION_PROMPT).toMatch(/do not assume.*amount.*is always net/i);
   });
 
-  it("instructs the model to reconcile line-amount sum against invoice totals", () => {
-    expect(AI_EXTRACTION_PROMPT).toMatch(/sum.*invoice.*net/i);
-    expect(AI_EXTRACTION_PROMPT).toMatch(/sum.*invoice.*total|gross/i);
+  it("uses structural layout to identify VAT-inclusive Amount column", () => {
+    // Must describe the five-column structural signal.
+    expect(AI_EXTRACTION_PROMPT).toMatch(/quantity column/i);
+    expect(AI_EXTRACTION_PROMPT).toMatch(/unit.price column/i);
+    expect(AI_EXTRACTION_PROMPT).toMatch(/Qty × unit price/i);
     expect(AI_EXTRACTION_PROMPT).toContain("line.grossAmount");
+    // Must not apply the pattern universally to single/two-column tables.
+    expect(AI_EXTRACTION_PROMPT).toMatch(/one or two money columns/i);
   });
 
   it("provides the derivation formula as the only permitted calculation exception", () => {
@@ -47,8 +54,9 @@ describe("AI_EXTRACTION_PROMPT — VAT-inclusive line rules", () => {
     expect(AI_EXTRACTION_PROMPT).toMatch(/never move a value into a different field/i);
   });
 
-  it("instructs the model to use invoice-level totals as reconciliation anchors", () => {
-    expect(AI_EXTRACTION_PROMPT).toMatch(/reconciliation anchors/i);
+  it("uses invoice-level totals as a sanity check, not the primary column-semantics signal", () => {
+    expect(AI_EXTRACTION_PROMPT).toMatch(/sanity check/i);
+    expect(AI_EXTRACTION_PROMPT).toMatch(/not as the primary basis/i);
   });
 });
 
