@@ -296,3 +296,63 @@ describe("RecognitionPreview FX suppression", () => {
     expect(html).toContain("Enter a valid FX rate");
   });
 });
+
+// ── Invoice-net vs line-net warning — tolerance policy (follow-up) ────────────
+
+describe("InvoiceLinesEditor invoice-net vs line-net warning tolerance", () => {
+  it("does NOT warn for fiat lines summing within 0.01 of invoice net", () => {
+    const line = { ...emptyEditableInvoiceLine(), netAmount: "100.005" };
+    const html = renderToStaticMarkup(
+      <InvoiceLinesEditor
+        lines={[line]}
+        postingAccounts={[]}
+        invoiceNetAmount="100"
+        currencyType="fiat"
+        onChange={() => undefined}
+      />,
+    );
+    expect(html).not.toContain("sum of invoice lines does not match");
+  });
+
+  it("warns for fiat lines summing more than 0.01 away from invoice net", () => {
+    const line = { ...emptyEditableInvoiceLine(), netAmount: "100.02" };
+    const html = renderToStaticMarkup(
+      <InvoiceLinesEditor
+        lines={[line]}
+        postingAccounts={[]}
+        invoiceNetAmount="100"
+        currencyType="fiat"
+        onChange={() => undefined}
+      />,
+    );
+    expect(html).toContain("sum of invoice lines does not match");
+  });
+
+  it("warns for crypto lines with any nonzero difference from invoice net", () => {
+    const line = { ...emptyEditableInvoiceLine(), netAmount: "1.000000000000000001" };
+    const html = renderToStaticMarkup(
+      <InvoiceLinesEditor
+        lines={[line]}
+        postingAccounts={[]}
+        invoiceNetAmount="1.000000000000000000"
+        currencyType="crypto"
+        onChange={() => undefined}
+      />,
+    );
+    expect(html).toContain("sum of invoice lines does not match");
+  });
+
+  it("does NOT warn for crypto lines that exactly match invoice net", () => {
+    const line = { ...emptyEditableInvoiceLine(), netAmount: "1.000000000000000001" };
+    const html = renderToStaticMarkup(
+      <InvoiceLinesEditor
+        lines={[line]}
+        postingAccounts={[]}
+        invoiceNetAmount="1.000000000000000001"
+        currencyType="crypto"
+        onChange={() => undefined}
+      />,
+    );
+    expect(html).not.toContain("sum of invoice lines does not match");
+  });
+});

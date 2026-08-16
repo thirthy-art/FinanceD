@@ -2,7 +2,7 @@
 
 import type { EditableInvoiceLine } from "@/src/lib/invoice-lines";
 import { emptyEditableInvoiceLine, sumInvoiceLineAmounts, applyAutoCalcToLine, parsePageInput } from "@/src/lib/invoice-lines";
-import { safeParseDecimal, toDecimal, FIAT_TOLERANCE } from "@/src/lib/invoice-validation";
+import { safeParseDecimal, amountsWithinTolerance, FIAT_TOLERANCE } from "@/src/lib/invoice-validation";
 import { Decimal } from "@/src/lib/decimal";
 import { deriveRecognitionSchedule } from "@/src/lib/recognition";
 
@@ -243,7 +243,7 @@ export default function InvoiceLinesEditor({
   const amountsMismatch = lines.length > 0
     && lineAmountSummary.invalidLineNumbers.length === 0
     && comparableInvoiceNet !== null
-    && !toDecimal(lineAmountSummary.sum).equals(toDecimal(comparableInvoiceNet));
+    && !amountsWithinTolerance(lineAmountSummary.sum, comparableInvoiceNet, currencyType);
 
   function update(index: number, field: keyof EditableInvoiceLine, value: string) {
     onChange(lines.map((line, lineIndex) => lineIndex === index ? { ...line, [field]: value } : line));
