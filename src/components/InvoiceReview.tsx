@@ -955,6 +955,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
 
           <InvoiceLinesEditor
             lines={editableLines}
+            postingAccounts={expenseAccounts}
             invoiceNetAmount={form.netAmount}
             invoiceDate={form.invoiceDate}
             invoiceFxRate={form.fxRateToBase || "1"}

@@ -7,6 +7,7 @@ import { deriveRecognitionSchedule } from "@/src/lib/recognition";
 
 interface Props {
   lines: EditableInvoiceLine[];
+  postingAccounts: Array<{ code: string; name: string }>;
   invoiceNetAmount: string;
   invoiceDate?: string;
   invoiceFxRate?: string;
@@ -17,7 +18,6 @@ interface Props {
 
 const inputStyle: React.CSSProperties = {
   width: "100%",
-  minWidth: 72,
   padding: "6px 7px",
   border: "1px solid #e2e8f0",
   borderRadius: 5,
@@ -86,7 +86,7 @@ function RecognitionPreview({
   );
 }
 
-export default function InvoiceLinesEditor({ lines, invoiceNetAmount, invoiceDate, invoiceFxRate, invoiceCurrency, baseCurrency, onChange }: Props) {
+export default function InvoiceLinesEditor({ lines, postingAccounts, invoiceNetAmount, invoiceDate, invoiceFxRate, invoiceCurrency, baseCurrency, onChange }: Props) {
   const lineAmountSummary = sumInvoiceLineAmounts(lines);
   const parsedInvoiceNet = safeParseDecimal(invoiceNetAmount);
   const comparableInvoiceNet = parsedInvoiceNet.error ? null : parsedInvoiceNet.value;
@@ -131,51 +131,52 @@ export default function InvoiceLinesEditor({ lines, invoiceNetAmount, invoiceDat
           {lines.map((line, index) => (
             <div
               key={line.id ?? `draft-${index}`}
+              className="invoice-line-card"
               style={{ border: "1px solid #e2e8f0", borderRadius: 6, padding: 12, marginBottom: 10, background: "#fff" }}
             >
               {/* Row 1: core fields */}
-              <div style={{ display: "grid", gridTemplateColumns: "60px 1fr 1fr 90px 70px 90px 90px 90px 90px 60px auto", gap: 6, alignItems: "start" }}>
-                <div>
+              <div className="invoice-line-core-grid">
+                <div className="invoice-line-field invoice-line-compact-field invoice-line-number-field">
                   <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Line #</div>
-                  <input aria-label={`Line ${index + 1} number`} style={inputStyle} value={line.lineNumber} onChange={(e) => update(index, "lineNumber", e.target.value)} />
+                  <input className="invoice-line-control" aria-label={`Line ${index + 1} number`} style={inputStyle} value={line.lineNumber} onChange={(e) => update(index, "lineNumber", e.target.value)} />
                 </div>
-                <div>
+                <div className="invoice-line-field invoice-line-description-field invoice-line-original-description-field">
                   <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Original description</div>
-                  <textarea aria-label={`Line ${index + 1} original description`} style={{ ...inputStyle, minWidth: 0, resize: "vertical" }} value={line.descriptionOriginal} onChange={(e) => update(index, "descriptionOriginal", e.target.value)} />
+                  <textarea className="invoice-line-control" aria-label={`Line ${index + 1} original description`} style={{ ...inputStyle, resize: "vertical" }} value={line.descriptionOriginal} onChange={(e) => update(index, "descriptionOriginal", e.target.value)} />
                 </div>
-                <div>
+                <div className="invoice-line-field invoice-line-description-field invoice-line-english-description-field">
                   <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Description</div>
-                  <textarea aria-label={`Line ${index + 1} English description`} style={{ ...inputStyle, minWidth: 0, resize: "vertical" }} value={line.description} onChange={(e) => update(index, "description", e.target.value)} />
+                  <textarea className="invoice-line-control" aria-label={`Line ${index + 1} English description`} style={{ ...inputStyle, resize: "vertical" }} value={line.description} onChange={(e) => update(index, "description", e.target.value)} />
                 </div>
-                <div>
+                <div className="invoice-line-field invoice-line-compact-field">
                   <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Qty</div>
-                  <input aria-label={`Line ${index + 1} quantity`} style={inputStyle} value={line.quantity} onChange={(e) => update(index, "quantity", e.target.value)} />
+                  <input className="invoice-line-control" aria-label={`Line ${index + 1} quantity`} style={inputStyle} value={line.quantity} onChange={(e) => update(index, "quantity", e.target.value)} />
                 </div>
-                <div>
+                <div className="invoice-line-field invoice-line-compact-field">
                   <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Unit</div>
-                  <input aria-label={`Line ${index + 1} unit`} style={inputStyle} value={line.unit} onChange={(e) => update(index, "unit", e.target.value)} />
+                  <input className="invoice-line-control" aria-label={`Line ${index + 1} unit`} style={inputStyle} value={line.unit} onChange={(e) => update(index, "unit", e.target.value)} />
                 </div>
-                <div>
+                <div className="invoice-line-field invoice-line-compact-field">
                   <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Unit price</div>
-                  <input aria-label={`Line ${index + 1} unitPrice`} style={inputStyle} value={line.unitPrice} onChange={(e) => update(index, "unitPrice", e.target.value)} />
+                  <input className="invoice-line-control" aria-label={`Line ${index + 1} unitPrice`} style={inputStyle} value={line.unitPrice} onChange={(e) => update(index, "unitPrice", e.target.value)} />
                 </div>
-                <div>
+                <div className="invoice-line-field invoice-line-compact-field">
                   <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Net amount</div>
-                  <input aria-label={`Line ${index + 1} netAmount`} style={inputStyle} value={line.netAmount} onChange={(e) => update(index, "netAmount", e.target.value)} />
+                  <input className="invoice-line-control" aria-label={`Line ${index + 1} netAmount`} style={inputStyle} value={line.netAmount} onChange={(e) => update(index, "netAmount", e.target.value)} />
                 </div>
-                <div>
+                <div className="invoice-line-field invoice-line-compact-field">
                   <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>VAT rate</div>
-                  <input aria-label={`Line ${index + 1} vatRate`} style={inputStyle} value={line.vatRate} onChange={(e) => update(index, "vatRate", e.target.value)} />
+                  <input className="invoice-line-control" aria-label={`Line ${index + 1} vatRate`} style={inputStyle} value={line.vatRate} onChange={(e) => update(index, "vatRate", e.target.value)} />
                 </div>
-                <div>
+                <div className="invoice-line-field invoice-line-compact-field">
                   <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>VAT</div>
-                  <input aria-label={`Line ${index + 1} vatAmount`} style={inputStyle} value={line.vatAmount} onChange={(e) => update(index, "vatAmount", e.target.value)} />
+                  <input className="invoice-line-control" aria-label={`Line ${index + 1} vatAmount`} style={inputStyle} value={line.vatAmount} onChange={(e) => update(index, "vatAmount", e.target.value)} />
                 </div>
-                <div>
+                <div className="invoice-line-field invoice-line-compact-field">
                   <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Page</div>
-                  <input aria-label={`Line ${index + 1} sourcePage`} style={inputStyle} value={line.sourcePage} onChange={(e) => update(index, "sourcePage", e.target.value)} />
+                  <input className="invoice-line-control" aria-label={`Line ${index + 1} sourcePage`} style={inputStyle} value={line.sourcePage} onChange={(e) => update(index, "sourcePage", e.target.value)} />
                 </div>
-                <div style={{ paddingTop: 18 }}>
+                <div className="invoice-line-delete-field" style={{ paddingTop: 18 }}>
                   <button
                     type="button"
                     onClick={() => onChange(lines.filter((_, lineIndex) => lineIndex !== index))}
@@ -187,11 +188,12 @@ export default function InvoiceLinesEditor({ lines, invoiceNetAmount, invoiceDat
               </div>
 
               {/* Row 2: recognition + accounting fields */}
-              <div style={{ display: "grid", gridTemplateColumns: "130px 140px 140px 1fr", gap: 6, marginTop: 8, alignItems: "start" }}>
-                <div>
+              <div className="invoice-line-recognition-grid">
+                <div className="invoice-line-treatment-field">
                   <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Treatment</div>
                   <select
                     aria-label={`Line ${index + 1} recognition treatment`}
+                    className="invoice-line-control"
                     style={selectStyle}
                     value={line.recognitionTreatment}
                     onChange={(e) => updateTreatment(index, e.target.value as "Immediate" | "Prepaid")}
@@ -203,21 +205,23 @@ export default function InvoiceLinesEditor({ lines, invoiceNetAmount, invoiceDat
 
                 {line.recognitionTreatment === "Prepaid" && (
                   <>
-                    <div>
+                    <div className="invoice-line-date-field">
                       <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Recog. start date</div>
                       <input
                         type="date"
                         aria-label={`Line ${index + 1} recognition start date`}
+                        className="invoice-line-control"
                         style={inputStyle}
                         value={line.recognitionStartDate}
                         onChange={(e) => update(index, "recognitionStartDate", e.target.value)}
                       />
                     </div>
-                    <div>
+                    <div className="invoice-line-date-field">
                       <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Recog. end date</div>
                       <input
                         type="date"
                         aria-label={`Line ${index + 1} recognition end date`}
+                        className="invoice-line-control"
                         style={inputStyle}
                         value={line.recognitionEndDate}
                         onChange={(e) => update(index, "recognitionEndDate", e.target.value)}
@@ -227,15 +231,22 @@ export default function InvoiceLinesEditor({ lines, invoiceNetAmount, invoiceDat
                   </>
                 )}
 
-                <div style={{ gridColumn: line.recognitionTreatment === "Prepaid" ? "4" : "2 / span 3" }}>
+                <div className="invoice-line-account-field">
                   <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Accounting account no. (optional)</div>
-                  <input
+                  <select
                     aria-label={`Line ${index + 1} accounting account number`}
-                    style={inputStyle}
+                    className="invoice-line-control"
+                    style={selectStyle}
                     value={line.accountingAccountNumber}
                     onChange={(e) => update(index, "accountingAccountNumber", e.target.value)}
-                    placeholder="e.g. 6200"
-                  />
+                  >
+                    <option value="">-- none --</option>
+                    {postingAccounts.map((account) => (
+                      <option key={account.code} value={account.code}>
+                        {account.code} — {account.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
 

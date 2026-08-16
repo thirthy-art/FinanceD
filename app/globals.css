@@ -39,6 +39,60 @@ body {
   display: none;
 }
 
+.invoice-line-card {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.invoice-line-core-grid {
+  display: grid;
+  grid-template-columns: 54px minmax(130px, 1fr) minmax(130px, 1fr) repeat(4, minmax(68px, 0.55fr));
+  gap: 6px;
+  align-items: start;
+}
+
+.invoice-line-field,
+.invoice-line-delete-field,
+.invoice-line-treatment-field,
+.invoice-line-date-field,
+.invoice-line-account-field,
+.invoice-line-control {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.invoice-line-recognition-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+  align-items: flex-start;
+}
+
+.invoice-line-treatment-field {
+  flex: 0 0 130px;
+}
+
+.invoice-line-date-field {
+  flex: 0 0 140px;
+}
+
+.invoice-line-account-field {
+  flex: 0 1 320px;
+  width: 320px;
+  max-width: 320px;
+}
+
+@media (min-width: 768px) and (max-width: 1199px) {
+  .invoice-line-core-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .invoice-line-description-field {
+    grid-column: span 2;
+  }
+}
+
 @media (max-width: 767px) {
   .invoice-layout {
     flex-direction: column;
@@ -49,5 +103,62 @@ body {
   .invoice-doc-link {
     display: block;
     margin-bottom: 12px;
+  }
+
+  .invoice-line-card {
+    padding: 12px !important;
+  }
+
+  .invoice-line-core-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px 8px;
+  }
+
+  .invoice-line-original-description-field {
+    order: 1;
+  }
+
+  .invoice-line-english-description-field {
+    order: 2;
+  }
+
+  .invoice-line-number-field,
+  .invoice-line-compact-field {
+    order: 3;
+  }
+
+  .invoice-line-description-field {
+    grid-column: 1 / -1;
+  }
+
+  .invoice-line-delete-field {
+    order: 4;
+    padding-top: 8px !important;
+  }
+
+  .invoice-line-control {
+    min-height: 40px;
+    font-size: 16px !important;
+    padding: 8px 9px !important;
+  }
+
+  textarea.invoice-line-control {
+    min-height: 72px;
+  }
+
+  .invoice-line-recognition-grid {
+    gap: 10px 8px;
+    margin-top: 12px;
+  }
+
+  .invoice-line-treatment-field,
+  .invoice-line-date-field {
+    flex: 1 1 calc(50% - 4px);
+  }
+
+  .invoice-line-account-field {
+    flex: 1 1 100%;
+    width: 100%;
+    max-width: none;
   }
 }
