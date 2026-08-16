@@ -52,6 +52,7 @@ export async function GET() {
       recognitionStartDate: supplierInvoiceLines.recognitionStartDate,
       recognitionEndDate: supplierInvoiceLines.recognitionEndDate,
       accountingAccountNumber: supplierInvoiceLines.accountingAccountNumber,
+      prepaidAccountNumber: supplierInvoiceLines.prepaidAccountNumber,
     }).from(supplierInvoiceLines)
       .innerJoin(supplierInvoices, eq(supplierInvoiceLines.invoiceId, supplierInvoices.id))
       .leftJoin(vendors, eq(supplierInvoices.vendorId, vendors.id))

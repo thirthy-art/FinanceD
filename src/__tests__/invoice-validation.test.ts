@@ -13,6 +13,7 @@ import {
   safeParseDecimal,
   safeIsAmountMismatch,
   safeCalculateBaseAmount,
+  isVatRateValid,
   FIAT_TOLERANCE,
 } from "../lib/invoice-validation";
 
@@ -560,5 +561,46 @@ describe("strict decimal grammar", () => {
 
   it("accepts plain integer '12345'", () => {
     expect(parseDecimalInput("12345")).toBe("12345");
+  });
+});
+
+// ── isVatRateValid ────────────────────────────────────────────────────────────
+
+describe("isVatRateValid", () => {
+  it("returns true for blank/null/undefined (blank allowed on drafts)", () => {
+    expect(isVatRateValid("")).toBe(true);
+    expect(isVatRateValid(null)).toBe(true);
+    expect(isVatRateValid(undefined)).toBe(true);
+    expect(isVatRateValid("   ")).toBe(true);
+  });
+
+  it("returns true for 0 (zero rate is valid)", () => {
+    expect(isVatRateValid("0")).toBe(true);
+  });
+
+  it("returns true for typical rates like 19 and 21", () => {
+    expect(isVatRateValid("19")).toBe(true);
+    expect(isVatRateValid("21")).toBe(true);
+  });
+
+  it("returns true for 100 (boundary)", () => {
+    expect(isVatRateValid("100")).toBe(true);
+  });
+
+  it("returns false for rates above 100", () => {
+    expect(isVatRateValid("101")).toBe(false);
+    expect(isVatRateValid("200")).toBe(false);
+  });
+
+  it("returns false for negative rates", () => {
+    expect(isVatRateValid("-1")).toBe(false);
+  });
+
+  it("returns false for malformed input", () => {
+    expect(isVatRateValid("abc")).toBe(false);
+  });
+
+  it("accepts decimal rates like 7.7", () => {
+    expect(isVatRateValid("7.7")).toBe(true);
   });
 });

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { parseDecimalInput, safeParseDecimal, toDecimal } from "./invoice-validation";
+import { Decimal } from "./decimal";
 
 const nullableText = (max: number) => z.string().max(max).nullable();
 const nullableDecimalInput = z.string().max(100).nullable();
@@ -20,6 +21,7 @@ export const InvoiceLineInputSchema = z.object({
   recognitionStartDate: nullableText(10),
   recognitionEndDate: nullableText(10),
   accountingAccountNumber: nullableText(50),
+  prepaidAccountNumber: nullableText(50),
 });
 
 export type InvoiceLineInput = z.infer<typeof InvoiceLineInputSchema>;
@@ -41,6 +43,7 @@ export interface EditableInvoiceLine {
   recognitionStartDate: string;
   recognitionEndDate: string;
   accountingAccountNumber: string;
+  prepaidAccountNumber: string;
 }
 
 const DECIMAL_FIELDS = [
@@ -68,11 +71,12 @@ export function normalizeInvoiceLineInput(line: InvoiceLineInput, index: number)
     }
     normalized[field] = value;
   }
-  // Carry recognition fields through unchanged
+  // Carry text/recognition fields through unchanged
   normalized.recognitionTreatment = line.recognitionTreatment ?? "Immediate";
   normalized.recognitionStartDate = line.recognitionStartDate ?? null;
   normalized.recognitionEndDate = line.recognitionEndDate ?? null;
   normalized.accountingAccountNumber = line.accountingAccountNumber ?? null;
+  normalized.prepaidAccountNumber = line.prepaidAccountNumber ?? null;
   return normalized;
 }
 
@@ -93,6 +97,7 @@ export function emptyEditableInvoiceLine(): EditableInvoiceLine {
     recognitionStartDate: "",
     recognitionEndDate: "",
     accountingAccountNumber: "",
+    prepaidAccountNumber: "",
   };
 }
 
@@ -114,11 +119,51 @@ export function editableLineToInput(line: EditableInvoiceLine): InvoiceLineInput
     recognitionStartDate: nullable(line.recognitionStartDate),
     recognitionEndDate: nullable(line.recognitionEndDate),
     accountingAccountNumber: nullable(line.accountingAccountNumber),
+    prepaidAccountNumber: nullable(line.prepaidAccountNumber),
   };
 }
 
 /**
- * Validate recognition fields for an invoice line at approval time.
+ * Fill blank arithmetic fields (net, vatAmount, grossAmount) using conservative
+ * auto-calculation. Does not modify explicitly entered values.
+ */
+export function applyAutoCalcToLine(line: EditableInvoiceLine): EditableInvoiceLine {
+  let net = line.netAmount;
+  let vat = line.vatAmount;
+  let gross = line.grossAmount;
+
+  if (!net.trim()) {
+    const qtyP = safeParseDecimal(line.quantity);
+    const upP = safeParseDecimal(line.unitPrice);
+    if (!qtyP.error && !upP.error && qtyP.value && upP.value) {
+      try { net = new Decimal(qtyP.value).times(new Decimal(upP.value)).toFixed(); } catch { /* ignore */ }
+    }
+  }
+
+  if (!vat.trim()) {
+    const netP = safeParseDecimal(net);
+    const rateP = safeParseDecimal(line.vatRate);
+    if (!netP.error && !rateP.error && netP.value && rateP.value) {
+      const rv = new Decimal(rateP.value);
+      if (rv.gte(0) && rv.lte(100)) {
+        try { vat = new Decimal(netP.value).times(rv).dividedBy(100).toFixed(); } catch { /* ignore */ }
+      }
+    }
+  }
+
+  if (!gross.trim()) {
+    const netP = safeParseDecimal(net);
+    const vatP = safeParseDecimal(vat);
+    if (!netP.error && !vatP.error && netP.value !== null && vatP.value !== null) {
+      try { gross = new Decimal(netP.value).plus(new Decimal(vatP.value)).toFixed(); } catch { /* ignore */ }
+    }
+  }
+
+  return { ...line, netAmount: net, vatAmount: vat, grossAmount: gross };
+}
+
+/**
+ * Validate recognition and account fields for an invoice line at approval time.
  * Returns an error message or null if valid.
  */
 export function validateLineRecognitionForApproval(
@@ -131,6 +176,12 @@ export function validateLineRecognitionForApproval(
   }
   if (line.recognitionEndDate < line.recognitionStartDate) {
     return `Line ${lineNumber}: Recognition end date must be on or after start date.`;
+  }
+  if (!line.accountingAccountNumber) {
+    return `Line ${lineNumber}: Prepaid treatment requires an expense account (Accounting Account No.).`;
+  }
+  if (!line.prepaidAccountNumber) {
+    return `Line ${lineNumber}: Prepaid treatment requires a prepaid asset account.`;
   }
   return null;
 }

@@ -107,6 +107,7 @@ export function extractionLinesToEditable(extraction: AiInvoiceExtraction): Edit
     recognitionStartDate: "",
     recognitionEndDate: "",
     accountingAccountNumber: "",
+    prepaidAccountNumber: "",
   }));
 }
 

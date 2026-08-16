@@ -1,13 +1,15 @@
 "use client";
 
 import type { EditableInvoiceLine } from "@/src/lib/invoice-lines";
-import { emptyEditableInvoiceLine, sumInvoiceLineAmounts } from "@/src/lib/invoice-lines";
+import { emptyEditableInvoiceLine, sumInvoiceLineAmounts, applyAutoCalcToLine } from "@/src/lib/invoice-lines";
 import { safeParseDecimal, toDecimal } from "@/src/lib/invoice-validation";
+import { Decimal } from "@/src/lib/decimal";
 import { deriveRecognitionSchedule } from "@/src/lib/recognition";
 
 interface Props {
   lines: EditableInvoiceLine[];
   postingAccounts: Array<{ code: string; name: string }>;
+  prepaidAccounts?: Array<{ code: string; name: string }>;
   invoiceNetAmount: string;
   invoiceDate?: string;
   invoiceFxRate?: string;
@@ -24,11 +26,120 @@ const inputStyle: React.CSSProperties = {
   fontSize: 12,
 };
 
+const derivedStyle: React.CSSProperties = {
+  ...inputStyle,
+  background: "#f0f9ff",
+  color: "#0369a1",
+  border: "1px solid #93c5fd",
+};
+
+const errorInputStyle: React.CSSProperties = {
+  ...inputStyle,
+  borderColor: "#ef4444",
+  background: "#fef2f2",
+};
+
 const selectStyle: React.CSSProperties = {
   ...inputStyle,
   background: "#fff",
   cursor: "pointer",
 };
+
+function fieldInputStyle(raw: string, derived: boolean, hasError: boolean): React.CSSProperties {
+  if (hasError) return errorInputStyle;
+  if (derived) return derivedStyle;
+  return inputStyle;
+}
+
+function computeLineDisplay(line: EditableInvoiceLine): {
+  display: EditableInvoiceLine;
+  netDerived: boolean;
+  vatDerived: boolean;
+  grossDerived: boolean;
+  netError: string | null;
+  vatAmtError: string | null;
+  grossError: string | null;
+  qtyError: string | null;
+  upError: string | null;
+  vatRateError: string | null;
+  vatRateOutOfRange: boolean;
+  qtyNetMismatch: boolean;
+  vatMismatch: boolean;
+  grossMismatch: boolean;
+} {
+  const display = applyAutoCalcToLine(line);
+
+  const netBlank = !line.netAmount.trim();
+  const vatBlank = !line.vatAmount.trim();
+  const grossBlank = !line.grossAmount.trim();
+
+  const netDerived = netBlank && display.netAmount !== "";
+  const vatDerived = vatBlank && display.vatAmount !== "";
+  const grossDerived = grossBlank && display.grossAmount !== "";
+
+  const netError = !netBlank ? safeParseDecimal(line.netAmount).error : null;
+  const vatAmtError = !vatBlank ? safeParseDecimal(line.vatAmount).error : null;
+  const grossError = !grossBlank ? safeParseDecimal(line.grossAmount).error : null;
+  const qtyError = line.quantity.trim() ? safeParseDecimal(line.quantity).error : null;
+  const upError = line.unitPrice.trim() ? safeParseDecimal(line.unitPrice).error : null;
+
+  const vatRateParsed = safeParseDecimal(line.vatRate);
+  const vatRateError = line.vatRate.trim() ? vatRateParsed.error : null;
+  let vatRateOutOfRange = false;
+  if (!vatRateError && vatRateParsed.value) {
+    try {
+      const rv = new Decimal(vatRateParsed.value);
+      vatRateOutOfRange = rv.lt(0) || rv.gt(100);
+    } catch { /* ignore */ }
+  }
+
+  // Mismatch: Qty × UnitPrice ≠ Net (net is explicit)
+  let qtyNetMismatch = false;
+  if (!netDerived && !netBlank && line.quantity.trim() && line.unitPrice.trim() &&
+      !qtyError && !upError && !netError) {
+    try {
+      const qty = new Decimal(safeParseDecimal(line.quantity).value!);
+      const up = new Decimal(safeParseDecimal(line.unitPrice).value!);
+      const net = new Decimal(safeParseDecimal(line.netAmount).value!);
+      if (!qty.times(up).eq(net)) qtyNetMismatch = true;
+    } catch { /* ignore */ }
+  }
+
+  // Mismatch: Net × VatRate/100 ≠ VatAmt (vat is explicit)
+  let vatMismatch = false;
+  if (!vatDerived && !vatBlank && line.vatRate.trim() &&
+      !vatAmtError && !vatRateError && !vatRateOutOfRange && display.netAmount) {
+    try {
+      const net = new Decimal(safeParseDecimal(display.netAmount).value!);
+      const rate = new Decimal(vatRateParsed.value!);
+      const vat = new Decimal(safeParseDecimal(line.vatAmount).value!);
+      if (!net.times(rate).dividedBy(100).eq(vat)) vatMismatch = true;
+    } catch { /* ignore */ }
+  }
+
+  // Mismatch: Net + VatAmt ≠ Gross (gross is explicit)
+  let grossMismatch = false;
+  if (!grossDerived && !grossBlank && !grossError && display.netAmount && display.vatAmount) {
+    const netP = safeParseDecimal(display.netAmount);
+    const vatP = safeParseDecimal(display.vatAmount);
+    if (!netP.error && !vatP.error && netP.value !== null && vatP.value !== null) {
+      try {
+        const net = new Decimal(netP.value);
+        const vat = new Decimal(vatP.value);
+        const gross = new Decimal(safeParseDecimal(line.grossAmount).value!);
+        if (!net.plus(vat).eq(gross)) grossMismatch = true;
+      } catch { /* ignore */ }
+    }
+  }
+
+  return {
+    display,
+    netDerived, vatDerived, grossDerived,
+    netError, vatAmtError, grossError, qtyError, upError,
+    vatRateError, vatRateOutOfRange,
+    qtyNetMismatch, vatMismatch, grossMismatch,
+  };
+}
 
 function RecognitionPreview({
   line,
@@ -44,11 +155,19 @@ function RecognitionPreview({
   baseCurrency?: string;
 }) {
   if (line.recognitionTreatment !== "Prepaid") return null;
-  if (!line.netAmount || !line.recognitionStartDate || !line.recognitionEndDate) return null;
+  if (!line.recognitionStartDate || !line.recognitionEndDate) return null;
+
+  // Guard: require a valid net amount before computing schedule
+  const netParsed = safeParseDecimal(line.netAmount);
+  if (netParsed.error || !netParsed.value) return null;
+
+  // Guard: require a valid fxRate
+  const rateParsed = safeParseDecimal(fxRate ?? "1");
+  const safeRate = (!rateParsed.error && rateParsed.value) ? rateParsed.value : "1";
 
   const rows = deriveRecognitionSchedule({
-    netAmount: line.netAmount,
-    fxRate: fxRate || "1",
+    netAmount: netParsed.value,
+    fxRate: safeRate,
     treatment: "Prepaid",
     invoiceDate: invoiceDate || null,
     startDate: line.recognitionStartDate,
@@ -86,8 +205,19 @@ function RecognitionPreview({
   );
 }
 
-export default function InvoiceLinesEditor({ lines, postingAccounts, invoiceNetAmount, invoiceDate, invoiceFxRate, invoiceCurrency, baseCurrency, onChange }: Props) {
-  const lineAmountSummary = sumInvoiceLineAmounts(lines);
+export default function InvoiceLinesEditor({
+  lines,
+  postingAccounts,
+  prepaidAccounts = [],
+  invoiceNetAmount,
+  invoiceDate,
+  invoiceFxRate,
+  invoiceCurrency,
+  baseCurrency,
+  onChange,
+}: Props) {
+  const displayLines = lines.map(applyAutoCalcToLine);
+  const lineAmountSummary = sumInvoiceLineAmounts(displayLines);
   const parsedInvoiceNet = safeParseDecimal(invoiceNetAmount);
   const comparableInvoiceNet = parsedInvoiceNet.error ? null : parsedInvoiceNet.value;
   const amountsMismatch = lines.length > 0
@@ -102,7 +232,7 @@ export default function InvoiceLinesEditor({ lines, postingAccounts, invoiceNetA
   function updateTreatment(index: number, value: "Immediate" | "Prepaid") {
     onChange(lines.map((line, lineIndex) =>
       lineIndex === index
-        ? { ...line, recognitionTreatment: value, recognitionStartDate: "", recognitionEndDate: "" }
+        ? { ...line, recognitionTreatment: value, recognitionStartDate: "", recognitionEndDate: "", prepaidAccountNumber: "" }
         : line
     ));
   }
@@ -128,150 +258,245 @@ export default function InvoiceLinesEditor({ lines, postingAccounts, invoiceNetA
         </div>
       ) : (
         <div>
-          {lines.map((line, index) => (
-            <div
-              key={line.id ?? `draft-${index}`}
-              className="invoice-line-card"
-              style={{ border: "1px solid #e2e8f0", borderRadius: 6, padding: 12, marginBottom: 10, background: "#fff" }}
-            >
-              {/* Row 1: core fields */}
-              <div className="invoice-line-core-grid">
-                <div className="invoice-line-field invoice-line-compact-field invoice-line-number-field">
-                  <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Line #</div>
-                  <input className="invoice-line-control" aria-label={`Line ${index + 1} number`} style={inputStyle} value={line.lineNumber} onChange={(e) => update(index, "lineNumber", e.target.value)} />
-                </div>
-                <div className="invoice-line-field invoice-line-description-field invoice-line-original-description-field">
-                  <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Original description</div>
-                  <textarea className="invoice-line-control" aria-label={`Line ${index + 1} original description`} style={{ ...inputStyle, resize: "vertical" }} value={line.descriptionOriginal} onChange={(e) => update(index, "descriptionOriginal", e.target.value)} />
-                </div>
-                <div className="invoice-line-field invoice-line-description-field invoice-line-english-description-field">
-                  <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Description</div>
-                  <textarea className="invoice-line-control" aria-label={`Line ${index + 1} English description`} style={{ ...inputStyle, resize: "vertical" }} value={line.description} onChange={(e) => update(index, "description", e.target.value)} />
-                </div>
-                <div className="invoice-line-field invoice-line-compact-field">
-                  <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Qty</div>
-                  <input className="invoice-line-control" aria-label={`Line ${index + 1} quantity`} style={inputStyle} value={line.quantity} onChange={(e) => update(index, "quantity", e.target.value)} />
-                </div>
-                <div className="invoice-line-field invoice-line-compact-field">
-                  <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Unit</div>
-                  <input className="invoice-line-control" aria-label={`Line ${index + 1} unit`} style={inputStyle} value={line.unit} onChange={(e) => update(index, "unit", e.target.value)} />
-                </div>
-                <div className="invoice-line-field invoice-line-compact-field">
-                  <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Unit price</div>
-                  <input className="invoice-line-control" aria-label={`Line ${index + 1} unitPrice`} style={inputStyle} value={line.unitPrice} onChange={(e) => update(index, "unitPrice", e.target.value)} />
-                </div>
-                <div className="invoice-line-field invoice-line-compact-field">
-                  <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Net amount</div>
-                  <input className="invoice-line-control" aria-label={`Line ${index + 1} netAmount`} style={inputStyle} value={line.netAmount} onChange={(e) => update(index, "netAmount", e.target.value)} />
-                </div>
-                <div className="invoice-line-field invoice-line-compact-field">
-                  <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>VAT rate</div>
-                  <input className="invoice-line-control" aria-label={`Line ${index + 1} vatRate`} style={inputStyle} value={line.vatRate} onChange={(e) => update(index, "vatRate", e.target.value)} />
-                </div>
-                <div className="invoice-line-field invoice-line-compact-field">
-                  <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>VAT</div>
-                  <input className="invoice-line-control" aria-label={`Line ${index + 1} vatAmount`} style={inputStyle} value={line.vatAmount} onChange={(e) => update(index, "vatAmount", e.target.value)} />
-                </div>
-                <div className="invoice-line-field invoice-line-compact-field">
-                  <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Page</div>
-                  <input className="invoice-line-control" aria-label={`Line ${index + 1} sourcePage`} style={inputStyle} value={line.sourcePage} onChange={(e) => update(index, "sourcePage", e.target.value)} />
-                </div>
-                <div className="invoice-line-delete-field" style={{ paddingTop: 18 }}>
-                  <button
-                    type="button"
-                    onClick={() => onChange(lines.filter((_, lineIndex) => lineIndex !== index))}
-                    style={{ padding: "6px 8px", border: "1px solid #fecaca", borderRadius: 5, background: "#fff", color: "#dc2626", cursor: "pointer", fontSize: 11 }}
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
+          {lines.map((line, index) => {
+            const ld = computeLineDisplay(line);
+            const displayLine = ld.display;
 
-              {/* Row 2: recognition + accounting fields */}
-              <div className="invoice-line-recognition-grid">
-                <div className="invoice-line-treatment-field">
-                  <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Treatment</div>
-                  <select
-                    aria-label={`Line ${index + 1} recognition treatment`}
-                    className="invoice-line-control"
-                    style={selectStyle}
-                    value={line.recognitionTreatment}
-                    onChange={(e) => updateTreatment(index, e.target.value as "Immediate" | "Prepaid")}
-                  >
-                    <option value="Immediate">Immediate</option>
-                    <option value="Prepaid">Prepaid</option>
-                  </select>
+            return (
+              <div
+                key={line.id ?? `draft-${index}`}
+                className="invoice-line-card"
+                style={{ border: "1px solid #e2e8f0", borderRadius: 6, padding: 12, marginBottom: 10, background: "#fff" }}
+              >
+                {/* Row 1: core fields */}
+                <div className="invoice-line-core-grid">
+                  <div className="invoice-line-field invoice-line-compact-field invoice-line-number-field">
+                    <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Line #</div>
+                    <input className="invoice-line-control" aria-label={`Line ${index + 1} number`} style={inputStyle} value={line.lineNumber} onChange={(e) => update(index, "lineNumber", e.target.value)} />
+                  </div>
+                  <div className="invoice-line-field invoice-line-description-field invoice-line-original-description-field">
+                    <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Original description</div>
+                    <textarea className="invoice-line-control" aria-label={`Line ${index + 1} original description`} style={{ ...inputStyle, resize: "vertical" }} value={line.descriptionOriginal} onChange={(e) => update(index, "descriptionOriginal", e.target.value)} />
+                  </div>
+                  <div className="invoice-line-field invoice-line-description-field invoice-line-english-description-field">
+                    <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Description</div>
+                    <textarea className="invoice-line-control" aria-label={`Line ${index + 1} English description`} style={{ ...inputStyle, resize: "vertical" }} value={line.description} onChange={(e) => update(index, "description", e.target.value)} />
+                  </div>
+                  <div className="invoice-line-field invoice-line-compact-field">
+                    <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Qty</div>
+                    <input
+                      className="invoice-line-control"
+                      aria-label={`Line ${index + 1} quantity`}
+                      style={ld.qtyError ? errorInputStyle : inputStyle}
+                      value={line.quantity}
+                      onChange={(e) => update(index, "quantity", e.target.value)}
+                    />
+                  </div>
+                  <div className="invoice-line-field invoice-line-compact-field">
+                    <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Unit of measure</div>
+                    <input className="invoice-line-control" aria-label={`Line ${index + 1} unit`} style={inputStyle} value={line.unit} onChange={(e) => update(index, "unit", e.target.value)} />
+                  </div>
+                  <div className="invoice-line-field invoice-line-compact-field">
+                    <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Unit price</div>
+                    <input
+                      className="invoice-line-control"
+                      aria-label={`Line ${index + 1} unitPrice`}
+                      style={ld.upError ? errorInputStyle : inputStyle}
+                      value={line.unitPrice}
+                      onChange={(e) => update(index, "unitPrice", e.target.value)}
+                    />
+                  </div>
+                  <div className="invoice-line-field invoice-line-compact-field">
+                    <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Net amount</div>
+                    <input
+                      className="invoice-line-control"
+                      aria-label={`Line ${index + 1} netAmount`}
+                      style={fieldInputStyle(line.netAmount, ld.netDerived, !!ld.netError)}
+                      value={ld.netDerived ? displayLine.netAmount : line.netAmount}
+                      onChange={(e) => update(index, "netAmount", e.target.value)}
+                      title={ld.netDerived ? "Auto-calculated from Qty × Unit Price" : undefined}
+                    />
+                  </div>
+                  <div className="invoice-line-field invoice-line-compact-field">
+                    <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>VAT rate (%)</div>
+                    <input
+                      className="invoice-line-control"
+                      aria-label={`Line ${index + 1} vatRate`}
+                      style={(ld.vatRateError || ld.vatRateOutOfRange) ? errorInputStyle : inputStyle}
+                      value={line.vatRate}
+                      onChange={(e) => update(index, "vatRate", e.target.value)}
+                    />
+                  </div>
+                  <div className="invoice-line-field invoice-line-compact-field">
+                    <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>VAT amount</div>
+                    <input
+                      className="invoice-line-control"
+                      aria-label={`Line ${index + 1} vatAmount`}
+                      style={fieldInputStyle(line.vatAmount, ld.vatDerived, !!ld.vatAmtError)}
+                      value={ld.vatDerived ? displayLine.vatAmount : line.vatAmount}
+                      onChange={(e) => update(index, "vatAmount", e.target.value)}
+                      title={ld.vatDerived ? "Auto-calculated from Net × VAT rate" : undefined}
+                    />
+                  </div>
+                  <div className="invoice-line-field invoice-line-compact-field">
+                    <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Gross amount</div>
+                    <input
+                      className="invoice-line-control"
+                      aria-label={`Line ${index + 1} grossAmount`}
+                      style={fieldInputStyle(line.grossAmount, ld.grossDerived, !!ld.grossError)}
+                      value={ld.grossDerived ? displayLine.grossAmount : line.grossAmount}
+                      onChange={(e) => update(index, "grossAmount", e.target.value)}
+                      title={ld.grossDerived ? "Auto-calculated from Net + VAT" : undefined}
+                    />
+                  </div>
+                  <div className="invoice-line-field invoice-line-compact-field">
+                    <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Page</div>
+                    <input className="invoice-line-control" aria-label={`Line ${index + 1} sourcePage`} style={inputStyle} value={line.sourcePage} onChange={(e) => update(index, "sourcePage", e.target.value)} />
+                  </div>
+                  <div className="invoice-line-delete-field" style={{ paddingTop: 18 }}>
+                    <button
+                      type="button"
+                      onClick={() => onChange(lines.filter((_, lineIndex) => lineIndex !== index))}
+                      style={{ padding: "6px 8px", border: "1px solid #fecaca", borderRadius: 5, background: "#fff", color: "#dc2626", cursor: "pointer", fontSize: 11 }}
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </div>
 
-                {line.recognitionTreatment === "Prepaid" && (
-                  <>
-                    <div className="invoice-line-date-field">
-                      <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Recog. start date</div>
-                      <input
-                        type="date"
-                        aria-label={`Line ${index + 1} recognition start date`}
-                        className="invoice-line-control"
-                        style={inputStyle}
-                        value={line.recognitionStartDate}
-                        onChange={(e) => update(index, "recognitionStartDate", e.target.value)}
-                      />
-                    </div>
-                    <div className="invoice-line-date-field">
-                      <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Recog. end date</div>
-                      <input
-                        type="date"
-                        aria-label={`Line ${index + 1} recognition end date`}
-                        className="invoice-line-control"
-                        style={inputStyle}
-                        value={line.recognitionEndDate}
-                        onChange={(e) => update(index, "recognitionEndDate", e.target.value)}
-                        min={line.recognitionStartDate || undefined}
-                      />
-                    </div>
-                  </>
+                {/* Per-line validation banners */}
+                {ld.vatRateOutOfRange && (
+                  <div style={{ marginTop: 6, padding: "5px 8px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 4, color: "#dc2626", fontSize: 11 }}>
+                    VAT rate must be between 0 and 100 (as percentage points, e.g. 19 for 19%).
+                  </div>
+                )}
+                {ld.qtyNetMismatch && (
+                  <div style={{ marginTop: 6, padding: "5px 8px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 4, color: "#92400e", fontSize: 11 }}>
+                    Warning: Qty × Unit Price does not match Net Amount. Values were not changed automatically.
+                  </div>
+                )}
+                {ld.vatMismatch && (
+                  <div style={{ marginTop: 6, padding: "5px 8px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 4, color: "#92400e", fontSize: 11 }}>
+                    Warning: Net × VAT rate does not match VAT Amount. Values were not changed automatically.
+                  </div>
+                )}
+                {ld.grossMismatch && (
+                  <div style={{ marginTop: 6, padding: "5px 8px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 4, color: "#92400e", fontSize: 11 }}>
+                    Warning: Net + VAT Amount does not match Gross Amount. Values were not changed automatically.
+                  </div>
                 )}
 
-                <div className="invoice-line-account-field">
-                  <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Accounting account no. (optional)</div>
-                  <select
-                    aria-label={`Line ${index + 1} accounting account number`}
-                    className="invoice-line-control"
-                    style={selectStyle}
-                    value={line.accountingAccountNumber}
-                    onChange={(e) => update(index, "accountingAccountNumber", e.target.value)}
-                  >
-                    <option value="">-- none --</option>
-                    {postingAccounts.map((account) => (
-                      <option key={account.code} value={account.code}>
-                        {account.code} — {account.name}
-                      </option>
-                    ))}
-                  </select>
+                {/* Row 2: recognition + accounting fields */}
+                <div className="invoice-line-recognition-grid">
+                  <div className="invoice-line-treatment-field">
+                    <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Treatment</div>
+                    <select
+                      aria-label={`Line ${index + 1} recognition treatment`}
+                      className="invoice-line-control"
+                      style={selectStyle}
+                      value={line.recognitionTreatment}
+                      onChange={(e) => updateTreatment(index, e.target.value as "Immediate" | "Prepaid")}
+                    >
+                      <option value="Immediate">Immediate</option>
+                      <option value="Prepaid">Prepaid</option>
+                    </select>
+                  </div>
+
+                  {line.recognitionTreatment === "Prepaid" && (
+                    <>
+                      <div className="invoice-line-date-field">
+                        <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Recog. start date</div>
+                        <input
+                          type="date"
+                          aria-label={`Line ${index + 1} recognition start date`}
+                          className="invoice-line-control"
+                          style={inputStyle}
+                          value={line.recognitionStartDate}
+                          onChange={(e) => update(index, "recognitionStartDate", e.target.value)}
+                        />
+                      </div>
+                      <div className="invoice-line-date-field">
+                        <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Recog. end date</div>
+                        <input
+                          type="date"
+                          aria-label={`Line ${index + 1} recognition end date`}
+                          className="invoice-line-control"
+                          style={inputStyle}
+                          value={line.recognitionEndDate}
+                          onChange={(e) => update(index, "recognitionEndDate", e.target.value)}
+                          min={line.recognitionStartDate || undefined}
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  <div className="invoice-line-account-field">
+                    <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Accounting account no. (optional)</div>
+                    <select
+                      aria-label={`Line ${index + 1} accounting account number`}
+                      className="invoice-line-control"
+                      style={selectStyle}
+                      value={line.accountingAccountNumber}
+                      onChange={(e) => update(index, "accountingAccountNumber", e.target.value)}
+                    >
+                      <option value="">-- none --</option>
+                      {postingAccounts.map((account) => (
+                        <option key={account.code} value={account.code}>
+                          {account.code} — {account.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {line.recognitionTreatment === "Prepaid" && (
+                    <div className="invoice-line-account-field">
+                      <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Prepaid asset account (optional)</div>
+                      <select
+                        aria-label={`Line ${index + 1} prepaid account number`}
+                        className="invoice-line-control"
+                        style={selectStyle}
+                        value={line.prepaidAccountNumber}
+                        onChange={(e) => update(index, "prepaidAccountNumber", e.target.value)}
+                      >
+                        <option value="">-- none --</option>
+                        {prepaidAccounts.map((account) => (
+                          <option key={account.code} value={account.code}>
+                            {account.code} — {account.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                 </div>
+
+                {/* Prepaid date validation hints */}
+                {line.recognitionTreatment === "Prepaid" && line.recognitionStartDate && line.recognitionEndDate && line.recognitionEndDate < line.recognitionStartDate && (
+                  <div style={{ marginTop: 6, padding: "5px 8px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 4, color: "#dc2626", fontSize: 11 }}>
+                    End date must be on or after start date.
+                  </div>
+                )}
+                {line.recognitionTreatment === "Prepaid" && (!line.recognitionStartDate || !line.recognitionEndDate) && (
+                  <div style={{ marginTop: 6, padding: "5px 8px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 4, color: "#92400e", fontSize: 11 }}>
+                    Start and end dates are required before approval.
+                  </div>
+                )}
+                {line.recognitionTreatment === "Prepaid" && (!line.accountingAccountNumber || !line.prepaidAccountNumber) && (
+                  <div style={{ marginTop: 6, padding: "5px 8px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 4, color: "#92400e", fontSize: 11 }}>
+                    Expense account and prepaid asset account are required before approval.
+                  </div>
+                )}
+
+                {/* Monthly recognition preview */}
+                <RecognitionPreview
+                  line={displayLine}
+                  invoiceDate={invoiceDate}
+                  fxRate={invoiceFxRate}
+                  currency={invoiceCurrency}
+                  baseCurrency={baseCurrency}
+                />
               </div>
-
-              {/* Prepaid date validation hint */}
-              {line.recognitionTreatment === "Prepaid" && line.recognitionStartDate && line.recognitionEndDate && line.recognitionEndDate < line.recognitionStartDate && (
-                <div style={{ marginTop: 6, padding: "5px 8px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 4, color: "#dc2626", fontSize: 11 }}>
-                  End date must be on or after start date.
-                </div>
-              )}
-              {line.recognitionTreatment === "Prepaid" && (!line.recognitionStartDate || !line.recognitionEndDate) && (
-                <div style={{ marginTop: 6, padding: "5px 8px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 4, color: "#92400e", fontSize: 11 }}>
-                  Start and end dates are required before approval.
-                </div>
-              )}
-
-              {/* Monthly recognition preview */}
-              <RecognitionPreview
-                line={line}
-                invoiceDate={invoiceDate}
-                fxRate={invoiceFxRate}
-                currency={invoiceCurrency}
-                baseCurrency={baseCurrency}
-              />
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

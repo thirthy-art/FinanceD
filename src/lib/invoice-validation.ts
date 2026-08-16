@@ -284,6 +284,18 @@ export function validateAmount(raw: string, fieldName: string): string {
 }
 
 /**
+ * Check whether a VAT rate string is valid (0–100 inclusive, or blank).
+ * Returns true for blank/null (blank is allowed on drafts).
+ */
+export function isVatRateValid(raw: string | null | undefined): boolean {
+  if (!raw || !raw.trim()) return true;
+  const parsed = safeParseDecimal(raw);
+  if (parsed.error || parsed.value === null) return false;
+  const dec = new Decimal(parsed.value);
+  return dec.gte(0) && dec.lte(100);
+}
+
+/**
  * Validate that a computed base amount fits numeric(18,4).
  * Returns the value or throws if it would overflow the DB column.
  */

@@ -80,6 +80,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
           recognitionStartDate: line.recognitionStartDate ?? "",
           recognitionEndDate: line.recognitionEndDate ?? "",
           accountingAccountNumber: line.accountingAccountNumber ?? "",
+          prepaidAccountNumber: line.prepaidAccountNumber ?? "",
         }))}
         vendors={vendorList}
         costCentres={ccList}

@@ -19,7 +19,7 @@ describe("invoice XLSX export", () => {
       quantity: "1", unit: "ea", unitPrice: "8.666666666666666667", netAmount: "8.666666666666666667",
       vatRate: "19", vatAmount: null, grossAmount: null, sourcePage: 1,
       recognitionTreatment: "Immediate" as const, recognitionStartDate: null, recognitionEndDate: null,
-      accountingAccountNumber: null,
+      accountingAccountNumber: null, prepaidAccountNumber: null,
     }));
 
     const bytes = await invoiceExportToXlsx([invoice], lines);
@@ -32,5 +32,9 @@ describe("invoice XLSX export", () => {
     expect(workbook.getWorksheet("Invoices")?.getCell("I2").numFmt).toBe("0.00");
     expect(workbook.getWorksheet("Invoice Lines")?.getCell("I2").value).toBe("Original 1");
     expect(workbook.getWorksheet("Invoice Lines")?.getCell("J2").value).toBe("Line 1");
+
+    const lineHeaders = workbook.getWorksheet("Invoice Lines")?.getRow(1).values as (string | undefined)[];
+    expect(lineHeaders).toContain("Accounting Account No.");
+    expect(lineHeaders).toContain("Prepaid Account No.");
   });
 });

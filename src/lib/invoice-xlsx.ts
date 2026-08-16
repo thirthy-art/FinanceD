@@ -46,6 +46,7 @@ export interface InvoiceLineExportRow {
   recognitionStartDate: string | null;
   recognitionEndDate: string | null;
   accountingAccountNumber: string | null;
+  prepaidAccountNumber: string | null;
 }
 
 const fiatFormat = "0.00";
@@ -164,6 +165,7 @@ export function createInvoiceExportWorkbook(invoices: InvoiceExportRow[], lines:
     { header: "Recognition Start Date", key: "recognitionStartDate", width: 22 },
     { header: "Recognition End Date", key: "recognitionEndDate", width: 20 },
     { header: "Accounting Account No.", key: "accountingAccountNumber", width: 24 },
+    { header: "Prepaid Account No.", key: "prepaidAccountNumber", width: 22 },
   ];
 
   for (const line of lines) {
@@ -181,6 +183,7 @@ export function createInvoiceExportWorkbook(invoices: InvoiceExportRow[], lines:
       sourcePage: line.sourcePage,
       recognitionTreatment: line.recognitionTreatment,
       accountingAccountNumber: line.accountingAccountNumber,
+      prepaidAccountNumber: line.prepaidAccountNumber,
     });
     setDateCell(row.getCell("invoiceDate"), line.invoiceDate);
     setDateCell(row.getCell("recognitionStartDate"), line.recognitionStartDate);

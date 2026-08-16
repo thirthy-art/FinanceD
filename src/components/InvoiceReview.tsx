@@ -4,10 +4,10 @@ import { useRouter } from "next/navigation";
 import { safeIsAmountMismatch, safeCalculateBaseAmount, safeParseDecimal, formatDisplayAmount, toDecimal } from "@/src/lib/invoice-validation";
 import type { AiInvoiceExtraction } from "@/src/lib/ai-extraction";
 import type { EditableInvoiceLine } from "@/src/lib/invoice-lines";
-import { editableLineToInput } from "@/src/lib/invoice-lines";
+import { editableLineToInput, applyAutoCalcToLine } from "@/src/lib/invoice-lines";
 import { applyExtractionLines, applyExtractionToDraft, extractionLinesToEditable } from "@/src/lib/apply-ai-extraction";
 import InvoiceLinesEditor from "@/src/components/InvoiceLinesEditor";
-import { selectableExpenseAccounts } from "@/src/lib/coa-hierarchy";
+import { selectableExpenseAccounts, selectablePrepaidAssetAccounts } from "@/src/lib/coa-hierarchy";
 
 interface Vendor { id: number; name: string; taxId: string | null; normalizedTaxId?: string | null; invoiceCount?: number; }
 interface CostCentre { id: number; code: string; name: string; }
@@ -315,10 +315,13 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
         vatAmount: form.vatAmount || null,
         grossAmount: form.grossAmount || null,
         costCentreId: form.costCentreId ? Number(form.costCentreId) : null,
-        expenseAccountId: form.expenseAccountId ? Number(form.expenseAccountId) : null,
         notes: form.notes || null,
-        lines: editableLines.map(editableLineToInput),
+        lines: editableLines.map((line) => editableLineToInput(applyAutoCalcToLine(line))),
       };
+
+      if (editableLines.length === 0) {
+        body.expenseAccountId = form.expenseAccountId ? Number(form.expenseAccountId) : null;
+      }
 
       if (action === "approve") {
         body.status = "approved";
@@ -509,10 +512,14 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
   const prepaidLinesInvalid = editableLines.some((line) => {
     if (line.recognitionTreatment !== "Prepaid") return false;
     if (!line.recognitionStartDate || !line.recognitionEndDate) return true;
-    return line.recognitionEndDate < line.recognitionStartDate;
+    if (line.recognitionEndDate < line.recognitionStartDate) return true;
+    if (!line.accountingAccountNumber) return true;
+    if (!line.prepaidAccountNumber) return true;
+    return false;
   });
   const approveDisabled = saving || mismatch || hasInputErrors || prepaidLinesInvalid;
   const expenseAccounts = selectableExpenseAccounts(accounts);
+  const prepaidAssetAccounts = selectablePrepaidAssetAccounts(accounts);
 
   return (
     <div className="invoice-layout">
@@ -956,6 +963,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
           <InvoiceLinesEditor
             lines={editableLines}
             postingAccounts={expenseAccounts}
+            prepaidAccounts={prepaidAssetAccounts}
             invoiceNetAmount={form.netAmount}
             invoiceDate={form.invoiceDate}
             invoiceFxRate={form.fxRateToBase || "1"}
@@ -996,7 +1004,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
           )}
 
           {/* Cost centre + account */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: editableLines.length > 0 ? "1fr" : "1fr 1fr", gap: 16 }}>
             {field(
               "Cost Centre (optional)",
               <select style={inputStyle} value={form.costCentreId} onChange={set("costCentreId")}>
@@ -1006,7 +1014,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
                 ))}
               </select>
             )}
-            {field(
+            {editableLines.length === 0 && field(
               "Expense Account (optional)",
               <select style={inputStyle} value={form.expenseAccountId} onChange={set("expenseAccountId")}>
                 <option value="">-- none --</option>
@@ -1061,7 +1069,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
                 title={
                   hasInputErrors ? "Fix invalid input before approving"
                     : mismatch ? "Fix amount mismatch before approving"
-                    : prepaidLinesInvalid ? "Fix prepaid recognition dates before approving"
+                    : prepaidLinesInvalid ? "Fix prepaid recognition dates and account assignments before approving"
                     : ""
                 }
                 style={{
@@ -1109,7 +1117,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
                 ? "Approve is disabled until invalid input is corrected."
                 : mismatch
                 ? "Approve is disabled until the amount mismatch is resolved."
-                : "Approve is disabled until all prepaid recognition dates are valid."}
+                : "Approve is disabled until all prepaid lines have valid dates and account assignments."}
             </div>
           )}
         </div>

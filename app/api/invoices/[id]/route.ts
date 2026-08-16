@@ -18,6 +18,7 @@ import {
   validatePositiveRate,
   validateAmount,
   validateBaseAmount,
+  isVatRateValid,
 } from "@/src/lib/invoice-validation";
 import { InvoiceLineInputSchema, normalizeInvoiceLineInput, validateLineRecognitionForApproval } from "@/src/lib/invoice-lines";
 import { resolveSafeUploadPath } from "@/src/lib/safe-upload-path";
@@ -285,10 +286,17 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       );
     }
 
-    // Validate recognition fields on submitted lines
+    // Validate recognition and VAT rate on submitted lines
     const linesToValidate = normalizedLines ?? [];
     for (let i = 0; i < linesToValidate.length; i++) {
-      const err = validateLineRecognitionForApproval(linesToValidate[i], i + 1);
+      const line = linesToValidate[i];
+      if (!isVatRateValid(line.vatRate)) {
+        return NextResponse.json(
+          { error: `Cannot approve: Line ${i + 1} VAT rate must be between 0 and 100.` },
+          { status: 422 }
+        );
+      }
+      const err = validateLineRecognitionForApproval(line, i + 1);
       if (err) return NextResponse.json({ error: `Cannot approve: ${err}` }, { status: 422 });
     }
     // Also check persisted lines if no lines submitted in this request
@@ -298,13 +306,28 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           recognitionTreatment: supplierInvoiceLines.recognitionTreatment,
           recognitionStartDate: supplierInvoiceLines.recognitionStartDate,
           recognitionEndDate: supplierInvoiceLines.recognitionEndDate,
+          vatRate: supplierInvoiceLines.vatRate,
+          accountingAccountNumber: supplierInvoiceLines.accountingAccountNumber,
+          prepaidAccountNumber: supplierInvoiceLines.prepaidAccountNumber,
         })
         .from(supplierInvoiceLines)
         .where(eq(supplierInvoiceLines.invoiceId, Number(id)));
       for (let i = 0; i < persistedLines.length; i++) {
         const pl = persistedLines[i];
+        if (!isVatRateValid(pl.vatRate)) {
+          return NextResponse.json(
+            { error: `Cannot approve: Line ${i + 1} VAT rate must be between 0 and 100.` },
+            { status: 422 }
+          );
+        }
         const err = validateLineRecognitionForApproval(
-          { recognitionTreatment: pl.recognitionTreatment, recognitionStartDate: pl.recognitionStartDate, recognitionEndDate: pl.recognitionEndDate } as Parameters<typeof validateLineRecognitionForApproval>[0],
+          {
+            recognitionTreatment: pl.recognitionTreatment,
+            recognitionStartDate: pl.recognitionStartDate,
+            recognitionEndDate: pl.recognitionEndDate,
+            accountingAccountNumber: pl.accountingAccountNumber,
+            prepaidAccountNumber: pl.prepaidAccountNumber,
+          } as Parameters<typeof validateLineRecognitionForApproval>[0],
           i + 1
         );
         if (err) return NextResponse.json({ error: `Cannot approve: ${err}` }, { status: 422 });

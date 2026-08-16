@@ -47,3 +47,9 @@ export function selectableExpenseAccounts(accounts: HierarchicalAccount[]): Acco
     (account) => account.type === "expense" && account.isActive && account.isPosting,
   );
 }
+
+export function selectablePrepaidAssetAccounts(accounts: HierarchicalAccount[]): AccountWithDepth[] {
+  return flattenAccountHierarchy(accounts).filter(
+    (account) => account.type === "asset" && account.isActive && account.isPosting,
+  );
+}

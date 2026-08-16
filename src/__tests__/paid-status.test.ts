@@ -8,7 +8,7 @@ const baseLine = {
   lineNumber: "1", descriptionOriginal: null, description: null, quantity: null, unit: null,
   unitPrice: null, netAmount: "100", vatRate: null, vatAmount: "0", grossAmount: "100", sourcePage: null,
   recognitionTreatment: "Immediate" as const, recognitionStartDate: null, recognitionEndDate: null,
-  accountingAccountNumber: null,
+  accountingAccountNumber: null, prepaidAccountNumber: null,
 };
 
 function makeInvoice(overrides: Partial<InvoiceExportRow> = {}): InvoiceExportRow {

@@ -151,9 +151,12 @@ body {
     margin-top: 12px;
   }
 
-  .invoice-line-treatment-field,
-  .invoice-line-date-field {
+  .invoice-line-treatment-field {
     flex: 1 1 calc(50% - 4px);
+  }
+
+  .invoice-line-date-field {
+    flex: 1 1 100%;
   }
 
   .invoice-line-account-field {
