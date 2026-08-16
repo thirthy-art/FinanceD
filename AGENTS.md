@@ -50,15 +50,80 @@ Next.js (App Router), TypeScript, PostgreSQL, Drizzle ORM, Tailwind. Single repo
 - Due date is optional
 - Original documents are immutable
 
-## Development
-- Never commit or push directly to `main`
-- Start from the latest `main`; work in an isolated task or review branch
-- Run `npm test`, `npm run lint`, `npm run build` before committing
-- Commit and push only the review branch; do not merge without owner approval
-- Destructive database changes require explicit owner approval
-- Versioned migrations: `npm run db:migrate` (do not use `drizzle-kit push`)
-- Idempotent seed: `npm run db:seed`
+## Before Starting Work
+
+Perform a lightweight Git preflight, not a full repository audit:
+
+1. Confirm the current branch.
+2. Confirm the worktree is clean, or report existing uncommitted changes before touching them.
+3. Ensure new task work starts from current `main`.
+4. If already on a task branch, inspect only its relevant diff against `main`.
+
+Do not infer the repository's current state from an old chat, handoff, or previous agent report.
+
+Do not inspect large portions of Git history unless repository state is genuinely ambiguous.
+
+If the repository state is ambiguous, stop implementation and establish the actual state first.
+
+## Development Workflow
+- `main` is the canonical accepted baseline
+- Never commit or push implementation work directly to `main`
+- Start work from current `main` on an isolated task/review branch
+- Prefer one active task branch when practical; temporary extra branches are acceptable for testing or recovery
+- Keep changes scoped to the requested task
 - Preserve existing behaviour outside the approved task scope
+- Do not silently refactor unrelated areas
+- Do not merge into `main` without explicit owner approval
+- Destructive database changes require explicit owner approval
+- Versioned migrations: `npm run db:migrate` — do not use `drizzle-kit push`
+- Seed remains idempotent via `npm run db:seed`
+
+After a branch is merged, validated, and contains no unique unmerged work, it may be deleted.
+
+Do not keep branches indefinitely merely as historical archives; merged commits remain in Git history.
+
+## UI Work
+UI changes require owner visual validation before merge.
+
+Tests, lint, and build are necessary where relevant but do not constitute visual acceptance.
+
+For UI changes:
+- preserve responsive behaviour outside the requested scope
+- check affected desktop and mobile layouts
+- do not fix unrelated UI issues discovered during the task
+- report unrelated issues separately
+- avoid touching shared components unless necessary
+- if a shared component changes, verify its other known usages
+- preserve browser pinch-to-zoom on mobile
+- do not disable zoom with viewport restrictions unless explicitly requested
+- provide a preview or screenshot for significant responsive changes before merge
+
+## Regression Handling
+If an unvalidated change reaches `main` and causes a regression:
+- do not automatically stack speculative fixes on top
+- identify the offending change
+- preserve committed work through Git history or a temporary branch when needed
+- evaluate revert versus an isolated forward fix
+- remember that reverting a committed change does not erase the underlying commit from history
+
+## Verification and Usage Discipline
+Use verification proportional to the change.
+
+- Run targeted tests for touched behaviour first
+- Use broader tests for shared logic, schema, migrations, monetary logic, or cross-cutting changes
+- Run lint/build where relevant before declaring the branch ready
+- Do not add broad speculative test coverage unrelated to the task
+- Avoid unnecessary hypothetical/theoretical defensive guards
+- Avoid premature abstractions
+- Avoid unrelated refactors
+- Prefer the smallest implementation that correctly satisfies the current product requirement
+
+## Documentation
+`AGENTS.md` and `CLAUDE.md` contain durable repository rules.
+
+Do not turn them into task handoffs or status reports.
+
+Temporary branch names, pending validation, current feature progress, or other fast-changing task state belongs in the task/chat/PR, not these files.
 
 ## Setup
 ```bash
@@ -71,9 +136,9 @@ npm run dev
 ```
 
 ## Key Commands
-```
+```bash
 npm run dev          # development server
-npm test             # run tests
+npm test             # tests
 npm run lint         # lint
 npm run build        # production build
 npm run db:generate  # generate new migration from schema changes
