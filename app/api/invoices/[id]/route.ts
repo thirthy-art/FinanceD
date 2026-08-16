@@ -3,13 +3,19 @@ import { getDb } from "@/src/db";
 import {
   supplierInvoices,
   supplierInvoiceDocuments,
+  supplierInvoiceLines,
   vendors,
   costCentres,
   chartOfAccounts,
 } from "@/src/db/schema";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { isAmountMismatch, parseAmount } from "@/src/lib/invoice-validation";
+import {
+  isAmountMismatch,
+  parseAmount,
+  parseSafeDecimal,
+  isVatRateValid,
+} from "@/src/lib/invoice-validation";
 
 const UpdateSchema = z.object({
   vendorId: z.number().nullable().optional(),
@@ -83,23 +89,80 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
   }
 
-  // Server-side arithmetic guard: refuse to approve an invoice whose amounts
-  // are inconsistent beyond the accepted rounding tolerance.
+  // Server-side approval guard
   if (data.status === "approved") {
-    // Use submitted amounts if present, otherwise fall back to stored values.
     const existing = await db
-      .select({ netAmount: supplierInvoices.netAmount, vatAmount: supplierInvoices.vatAmount, grossAmount: supplierInvoices.grossAmount })
+      .select({
+        netAmount: supplierInvoices.netAmount,
+        vatAmount: supplierInvoices.vatAmount,
+        grossAmount: supplierInvoices.grossAmount,
+      })
       .from(supplierInvoices)
       .where(eq(supplierInvoices.id, Number(id)));
     if (!existing[0]) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    // Invoice-level amount consistency check (applies when no lines are present)
     const net = parseAmount(data.netAmount ?? existing[0].netAmount);
     const vat = parseAmount(data.vatAmount ?? existing[0].vatAmount);
     const gross = parseAmount(data.grossAmount ?? existing[0].grossAmount);
-    if (isAmountMismatch(net, vat, gross)) {
+
+    const lines = await db
+      .select()
+      .from(supplierInvoiceLines)
+      .where(eq(supplierInvoiceLines.invoiceId, Number(id)));
+
+    if (lines.length === 0 && isAmountMismatch(net, vat, gross)) {
       return NextResponse.json(
         { error: `Cannot approve: net (${net}) + VAT (${vat}) does not match gross (${gross}) within the accepted tolerance.` },
         { status: 422 }
       );
+    }
+
+    // Line-level approval validation
+    const lineErrors: string[] = [];
+    for (const line of lines) {
+      const label = `Line ${line.lineNumber}`;
+
+      // Reject malformed numeric fields
+      for (const [field, val] of [
+        ["quantity", line.quantity],
+        ["unitPrice", line.unitPrice],
+        ["netAmount", line.netAmount],
+        ["vatAmount", line.vatAmount],
+        ["grossAmount", line.grossAmount],
+      ] as const) {
+        if (val && parseSafeDecimal(val) === null) {
+          lineErrors.push(`${label}: ${field} contains invalid numeric value "${val}"`);
+        }
+      }
+
+      // VAT rate must be 0-100 when present
+      if (line.vatRate && !isVatRateValid(line.vatRate)) {
+        lineErrors.push(`${label}: VAT rate must be 0–100`);
+      }
+
+      // Prepaid lines require additional fields
+      if (line.treatment === "prepaid") {
+        if (!line.accountingAccountNumber) {
+          lineErrors.push(`${label}: Expense account is required for Prepaid treatment`);
+        }
+        if (!line.prepaidAccountNumber) {
+          lineErrors.push(`${label}: Prepaid asset account is required for Prepaid treatment`);
+        }
+        if (!line.recognitionStart) {
+          lineErrors.push(`${label}: Recognition start date is required for Prepaid treatment`);
+        }
+        if (!line.recognitionEnd) {
+          lineErrors.push(`${label}: Recognition end date is required for Prepaid treatment`);
+        }
+        if (line.recognitionStart && line.recognitionEnd && line.recognitionStart > line.recognitionEnd) {
+          lineErrors.push(`${label}: Recognition end date must be on or after start date`);
+        }
+      }
+    }
+
+    if (lineErrors.length > 0) {
+      return NextResponse.json({ error: lineErrors }, { status: 422 });
     }
   }
 

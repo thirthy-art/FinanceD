@@ -24,12 +24,14 @@ async function seed() {
   await db.insert(chartOfAccounts).values([
     { companyId: company.id, code: "1000", name: "Cash", type: "asset" },
     { companyId: company.id, code: "1200", name: "Accounts Receivable", type: "asset" },
+    { companyId: company.id, code: "1300", name: "Prepaid Expenses", type: "asset" },
     { companyId: company.id, code: "2000", name: "Accounts Payable", type: "liability" },
     { companyId: company.id, code: "2100", name: "VAT Payable", type: "liability" },
     { companyId: company.id, code: "4000", name: "Operating Expenses", type: "expense" },
     { companyId: company.id, code: "4100", name: "Office Supplies", type: "expense" },
     { companyId: company.id, code: "4200", name: "Professional Services", type: "expense" },
     { companyId: company.id, code: "4300", name: "Travel & Entertainment", type: "expense" },
+    { companyId: company.id, code: "4400", name: "Cleaning Expenses", type: "expense" },
     { companyId: company.id, code: "5000", name: "Revenue", type: "revenue" },
   ]);
 

@@ -26,6 +26,11 @@ export const accountTypeEnum = pgEnum("account_type", [
   "expense",
 ]);
 
+export const lineTreatmentEnum = pgEnum("line_treatment", [
+  "immediate",
+  "prepaid",
+]);
+
 // ─── Companies ────────────────────────────────────────────────────────────────
 
 export const companies = pgTable("companies", {
@@ -122,6 +127,33 @@ export const supplierInvoiceDocuments = pgTable("supplier_invoice_documents", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// ─── Supplier Invoice Lines ───────────────────────────────────────────────────
+
+export const supplierInvoiceLines = pgTable("supplier_invoice_lines", {
+  id: serial("id").primaryKey(),
+  invoiceId: integer("invoice_id")
+    .notNull()
+    .references(() => supplierInvoices.id),
+  lineNumber: integer("line_number").notNull(),
+  descriptionOriginal: text("description_original"),
+  description: text("description"),
+  quantity: numeric("quantity", { precision: 18, scale: 4 }),
+  unit: varchar("unit", { length: 50 }),
+  unitPrice: numeric("unit_price", { precision: 18, scale: 2 }),
+  netAmount: numeric("net_amount", { precision: 18, scale: 2 }),
+  vatRate: numeric("vat_rate", { precision: 6, scale: 3 }),
+  vatAmount: numeric("vat_amount", { precision: 18, scale: 2 }),
+  grossAmount: numeric("gross_amount", { precision: 18, scale: 2 }),
+  sourcePage: integer("source_page"),
+  treatment: lineTreatmentEnum("treatment").notNull().default("immediate"),
+  accountingAccountNumber: varchar("accounting_account_number", { length: 20 }),
+  prepaidAccountNumber: varchar("prepaid_account_number", { length: 20 }),
+  recognitionStart: varchar("recognition_start", { length: 10 }),
+  recognitionEnd: varchar("recognition_end", { length: 10 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 // ─── Relations ────────────────────────────────────────────────────────────────
 
 export const supplierInvoiceRelations = relations(
@@ -140,6 +172,7 @@ export const supplierInvoiceRelations = relations(
       references: [costCentres.id],
     }),
     documents: many(supplierInvoiceDocuments),
+    lines: many(supplierInvoiceLines),
   })
 );
 
@@ -148,6 +181,16 @@ export const supplierInvoiceDocumentRelations = relations(
   ({ one }) => ({
     invoice: one(supplierInvoices, {
       fields: [supplierInvoiceDocuments.invoiceId],
+      references: [supplierInvoices.id],
+    }),
+  })
+);
+
+export const supplierInvoiceLineRelations = relations(
+  supplierInvoiceLines,
+  ({ one }) => ({
+    invoice: one(supplierInvoices, {
+      fields: [supplierInvoiceLines.invoiceId],
       references: [supplierInvoices.id],
     }),
   })
