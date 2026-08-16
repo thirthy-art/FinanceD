@@ -190,6 +190,20 @@ export function safeCalculateBaseAmount(
   }
 }
 
+/**
+ * Returns true when two amounts are within the accepted tolerance for the given currency type.
+ * Treats null/undefined as zero.
+ */
+export function amountsWithinTolerance(
+  a: string | null | undefined,
+  b: string | null | undefined,
+  currencyType: "fiat" | "crypto" = "fiat"
+): boolean {
+  const diff = toDecimal(a).minus(toDecimal(b)).abs();
+  if (currencyType === "crypto") return diff.isZero();
+  return !diff.greaterThan(FIAT_TOLERANCE);
+}
+
 export function isAmountMismatch(
   net: string | null | undefined,
   vat: string | null | undefined,

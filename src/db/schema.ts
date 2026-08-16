@@ -180,6 +180,9 @@ export const supplierInvoiceLines = pgTable("supplier_invoice_lines", {
   recognitionEndDate: varchar("recognition_end_date", { length: 10 }),
   accountingAccountNumber: varchar("accounting_account_number", { length: 50 }),
   prepaidAccountNumber: varchar("prepaid_account_number", { length: 50 }),
+  netAmountDerived: boolean("net_amount_derived").notNull().default(false),
+  vatAmountDerived: boolean("vat_amount_derived").notNull().default(false),
+  grossAmountDerived: boolean("gross_amount_derived").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => ({

@@ -22,6 +22,9 @@ export const InvoiceLineInputSchema = z.object({
   recognitionEndDate: nullableText(10),
   accountingAccountNumber: nullableText(50),
   prepaidAccountNumber: nullableText(50),
+  netAmountDerived: z.boolean().default(false),
+  vatAmountDerived: z.boolean().default(false),
+  grossAmountDerived: z.boolean().default(false),
 });
 
 export type InvoiceLineInput = z.infer<typeof InvoiceLineInputSchema>;
@@ -71,12 +74,14 @@ export function normalizeInvoiceLineInput(line: InvoiceLineInput, index: number)
     }
     normalized[field] = value;
   }
-  // Carry text/recognition fields through unchanged
   normalized.recognitionTreatment = line.recognitionTreatment ?? "Immediate";
   normalized.recognitionStartDate = line.recognitionStartDate ?? null;
   normalized.recognitionEndDate = line.recognitionEndDate ?? null;
   normalized.accountingAccountNumber = line.accountingAccountNumber ?? null;
   normalized.prepaidAccountNumber = line.prepaidAccountNumber ?? null;
+  normalized.netAmountDerived = line.netAmountDerived ?? false;
+  normalized.vatAmountDerived = line.vatAmountDerived ?? false;
+  normalized.grossAmountDerived = line.grossAmountDerived ?? false;
   return normalized;
 }
 
@@ -101,8 +106,62 @@ export function emptyEditableInvoiceLine(): EditableInvoiceLine {
   };
 }
 
+/**
+ * Returns { value, error } for a sourcePage string.
+ * Blank input → { value: null, error: null }.
+ * Non-positive-integer input → { value: null, error: <message> }.
+ */
+export function parsePageInput(raw: string): { value: number | null; error: string | null } {
+  const trimmed = raw.trim();
+  if (!trimmed) return { value: null, error: null };
+  const num = Number(trimmed);
+  if (!Number.isInteger(num) || num <= 0 || !Number.isFinite(num)) {
+    return { value: null, error: "Page must be a positive whole number" };
+  }
+  return { value: num, error: null };
+}
+
+/**
+ * Returns true when an EditableInvoiceLine has no meaningful user content.
+ * recognitionTreatment = "Immediate" alone is not meaningful; "Prepaid" is.
+ */
+export function isCompletelyEmptyLine(line: EditableInvoiceLine): boolean {
+  return (
+    !line.lineNumber.trim() &&
+    !line.descriptionOriginal.trim() &&
+    !line.description.trim() &&
+    !line.quantity.trim() &&
+    !line.unit.trim() &&
+    !line.unitPrice.trim() &&
+    !line.netAmount.trim() &&
+    !line.vatRate.trim() &&
+    !line.vatAmount.trim() &&
+    !line.grossAmount.trim() &&
+    !line.sourcePage.trim() &&
+    !line.accountingAccountNumber.trim() &&
+    !line.prepaidAccountNumber.trim() &&
+    !line.recognitionStartDate.trim() &&
+    !line.recognitionEndDate.trim() &&
+    line.recognitionTreatment === "Immediate"
+  );
+}
+
+/**
+ * Converts an EditableInvoiceLine to the API input format.
+ * Applies auto-calculation to blank arithmetic fields and sets derived flags.
+ * Throws if sourcePage is supplied but not a positive integer.
+ */
 export function editableLineToInput(line: EditableInvoiceLine): InvoiceLineInput {
+  const autoCalced = applyAutoCalcToLine(line);
+  const netBlank = !line.netAmount.trim();
+  const vatBlank = !line.vatAmount.trim();
+  const grossBlank = !line.grossAmount.trim();
+
   const nullable = (value: string) => value.trim() || null;
+
+  const pageResult = parsePageInput(line.sourcePage);
+  if (pageResult.error) throw new Error(`Page: ${pageResult.error}`);
+
   return {
     lineNumber: nullable(line.lineNumber),
     descriptionOriginal: nullable(line.descriptionOriginal),
@@ -110,11 +169,14 @@ export function editableLineToInput(line: EditableInvoiceLine): InvoiceLineInput
     quantity: nullable(line.quantity),
     unit: nullable(line.unit),
     unitPrice: nullable(line.unitPrice),
-    netAmount: nullable(line.netAmount),
+    netAmount: nullable(autoCalced.netAmount),
+    netAmountDerived: netBlank && !!autoCalced.netAmount,
     vatRate: nullable(line.vatRate),
-    vatAmount: nullable(line.vatAmount),
-    grossAmount: nullable(line.grossAmount),
-    sourcePage: line.sourcePage.trim() ? Number(line.sourcePage) : null,
+    vatAmount: nullable(autoCalced.vatAmount),
+    vatAmountDerived: vatBlank && !!autoCalced.vatAmount,
+    grossAmount: nullable(autoCalced.grossAmount),
+    grossAmountDerived: grossBlank && !!autoCalced.grossAmount,
+    sourcePage: pageResult.value,
     recognitionTreatment: line.recognitionTreatment,
     recognitionStartDate: nullable(line.recognitionStartDate),
     recognitionEndDate: nullable(line.recognitionEndDate),

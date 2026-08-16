@@ -1,8 +1,8 @@
 "use client";
 
 import type { EditableInvoiceLine } from "@/src/lib/invoice-lines";
-import { emptyEditableInvoiceLine, sumInvoiceLineAmounts, applyAutoCalcToLine } from "@/src/lib/invoice-lines";
-import { safeParseDecimal, toDecimal } from "@/src/lib/invoice-validation";
+import { emptyEditableInvoiceLine, sumInvoiceLineAmounts, applyAutoCalcToLine, parsePageInput } from "@/src/lib/invoice-lines";
+import { safeParseDecimal, toDecimal, FIAT_TOLERANCE } from "@/src/lib/invoice-validation";
 import { Decimal } from "@/src/lib/decimal";
 import { deriveRecognitionSchedule } from "@/src/lib/recognition";
 
@@ -15,6 +15,7 @@ interface Props {
   invoiceFxRate?: string;
   invoiceCurrency?: string;
   baseCurrency?: string;
+  currencyType?: "fiat" | "crypto";
   onChange: (lines: EditableInvoiceLine[]) => void;
 }
 
@@ -51,7 +52,13 @@ function fieldInputStyle(raw: string, derived: boolean, hasError: boolean): Reac
   return inputStyle;
 }
 
-function computeLineDisplay(line: EditableInvoiceLine): {
+function mismatchExceedsTolerance(a: Decimal, b: Decimal, currencyType: "fiat" | "crypto"): boolean {
+  const diff = a.minus(b).abs();
+  if (currencyType === "crypto") return !diff.isZero();
+  return diff.greaterThan(FIAT_TOLERANCE);
+}
+
+function computeLineDisplay(line: EditableInvoiceLine, currencyType: "fiat" | "crypto"): {
   display: EditableInvoiceLine;
   netDerived: boolean;
   vatDerived: boolean;
@@ -66,6 +73,7 @@ function computeLineDisplay(line: EditableInvoiceLine): {
   qtyNetMismatch: boolean;
   vatMismatch: boolean;
   grossMismatch: boolean;
+  pageError: string | null;
 } {
   const display = applyAutoCalcToLine(line);
 
@@ -93,7 +101,9 @@ function computeLineDisplay(line: EditableInvoiceLine): {
     } catch { /* ignore */ }
   }
 
-  // Mismatch: Qty × UnitPrice ≠ Net (net is explicit)
+  const pageError = parsePageInput(line.sourcePage).error;
+
+  // Mismatch: Qty × UnitPrice ≠ Net (net is explicit) — respects currency tolerance
   let qtyNetMismatch = false;
   if (!netDerived && !netBlank && line.quantity.trim() && line.unitPrice.trim() &&
       !qtyError && !upError && !netError) {
@@ -101,11 +111,11 @@ function computeLineDisplay(line: EditableInvoiceLine): {
       const qty = new Decimal(safeParseDecimal(line.quantity).value!);
       const up = new Decimal(safeParseDecimal(line.unitPrice).value!);
       const net = new Decimal(safeParseDecimal(line.netAmount).value!);
-      if (!qty.times(up).eq(net)) qtyNetMismatch = true;
+      if (mismatchExceedsTolerance(qty.times(up), net, currencyType)) qtyNetMismatch = true;
     } catch { /* ignore */ }
   }
 
-  // Mismatch: Net × VatRate/100 ≠ VatAmt (vat is explicit)
+  // Mismatch: Net × VatRate/100 ≠ VatAmt (vat is explicit) — respects currency tolerance
   let vatMismatch = false;
   if (!vatDerived && !vatBlank && line.vatRate.trim() &&
       !vatAmtError && !vatRateError && !vatRateOutOfRange && display.netAmount) {
@@ -113,11 +123,11 @@ function computeLineDisplay(line: EditableInvoiceLine): {
       const net = new Decimal(safeParseDecimal(display.netAmount).value!);
       const rate = new Decimal(vatRateParsed.value!);
       const vat = new Decimal(safeParseDecimal(line.vatAmount).value!);
-      if (!net.times(rate).dividedBy(100).eq(vat)) vatMismatch = true;
+      if (mismatchExceedsTolerance(net.times(rate).dividedBy(100), vat, currencyType)) vatMismatch = true;
     } catch { /* ignore */ }
   }
 
-  // Mismatch: Net + VatAmt ≠ Gross (gross is explicit)
+  // Mismatch: Net + VatAmt ≠ Gross (gross is explicit) — respects currency tolerance
   let grossMismatch = false;
   if (!grossDerived && !grossBlank && !grossError && display.netAmount && display.vatAmount) {
     const netP = safeParseDecimal(display.netAmount);
@@ -127,7 +137,7 @@ function computeLineDisplay(line: EditableInvoiceLine): {
         const net = new Decimal(netP.value);
         const vat = new Decimal(vatP.value);
         const gross = new Decimal(safeParseDecimal(line.grossAmount).value!);
-        if (!net.plus(vat).eq(gross)) grossMismatch = true;
+        if (mismatchExceedsTolerance(net.plus(vat), gross, currencyType)) grossMismatch = true;
       } catch { /* ignore */ }
     }
   }
@@ -138,6 +148,7 @@ function computeLineDisplay(line: EditableInvoiceLine): {
     netError, vatAmtError, grossError, qtyError, upError,
     vatRateError, vatRateOutOfRange,
     qtyNetMismatch, vatMismatch, grossMismatch,
+    pageError,
   };
 }
 
@@ -157,13 +168,18 @@ function RecognitionPreview({
   if (line.recognitionTreatment !== "Prepaid") return null;
   if (!line.recognitionStartDate || !line.recognitionEndDate) return null;
 
-  // Guard: require a valid net amount before computing schedule
   const netParsed = safeParseDecimal(line.netAmount);
   if (netParsed.error || !netParsed.value) return null;
 
-  // Guard: require a valid fxRate
-  const rateParsed = safeParseDecimal(fxRate ?? "1");
-  const safeRate = (!rateParsed.error && rateParsed.value) ? rateParsed.value : "1";
+  const isForeignCurrency = currency && baseCurrency && currency !== baseCurrency;
+  const rateParsed = safeParseDecimal(fxRate ?? "");
+  const hasValidFx = !rateParsed.error && !!rateParsed.value;
+
+  // For foreign currency, require valid FX to show base amounts; fall back to 1 for
+  // computing origAmount only (rate doesn't affect per-month original amounts)
+  const safeRate = hasValidFx ? rateParsed.value! : "1";
+  // Show base column only when FX is known and valid
+  const showBase = isForeignCurrency && hasValidFx;
 
   const rows = deriveRecognitionSchedule({
     netAmount: netParsed.value,
@@ -175,8 +191,6 @@ function RecognitionPreview({
   });
 
   if (rows.length === 0) return null;
-
-  const showBase = baseCurrency && currency && currency !== baseCurrency;
 
   return (
     <div style={{ marginTop: 8, padding: "8px 10px", background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 5 }}>
@@ -201,6 +215,11 @@ function RecognitionPreview({
           ))}
         </tbody>
       </table>
+      {isForeignCurrency && !hasValidFx && (
+        <div style={{ marginTop: 6, fontSize: 10, color: "#0369a1" }}>
+          Enter a valid FX rate to see {baseCurrency} amounts.
+        </div>
+      )}
     </div>
   );
 }
@@ -214,6 +233,7 @@ export default function InvoiceLinesEditor({
   invoiceFxRate,
   invoiceCurrency,
   baseCurrency,
+  currencyType = "fiat",
   onChange,
 }: Props) {
   const displayLines = lines.map(applyAutoCalcToLine);
@@ -259,7 +279,7 @@ export default function InvoiceLinesEditor({
       ) : (
         <div>
           {lines.map((line, index) => {
-            const ld = computeLineDisplay(line);
+            const ld = computeLineDisplay(line, currencyType);
             const displayLine = ld.display;
 
             return (
@@ -351,7 +371,16 @@ export default function InvoiceLinesEditor({
                   </div>
                   <div className="invoice-line-field invoice-line-compact-field">
                     <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Page</div>
-                    <input className="invoice-line-control" aria-label={`Line ${index + 1} sourcePage`} style={inputStyle} value={line.sourcePage} onChange={(e) => update(index, "sourcePage", e.target.value)} />
+                    <input
+                      className="invoice-line-control"
+                      aria-label={`Line ${index + 1} sourcePage`}
+                      style={ld.pageError ? errorInputStyle : inputStyle}
+                      value={line.sourcePage}
+                      onChange={(e) => update(index, "sourcePage", e.target.value)}
+                    />
+                    {ld.pageError && (
+                      <div style={{ fontSize: 10, color: "#dc2626", marginTop: 2 }}>{ld.pageError}</div>
+                    )}
                   </div>
                   <div className="invoice-line-delete-field" style={{ paddingTop: 18 }}>
                     <button
@@ -431,7 +460,7 @@ export default function InvoiceLinesEditor({
                   )}
 
                   <div className="invoice-line-account-field">
-                    <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Accounting account no. (optional)</div>
+                    <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Expense account</div>
                     <select
                       aria-label={`Line ${index + 1} accounting account number`}
                       className="invoice-line-control"
@@ -450,7 +479,7 @@ export default function InvoiceLinesEditor({
 
                   {line.recognitionTreatment === "Prepaid" && (
                     <div className="invoice-line-account-field">
-                      <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Prepaid asset account (optional)</div>
+                      <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Prepaid asset account</div>
                       <select
                         aria-label={`Line ${index + 1} prepaid account number`}
                         className="invoice-line-control"

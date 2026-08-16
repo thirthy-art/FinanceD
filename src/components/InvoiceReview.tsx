@@ -1,10 +1,10 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { safeIsAmountMismatch, safeCalculateBaseAmount, safeParseDecimal, formatDisplayAmount, toDecimal } from "@/src/lib/invoice-validation";
+import { safeIsAmountMismatch, safeCalculateBaseAmount, safeParseDecimal, formatDisplayAmount, toDecimal, amountsWithinTolerance } from "@/src/lib/invoice-validation";
 import type { AiInvoiceExtraction } from "@/src/lib/ai-extraction";
 import type { EditableInvoiceLine } from "@/src/lib/invoice-lines";
-import { editableLineToInput, applyAutoCalcToLine } from "@/src/lib/invoice-lines";
+import { editableLineToInput, applyAutoCalcToLine, isCompletelyEmptyLine, parsePageInput } from "@/src/lib/invoice-lines";
 import { applyExtractionLines, applyExtractionToDraft, extractionLinesToEditable } from "@/src/lib/apply-ai-extraction";
 import InvoiceLinesEditor from "@/src/components/InvoiceLinesEditor";
 import { selectableExpenseAccounts, selectablePrepaidAssetAccounts } from "@/src/lib/coa-hierarchy";
@@ -47,7 +47,7 @@ interface Props {
   baseCurrency: string;
 }
 
-const CURRENCIES = ["EUR", "USD", "GBP", "CHF", "CAD", "AUD", "JPY", "SEK", "NOK", "DKK", "RON", "BTC", "ETH", "USDT", "USDC"];
+const CURRENCIES = ["EUR", "USD", "GBP", "CHF", "CAD", "AUD", "JPY", "SEK", "NOK", "DKK", "ILS", "RON", "BTC", "ETH", "USDT", "USDC"];
 
 function field(label: string, children: React.ReactNode, hint?: string) {
   return (
@@ -301,9 +301,14 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
   }
 
   async function save(action: "save" | "approve") {
+    if (hasInvalidPage) {
+      setSaveError("Fix invalid page numbers before saving.");
+      return;
+    }
     setSaving(true);
     setSaveError("");
     try {
+      const linesToSave = editableLines.filter((l) => !isCompletelyEmptyLine(l));
       const body: Record<string, unknown> = {
         invoiceNumber: form.invoiceNumber || null,
         invoiceDate: form.invoiceDate || null,
@@ -316,10 +321,10 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
         grossAmount: form.grossAmount || null,
         costCentreId: form.costCentreId ? Number(form.costCentreId) : null,
         notes: form.notes || null,
-        lines: editableLines.map((line) => editableLineToInput(applyAutoCalcToLine(line))),
+        lines: linesToSave.map((line) => editableLineToInput(line)),
       };
 
-      if (editableLines.length === 0) {
+      if (linesToSave.length === 0) {
         body.expenseAccountId = form.expenseAccountId ? Number(form.expenseAccountId) : null;
       }
 
@@ -517,7 +522,38 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
     if (!line.prepaidAccountNumber) return true;
     return false;
   });
-  const approveDisabled = saving || mismatch || hasInputErrors || prepaidLinesInvalid;
+
+  const hasInvalidPage = editableLines.some((l) => !!parsePageInput(l.sourcePage).error);
+
+  let headerLineMismatch = false;
+  const meaningfulLines = editableLines.filter((l) => !isCompletelyEmptyLine(l));
+  if (meaningfulLines.length > 0 && !hasInputErrors) {
+    try {
+      const calcedLines = meaningfulLines.map(applyAutoCalcToLine);
+      let lineNet = toDecimal(null);
+      let lineVat = toDecimal(null);
+      let lineGross = toDecimal(null);
+      for (const l of calcedLines) {
+        const np = safeParseDecimal(l.netAmount);
+        const vp = safeParseDecimal(l.vatAmount);
+        const gp = safeParseDecimal(l.grossAmount);
+        if (!np.error && np.value !== null) lineNet = lineNet.plus(toDecimal(np.value));
+        if (!vp.error && vp.value !== null) lineVat = lineVat.plus(toDecimal(vp.value));
+        if (!gp.error && gp.value !== null) lineGross = lineGross.plus(toDecimal(gp.value));
+      }
+      if (
+        !amountsWithinTolerance(lineNet.toFixed(), form.netAmount || null, form.currencyType) ||
+        !amountsWithinTolerance(lineVat.toFixed(), form.vatAmount || null, form.currencyType) ||
+        !amountsWithinTolerance(lineGross.toFixed(), form.grossAmount || null, form.currencyType)
+      ) {
+        headerLineMismatch = true;
+      }
+    } catch {
+      // ignore arithmetic errors during render
+    }
+  }
+
+  const approveDisabled = saving || mismatch || hasInputErrors || headerLineMismatch || hasInvalidPage || prepaidLinesInvalid;
   const expenseAccounts = selectableExpenseAccounts(accounts);
   const prepaidAssetAccounts = selectablePrepaidAssetAccounts(accounts);
 
@@ -966,9 +1002,10 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
             prepaidAccounts={prepaidAssetAccounts}
             invoiceNetAmount={form.netAmount}
             invoiceDate={form.invoiceDate}
-            invoiceFxRate={form.fxRateToBase || "1"}
+            invoiceFxRate={form.fxRateToBase || undefined}
             invoiceCurrency={form.currency}
             baseCurrency={baseCurrency}
+            currencyType={form.currencyType}
             onChange={(nextLines) => {
               setEditableLines(nextLines);
               setSaved(false);
@@ -1069,6 +1106,8 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
                 title={
                   hasInputErrors ? "Fix invalid input before approving"
                     : mismatch ? "Fix amount mismatch before approving"
+                    : headerLineMismatch ? "Header totals must match the sum of invoice lines before approving"
+                    : hasInvalidPage ? "Fix invalid page numbers before approving"
                     : prepaidLinesInvalid ? "Fix prepaid recognition dates and account assignments before approving"
                     : ""
                 }
@@ -1111,12 +1150,16 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
               </button>
             )}
           </div>
-          {!isApproved && (hasInputErrors || mismatch || prepaidLinesInvalid) && (
+          {!isApproved && (hasInputErrors || mismatch || headerLineMismatch || hasInvalidPage || prepaidLinesInvalid) && (
             <div style={{ marginTop: 8, fontSize: 12, color: "#d97706" }}>
               {hasInputErrors
                 ? "Approve is disabled until invalid input is corrected."
                 : mismatch
                 ? "Approve is disabled until the amount mismatch is resolved."
+                : headerLineMismatch
+                ? "Approve is disabled: header totals must match the sum of invoice lines."
+                : hasInvalidPage
+                ? "Save and approve are disabled until invalid page numbers are corrected."
                 : "Approve is disabled until all prepaid lines have valid dates and account assignments."}
             </div>
           )}

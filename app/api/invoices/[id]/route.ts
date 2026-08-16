@@ -19,6 +19,7 @@ import {
   validateAmount,
   validateBaseAmount,
   isVatRateValid,
+  amountsWithinTolerance,
 } from "@/src/lib/invoice-validation";
 import { InvoiceLineInputSchema, normalizeInvoiceLineInput, validateLineRecognitionForApproval } from "@/src/lib/invoice-lines";
 import { resolveSafeUploadPath } from "@/src/lib/safe-upload-path";
@@ -331,6 +332,39 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           i + 1
         );
         if (err) return NextResponse.json({ error: `Cannot approve: ${err}` }, { status: 422 });
+      }
+    }
+
+    // Fix B: header totals must match sum of line totals (within tolerance)
+    const linesForTotalCheck = normalizedLines !== undefined
+      ? normalizedLines
+      : await db
+          .select({
+            netAmount: supplierInvoiceLines.netAmount,
+            vatAmount: supplierInvoiceLines.vatAmount,
+            grossAmount: supplierInvoiceLines.grossAmount,
+          })
+          .from(supplierInvoiceLines)
+          .where(eq(supplierInvoiceLines.invoiceId, Number(id)));
+
+    if (linesForTotalCheck.length > 0) {
+      let lineNet = new Decimal(0);
+      let lineVat = new Decimal(0);
+      let lineGross = new Decimal(0);
+      for (const l of linesForTotalCheck) {
+        lineNet = lineNet.plus(new Decimal(l.netAmount ?? "0"));
+        lineVat = lineVat.plus(new Decimal(l.vatAmount ?? "0"));
+        lineGross = lineGross.plus(new Decimal(l.grossAmount ?? "0"));
+      }
+      if (
+        !amountsWithinTolerance(lineNet.toFixed(), finalNet, finalCurrencyType) ||
+        !amountsWithinTolerance(lineVat.toFixed(), finalVat, finalCurrencyType) ||
+        !amountsWithinTolerance(lineGross.toFixed(), finalGross, finalCurrencyType)
+      ) {
+        return NextResponse.json(
+          { error: "Cannot approve: header totals do not match the sum of invoice lines." },
+          { status: 422 }
+        );
       }
     }
   }
