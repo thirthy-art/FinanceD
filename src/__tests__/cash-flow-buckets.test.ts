@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   classifyBucket,
-  isDueThisMonth,
+  isFundingThroughMonthEnd,
   sumByCurrency,
   getWeekDateRange,
 } from "@/src/lib/cash-flow-buckets";
@@ -86,33 +86,71 @@ describe("classifyBucket", () => {
   });
 });
 
-describe("isDueThisMonth", () => {
-  it("returns true for a due date in the current month and >= today", () => {
-    expect(isDueThisMonth("2026-08-25", TODAY)).toBe(true);
+describe("isFundingThroughMonthEnd", () => {
+  // Overdue invoices are INCLUDED (they are part of the funding requirement)
+  it("includes an overdue invoice (due before today)", () => {
+    expect(isFundingThroughMonthEnd("2026-08-10", TODAY)).toBe(true);
   });
 
-  it("returns true for due date = today", () => {
-    expect(isDueThisMonth("2026-08-17", TODAY)).toBe(true);
+  it("includes an invoice due in a prior month (overdue)", () => {
+    expect(isFundingThroughMonthEnd("2025-01-01", TODAY)).toBe(true);
   });
 
-  it("returns false for a due date in the current month but before today (overdue)", () => {
-    expect(isDueThisMonth("2026-08-10", TODAY)).toBe(false);
+  it("includes an invoice due today", () => {
+    expect(isFundingThroughMonthEnd("2026-08-17", TODAY)).toBe(true);
   });
 
-  it("returns false for a due date in next month", () => {
-    expect(isDueThisMonth("2026-09-01", TODAY)).toBe(false);
+  it("includes an invoice due later in the current month", () => {
+    expect(isFundingThroughMonthEnd("2026-08-25", TODAY)).toBe(true);
   });
 
-  it("returns false for null due date", () => {
-    expect(isDueThisMonth(null, TODAY)).toBe(false);
+  it("includes an invoice due on the last day of the current month", () => {
+    expect(isFundingThroughMonthEnd("2026-08-31", TODAY)).toBe(true);
   });
 
-  it("returns false for last day of previous month", () => {
-    expect(isDueThisMonth("2026-07-31", TODAY)).toBe(false);
+  // Future-month invoices are EXCLUDED
+  it("excludes an invoice due in the next month", () => {
+    expect(isFundingThroughMonthEnd("2026-09-01", TODAY)).toBe(false);
   });
 
-  it("returns true for last day of current month", () => {
-    expect(isDueThisMonth("2026-08-31", TODAY)).toBe(true);
+  it("excludes an invoice due far in the future", () => {
+    expect(isFundingThroughMonthEnd("2027-06-01", TODAY)).toBe(false);
+  });
+
+  // Missing due date is EXCLUDED
+  it("excludes null due date (missing)", () => {
+    expect(isFundingThroughMonthEnd(null, TODAY)).toBe(false);
+  });
+
+  it("excludes undefined due date (missing)", () => {
+    expect(isFundingThroughMonthEnd(undefined, TODAY)).toBe(false);
+  });
+
+  it("excludes empty string due date (missing)", () => {
+    expect(isFundingThroughMonthEnd("", TODAY)).toBe(false);
+  });
+
+  it("excludes an invalid date string (missing)", () => {
+    expect(isFundingThroughMonthEnd("not-a-date", TODAY)).toBe(false);
+  });
+
+  // Paid invoice: filtering happens upstream; the helper is payment-status-agnostic
+  it("classifies correctly regardless of payment status — caller must pre-filter Paid invoices", () => {
+    // A Paid invoice due this month would return true, but callers only pass Unpaid rows.
+    expect(isFundingThroughMonthEnd("2026-08-20", TODAY)).toBe(true);
+  });
+
+  it("combined: overdue + remaining current month equals total funding requirement", () => {
+    // Simulate: EUR 10,000 overdue + EUR 20,000 due later this month = EUR 30,000 total
+    const invoices = [
+      { dueDate: "2026-08-01", currency: "EUR", grossAmount: "10000.00" }, // overdue — included
+      { dueDate: "2026-08-25", currency: "EUR", grossAmount: "20000.00" }, // due this month — included
+      { dueDate: "2026-09-05", currency: "EUR", grossAmount: "5000.00" },  // next month — excluded
+      { dueDate: null,          currency: "EUR", grossAmount: "1000.00" },  // missing — excluded
+    ];
+    const fundingRows = invoices.filter((inv) => isFundingThroughMonthEnd(inv.dueDate, TODAY));
+    const totals = sumByCurrency(fundingRows);
+    expect(totals).toEqual([{ currency: "EUR", total: "30000.00" }]);
   });
 });
 

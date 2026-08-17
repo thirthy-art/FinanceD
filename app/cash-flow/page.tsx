@@ -3,7 +3,7 @@ import { supplierInvoices, vendors, companies } from "@/src/db/schema";
 import { eq, desc } from "drizzle-orm";
 import {
   classifyBucket,
-  isDueThisMonth,
+  isFundingThroughMonthEnd,
   sumByCurrency,
   getWeekDateRange,
   formatShortDate,
@@ -129,13 +129,13 @@ export default async function CashFlowPage() {
   const classified = rows.map((r) => ({
     ...r,
     bucket: classifyBucket(r.dueDate, today) as Bucket,
-    dueThisMonth: isDueThisMonth(r.dueDate, today),
+    fundingThisMonth: isFundingThroughMonthEnd(r.dueDate, today),
   }));
 
   // Summary totals
   const allTotals = sumByCurrency(classified);
   const overdueTotals = sumByCurrency(classified.filter((r) => r.bucket === "overdue"));
-  const thisMonthTotals = sumByCurrency(classified.filter((r) => r.dueThisMonth));
+  const fundingThroughMonthEndTotals = sumByCurrency(classified.filter((r) => r.fundingThisMonth));
   const missingCount = classified.filter((r) => r.bucket === "missing").length;
 
   // 4-week data for client component
@@ -216,10 +216,10 @@ export default async function CashFlowPage() {
             sub={`${classified.length} invoice${classified.length === 1 ? "" : "s"}`}
           />
           <SummaryCard
-            label="Due this month"
-            value={<CurrencyTotals totals={thisMonthTotals} />}
+            label="Funding required through month-end"
+            value={<CurrencyTotals totals={fundingThroughMonthEndTotals} />}
             accent="#0891b2"
-            sub="current calendar month, not yet overdue"
+            sub="overdue + due on or before end of current month"
           />
           <SummaryCard
             label="Overdue"

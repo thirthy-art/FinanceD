@@ -38,12 +38,22 @@ export function classifyBucket(
   return "later";
 }
 
-export function isDueThisMonth(
+function lastDayOfMonth(dateStr: string): string {
+  const d = new Date(`${dateStr}T00:00:00.000Z`);
+  const last = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0));
+  return last.toISOString().slice(0, 10);
+}
+
+// Returns true when an unpaid invoice should be included in the
+// "funding required through month-end" figure:
+// overdue invoices AND invoices due up to and including the last day of the
+// current calendar month. Invoices with missing due dates are excluded.
+export function isFundingThroughMonthEnd(
   dueDate: string | null | undefined,
   today: string
 ): boolean {
   if (!dueDate || !/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) return false;
-  return dueDate >= today && dueDate.slice(0, 7) === today.slice(0, 7);
+  return dueDate <= lastDayOfMonth(today);
 }
 
 export interface CurrencyTotal {
