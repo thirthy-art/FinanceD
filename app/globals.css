@@ -109,31 +109,55 @@ body {
     padding: 12px !important;
   }
 
+  /* 4-column grid gives consistent, predictable column widths on narrow screens */
   .invoice-line-core-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 10px 8px;
   }
 
+  /* Descriptions: full width, ordered first */
   .invoice-line-original-description-field {
+    grid-column: 1 / -1;
     order: 1;
   }
-
   .invoice-line-english-description-field {
+    grid-column: 1 / -1;
     order: 2;
   }
 
-  .invoice-line-number-field,
-  .invoice-line-compact-field {
+  /* Compact identifier row: Line# (1 col) | Qty (1 col) | Unit (2 cols) */
+  .invoice-line-number-field {
+    grid-column: span 1;
+    order: 3;
+  }
+  .invoice-line-qty-field {
+    grid-column: span 1;
+    order: 3;
+  }
+  .invoice-line-unit-field {
+    grid-column: span 2;
     order: 3;
   }
 
-  .invoice-line-description-field {
-    grid-column: 1 / -1;
+  /* Amount fields: 2 per row (unit price/net, vat rate/vat, gross pairs with page) */
+  .invoice-line-amounts-field {
+    grid-column: span 2;
+    order: 4;
   }
 
+  /* Page: compact half-width, auto-pairs with gross in the same row */
+  .invoice-line-page-field {
+    grid-column: span 2;
+    order: 5;
+  }
+
+  /* Delete: right-aligned at bottom of the card */
   .invoice-line-delete-field {
-    order: 4;
-    padding-top: 8px !important;
+    grid-column: 1 / -1;
+    order: 6;
+    padding-top: 4px !important;
+    display: flex;
+    justify-content: flex-end;
   }
 
   .invoice-line-control {

@@ -302,7 +302,7 @@ export default function InvoiceLinesEditor({
                     <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Description</div>
                     <textarea className="invoice-line-control" aria-label={`Line ${index + 1} English description`} style={{ ...inputStyle, resize: "vertical" }} value={line.description} onChange={(e) => update(index, "description", e.target.value)} />
                   </div>
-                  <div className="invoice-line-field invoice-line-compact-field">
+                  <div className="invoice-line-field invoice-line-compact-field invoice-line-qty-field">
                     <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Qty</div>
                     <input
                       className="invoice-line-control"
@@ -312,11 +312,11 @@ export default function InvoiceLinesEditor({
                       onChange={(e) => update(index, "quantity", e.target.value)}
                     />
                   </div>
-                  <div className="invoice-line-field invoice-line-compact-field">
+                  <div className="invoice-line-field invoice-line-compact-field invoice-line-unit-field">
                     <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Unit of measure</div>
                     <input className="invoice-line-control" aria-label={`Line ${index + 1} unit`} style={inputStyle} value={line.unit} onChange={(e) => update(index, "unit", e.target.value)} />
                   </div>
-                  <div className="invoice-line-field invoice-line-compact-field">
+                  <div className="invoice-line-field invoice-line-compact-field invoice-line-amounts-field">
                     <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Unit price</div>
                     <input
                       className="invoice-line-control"
@@ -326,7 +326,7 @@ export default function InvoiceLinesEditor({
                       onChange={(e) => update(index, "unitPrice", e.target.value)}
                     />
                   </div>
-                  <div className="invoice-line-field invoice-line-compact-field">
+                  <div className="invoice-line-field invoice-line-compact-field invoice-line-amounts-field">
                     <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Net amount</div>
                     <input
                       className="invoice-line-control"
@@ -337,7 +337,7 @@ export default function InvoiceLinesEditor({
                       title={ld.netDerived ? "Auto-calculated from Qty × Unit Price" : undefined}
                     />
                   </div>
-                  <div className="invoice-line-field invoice-line-compact-field">
+                  <div className="invoice-line-field invoice-line-compact-field invoice-line-amounts-field">
                     <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>VAT rate (%)</div>
                     <input
                       className="invoice-line-control"
@@ -347,7 +347,7 @@ export default function InvoiceLinesEditor({
                       onChange={(e) => update(index, "vatRate", e.target.value)}
                     />
                   </div>
-                  <div className="invoice-line-field invoice-line-compact-field">
+                  <div className="invoice-line-field invoice-line-compact-field invoice-line-amounts-field">
                     <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>VAT amount</div>
                     <input
                       className="invoice-line-control"
@@ -358,7 +358,7 @@ export default function InvoiceLinesEditor({
                       title={ld.vatDerived ? "Auto-calculated from Net × VAT rate" : undefined}
                     />
                   </div>
-                  <div className="invoice-line-field invoice-line-compact-field">
+                  <div className="invoice-line-field invoice-line-compact-field invoice-line-amounts-field">
                     <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Gross amount</div>
                     <input
                       className="invoice-line-control"
@@ -369,7 +369,7 @@ export default function InvoiceLinesEditor({
                       title={ld.grossDerived ? "Auto-calculated from Net + VAT" : undefined}
                     />
                   </div>
-                  <div className="invoice-line-field invoice-line-compact-field">
+                  <div className="invoice-line-field invoice-line-compact-field invoice-line-page-field">
                     <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Page</div>
                     <input
                       className="invoice-line-control"
