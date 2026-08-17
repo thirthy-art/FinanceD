@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { getDb } from "@/src/db";
 import { supplierInvoices, vendors } from "@/src/db/schema";
 import { classifyBucket, BUCKET_LABELS } from "@/src/lib/cash-flow-buckets";
+import { setDecimalAmountCell } from "@/src/lib/cash-flow-xlsx";
 import ExcelJS from "exceljs";
 
 function todayString(): string {
@@ -17,16 +18,6 @@ function asExcelDate(value: string | null): Date | null {
 function setDateCell(cell: ExcelJS.Cell, value: string | null) {
   cell.value = asExcelDate(value);
   cell.numFmt = "yyyy-mm-dd";
-}
-
-function setDecimalCell(cell: ExcelJS.Cell, value: string | null) {
-  if (value === null || value.trim() === "") return;
-  try {
-    cell.value = { formula: String(parseFloat(value)) };
-    cell.numFmt = "0.00";
-  } catch {
-    cell.value = value;
-  }
 }
 
 export async function GET() {
@@ -88,8 +79,8 @@ export async function GET() {
     });
     setDateCell(sheetRow.getCell("invoiceDate"), row.invoiceDate);
     setDateCell(sheetRow.getCell("dueDate"), row.dueDate);
-    setDecimalCell(sheetRow.getCell("grossAmount"), row.grossAmount);
-    setDecimalCell(sheetRow.getCell("baseGrossAmount"), row.baseGrossAmount);
+    setDecimalAmountCell(sheetRow.getCell("grossAmount"), row.grossAmount);
+    setDecimalAmountCell(sheetRow.getCell("baseGrossAmount"), row.baseGrossAmount);
   }
 
   // Style header row
