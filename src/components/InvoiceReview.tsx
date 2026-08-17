@@ -51,8 +51,8 @@ const CURRENCIES = ["EUR", "USD", "GBP", "CHF", "CAD", "AUD", "JPY", "SEK", "NOK
 
 function field(label: string, children: React.ReactNode, hint?: string) {
   return (
-    <div style={{ marginBottom: 16 }}>
-      <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#64748b", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+    <div style={{ marginBottom: 16 }} className="invoice-field-group">
+      <label className="invoice-field-label" style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#64748b", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.04em" }}>
         {label}
       </label>
       {children}
@@ -726,6 +726,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
         {aiExtraction && <AiExtractionPreview extraction={aiExtraction} />}
 
         <div
+          className="invoice-details-card"
           style={{
             background: "#fff",
             border: "1px solid #e2e8f0",
@@ -733,7 +734,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
             padding: 24,
           }}
         >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <div className="invoice-details-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
             <h2 style={{ fontSize: 18, fontWeight: 700, color: "#1e3a5f" }}>Invoice Details</h2>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
               <span
@@ -764,7 +765,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
           </div>
 
           {/* Payment status controls */}
-          <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: 12, marginBottom: 16 }}>
+          <div className="invoice-payment-section" style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: 12, marginBottom: 16 }}>
             <div style={{ fontSize: 12, fontWeight: 600, color: "#64748b", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.04em" }}>
               Payment
             </div>
@@ -852,7 +853,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
                   </button>
                 </div>
               ) : (
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 160px auto", gap: 8 }}>
+                <div className="invoice-vendor-new-grid" style={{ display: "grid", gridTemplateColumns: "1fr 160px auto", gap: 8 }}>
                   <input style={inputStyle} placeholder="Vendor name" aria-label="New vendor name" value={form.newVendorName} onChange={set("newVendorName")} />
                   <input style={inputStyle} placeholder="VAT / Tax ID" aria-label="New vendor VAT or Tax ID" value={form.newVendorTaxId} onChange={set("newVendorTaxId")} />
                   <button
@@ -871,12 +872,12 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
           )}
 
           {/* Invoice number + date */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+          <div className="invoice-field-row" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
             {field("Invoice Number", <input style={inputStyle} value={form.invoiceNumber} onChange={set("invoiceNumber")} placeholder="INV-001" />)}
             {field("Invoice Date", <input style={inputStyle} type="date" value={form.invoiceDate} onChange={set("invoiceDate")} />)}
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+          <div className="invoice-field-row" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
             {field("Due Date (optional)", <input style={inputStyle} type="date" value={form.dueDate} onChange={set("dueDate")} />)}
             {field(
               "Currency",
@@ -895,7 +896,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
             )}
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+          <div className="invoice-field-row" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
             {field(
               "Currency Type",
               <select style={inputStyle} value={form.currencyType} onChange={set("currencyType")}>
@@ -923,11 +924,11 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
           </div>
 
           {/* Amounts */}
-          <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: 16, marginBottom: 16 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: "#64748b", marginBottom: 12, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+          <div className="invoice-amounts-section" style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: 16, marginBottom: 16 }}>
+            <div className="invoice-section-header" style={{ fontSize: 12, fontWeight: 600, color: "#64748b", marginBottom: 12, textTransform: "uppercase", letterSpacing: "0.04em" }}>
               Amounts ({form.currency})
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+            <div className="invoice-amounts-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
               <div>
                 <label style={{ display: "block", fontSize: 12, color: "#64748b", marginBottom: 4 }}>Net Amount</label>
                 <input
@@ -1014,11 +1015,11 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
 
           {/* Base amounts (read-only) */}
           {showBaseAmounts && (
-            <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: 16, marginBottom: 16 }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: "#0369a1", marginBottom: 12, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+            <div className="invoice-base-amounts-section" style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: 16, marginBottom: 16 }}>
+              <div className="invoice-section-header" style={{ fontSize: 12, fontWeight: 600, color: "#0369a1", marginBottom: 12, textTransform: "uppercase", letterSpacing: "0.04em" }}>
                 Base Amounts ({baseCurrency})
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+              <div className="invoice-amounts-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
                 <div>
                   <label style={{ display: "block", fontSize: 12, color: "#64748b", marginBottom: 4 }}>Base Net</label>
                   <input style={readOnlyStyle} value={previewBaseNet ? formatDisplayAmount(previewBaseNet, "fiat") : ""} readOnly />
@@ -1041,7 +1042,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
           )}
 
           {/* Cost centre + account */}
-          <div style={{ display: "grid", gridTemplateColumns: editableLines.length > 0 ? "1fr" : "1fr 1fr", gap: 16 }}>
+          <div className="invoice-field-row" style={{ display: "grid", gridTemplateColumns: editableLines.length > 0 ? "1fr" : "1fr 1fr", gap: 16 }}>
             {field(
               "Cost Centre (optional)",
               <select style={inputStyle} value={form.costCentreId} onChange={set("costCentreId")}>

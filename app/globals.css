@@ -188,4 +188,73 @@ body {
     width: 100%;
     max-width: none;
   }
+
+  /* ── Invoice Details form: compact mobile layout ── */
+  .invoice-details-card {
+    padding: 12px !important;
+  }
+
+  .invoice-details-header {
+    margin-bottom: 10px !important;
+  }
+
+  .invoice-details-card h2 {
+    font-size: 16px !important;
+  }
+
+  .invoice-field-group {
+    margin-bottom: 10px !important;
+  }
+
+  .invoice-field-label {
+    margin-bottom: 2px !important;
+    font-size: 11px !important;
+  }
+
+  .invoice-field-row {
+    gap: 10px !important;
+  }
+
+  .invoice-section-header {
+    margin-bottom: 8px !important;
+  }
+
+  .invoice-amounts-section,
+  .invoice-base-amounts-section {
+    padding: 10px !important;
+    margin-bottom: 10px !important;
+  }
+
+  .invoice-amounts-grid {
+    gap: 8px !important;
+  }
+
+  .invoice-amounts-grid label {
+    margin-bottom: 2px !important;
+    font-size: 11px !important;
+  }
+
+  .invoice-payment-section {
+    padding: 8px !important;
+    margin-bottom: 10px !important;
+  }
+
+  /* New-vendor grid: stack on mobile to avoid unreadably narrow columns */
+  .invoice-vendor-new-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Compact input height in Invoice Details (excludes .invoice-line-control) */
+  .invoice-field-group input,
+  .invoice-field-group select,
+  .invoice-amounts-grid input,
+  .invoice-base-amounts-section input,
+  .invoice-payment-section input {
+    padding: 6px 8px !important;
+  }
+
+  .invoice-field-group textarea {
+    padding: 6px 8px !important;
+    min-height: 52px !important;
+  }
 }
