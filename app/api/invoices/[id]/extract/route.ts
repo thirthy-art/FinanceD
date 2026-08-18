@@ -1,6 +1,7 @@
 import { readFile, stat } from "fs/promises";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
+import { PDFParse } from "pdf-parse";
 import { getDb } from "@/src/db";
 import { supplierInvoiceDocuments } from "@/src/db/schema";
 import {
@@ -13,6 +14,8 @@ export const runtime = "nodejs";
 
 const IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const MAX_BASE64_IMAGE_BYTES = 50 * 1024 * 1024;
+// Total base64 size limit across all rendered PDF pages (50 MiB)
+const MAX_SCANNED_PDF_TOTAL_BYTES = 50 * 1024 * 1024;
 
 const AiResponseSchema = z.object({
   choices: z
@@ -80,13 +83,64 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     }
   } else if (document.mimeType === "application/pdf") {
     const extractedText = document.extractedText?.trim();
-    if (!extractedText) {
-      return errorResponse(
-        "This PDF has no extracted text. PDF page rendering and OCR are not available for AI extraction.",
-        422,
+    if (extractedText) {
+      userContent = `${AI_EXTRACTION_PROMPT}\n\nINVOICE TEXT START\n${extractedText}\nINVOICE TEXT END`;
+    } else {
+      // Scanned PDF fallback: render pages locally and send as images to AI
+      if (config.model === "mimo-v2.5-pro") {
+        return errorResponse(
+          "The configured AI model does not support image input. Choose an image-capable model for scanned PDF invoices.",
+          422,
+        );
+      }
+
+      let pdfBytes: Buffer;
+      try {
+        pdfBytes = await readFile(document.storagePath);
+      } catch {
+        return errorResponse("The invoice document could not be read.", 404);
+      }
+
+      const parser = new PDFParse({ data: pdfBytes });
+      let screenshotResult: Awaited<ReturnType<PDFParse["getScreenshot"]>>;
+      try {
+        screenshotResult = await parser.getScreenshot({
+          desiredWidth: 1600,
+          imageDataUrl: true,
+          imageBuffer: false,
+        });
+      } catch {
+        return errorResponse("The PDF pages could not be rendered for AI extraction.", 422);
+      } finally {
+        await parser.destroy().catch(() => undefined);
+      }
+
+      if (screenshotResult.pages.length === 0) {
+        return errorResponse("No pages could be rendered from this PDF.", 422);
+      }
+
+      // Guard against absurdly large payloads before sending to the AI provider.
+      // dataUrl strings are already base64, so their .length approximates byte count.
+      const totalBytes = screenshotResult.pages.reduce(
+        (sum, page) => sum + page.dataUrl.length,
+        0,
       );
+      if (totalBytes > MAX_SCANNED_PDF_TOTAL_BYTES) {
+        return errorResponse(
+          `The rendered PDF (${screenshotResult.pages.length} page${screenshotResult.pages.length === 1 ? "" : "s"}) exceeds the AI extraction size limit. Split the document and try again.`,
+          413,
+        );
+      }
+
+      // Build multimodal content: one image_url item per page in document order
+      userContent = [
+        ...screenshotResult.pages.map((page) => ({
+          type: "image_url",
+          image_url: { url: page.dataUrl },
+        })),
+        { type: "text", text: AI_EXTRACTION_PROMPT },
+      ];
     }
-    userContent = `${AI_EXTRACTION_PROMPT}\n\nINVOICE TEXT START\n${extractedText}\nINVOICE TEXT END`;
   } else {
     return errorResponse("AI extraction supports JPEG, PNG, WebP, and digital PDF documents only.", 415);
   }
