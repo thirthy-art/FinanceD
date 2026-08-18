@@ -13,6 +13,7 @@ import { eq, asc, count } from "drizzle-orm";
 import InvoiceReview from "@/src/components/InvoiceReview";
 import Link from "next/link";
 import { parseInvoiceFields } from "@/src/lib/extract";
+import { stripTrailingZeros } from "@/src/lib/invoice-validation";
 
 export default async function InvoicePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -68,13 +69,13 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
           lineNumber: line.lineNumber ?? "",
           descriptionOriginal: line.descriptionOriginal ?? "",
           description: line.description ?? "",
-          quantity: line.quantity ?? "",
+          quantity: stripTrailingZeros(line.quantity),
           unit: line.unit ?? "",
-          unitPrice: line.unitPrice ?? "",
-          netAmount: line.netAmountDerived ? "" : (line.netAmount ?? ""),
-          vatRate: line.vatRate ?? "",
-          vatAmount: line.vatAmountDerived ? "" : (line.vatAmount ?? ""),
-          grossAmount: line.grossAmountDerived ? "" : (line.grossAmount ?? ""),
+          unitPrice: stripTrailingZeros(line.unitPrice),
+          netAmount: line.netAmountDerived ? "" : stripTrailingZeros(line.netAmount),
+          vatRate: stripTrailingZeros(line.vatRate),
+          vatAmount: line.vatAmountDerived ? "" : stripTrailingZeros(line.vatAmount),
+          grossAmount: line.grossAmountDerived ? "" : stripTrailingZeros(line.grossAmount),
           sourcePage: line.sourcePage === null ? "" : String(line.sourcePage),
           recognitionTreatment: line.recognitionTreatment ?? "Immediate",
           recognitionStartDate: line.recognitionStartDate ?? "",

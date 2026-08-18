@@ -242,6 +242,19 @@ export function decimalAdd(
   return toDecimal(a).plus(toDecimal(b)).toFixed();
 }
 
+/**
+ * Remove trailing zeros after the decimal point for human-friendly display.
+ * Does not alter the semantic value; safe for blank or null inputs.
+ * "10.0000000000" → "10", "17094.02000000" → "17094.02", "0.000123" → "0.000123"
+ */
+export function stripTrailingZeros(raw: string | null | undefined): string {
+  if (raw === null || raw === undefined) return "";
+  const trimmed = raw.trim();
+  if (!trimmed) return "";
+  if (!trimmed.includes('.')) return trimmed;
+  return trimmed.replace(/\.?0+$/, '') || "0";
+}
+
 export function formatDisplayAmount(
   value: string | null | undefined,
   currencyType: "fiat" | "crypto" = "fiat"

@@ -1,10 +1,10 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { safeIsAmountMismatch, safeCalculateBaseAmount, safeParseDecimal, formatDisplayAmount, toDecimal, amountsWithinTolerance } from "@/src/lib/invoice-validation";
+import { safeIsAmountMismatch, safeCalculateBaseAmount, safeParseDecimal, formatDisplayAmount, toDecimal, stripTrailingZeros } from "@/src/lib/invoice-validation";
 import type { AiInvoiceExtraction } from "@/src/lib/ai-extraction";
 import type { EditableInvoiceLine } from "@/src/lib/invoice-lines";
-import { editableLineToInput, applyAutoCalcToLine, isCompletelyEmptyLine, parsePageInput } from "@/src/lib/invoice-lines";
+import { editableLineToInput, applyAutoCalcToLine, isCompletelyEmptyLine, parsePageInput, checkLineTotalsForApproval } from "@/src/lib/invoice-lines";
 import { applyExtractionLines, applyExtractionToDraft, extractionLinesToEditable } from "@/src/lib/apply-ai-extraction";
 import InvoiceLinesEditor from "@/src/components/InvoiceLinesEditor";
 import { selectableExpenseAccounts, selectablePrepaidAssetAccounts } from "@/src/lib/coa-hierarchy";
@@ -213,10 +213,10 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
     dueDate: invoice.dueDate ?? extractedFields.dueDate ?? "",
     currency: invoice.currency ?? extractedFields.currency ?? "EUR",
     currencyType: invoice.currencyType ?? "fiat" as "fiat" | "crypto",
-    fxRateToBase: invoice.fxRateToBase ?? (isSameCurrency ? "1" : ""),
-    netAmount: invoice.netAmount ?? extractedFields.netAmount ?? "",
-    vatAmount: invoice.vatAmount ?? extractedFields.vatAmount ?? "",
-    grossAmount: invoice.grossAmount ?? extractedFields.grossAmount ?? "",
+    fxRateToBase: stripTrailingZeros(invoice.fxRateToBase) || (isSameCurrency ? "1" : ""),
+    netAmount: stripTrailingZeros(invoice.netAmount) || extractedFields.netAmount || "",
+    vatAmount: stripTrailingZeros(invoice.vatAmount) || extractedFields.vatAmount || "",
+    grossAmount: stripTrailingZeros(invoice.grossAmount) || extractedFields.grossAmount || "",
     costCentreId: invoice.costCentreId ? String(invoice.costCentreId) : "",
     expenseAccountId: invoice.expenseAccountId ? String(invoice.expenseAccountId) : "",
     notes: invoice.notes ?? "",
@@ -530,24 +530,12 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
   if (meaningfulLines.length > 0 && !hasInputErrors) {
     try {
       const calcedLines = meaningfulLines.map(applyAutoCalcToLine);
-      let lineNet = toDecimal(null);
-      let lineVat = toDecimal(null);
-      let lineGross = toDecimal(null);
-      for (const l of calcedLines) {
-        const np = safeParseDecimal(l.netAmount);
-        const vp = safeParseDecimal(l.vatAmount);
-        const gp = safeParseDecimal(l.grossAmount);
-        if (!np.error && np.value !== null) lineNet = lineNet.plus(toDecimal(np.value));
-        if (!vp.error && vp.value !== null) lineVat = lineVat.plus(toDecimal(vp.value));
-        if (!gp.error && gp.value !== null) lineGross = lineGross.plus(toDecimal(gp.value));
-      }
-      if (
-        !amountsWithinTolerance(lineNet.toFixed(), form.netAmount || null, form.currencyType) ||
-        !amountsWithinTolerance(lineVat.toFixed(), form.vatAmount || null, form.currencyType) ||
-        !amountsWithinTolerance(lineGross.toFixed(), form.grossAmount || null, form.currencyType)
-      ) {
-        headerLineMismatch = true;
-      }
+      const result = checkLineTotalsForApproval(
+        calcedLines,
+        { net: form.netAmount || null, vat: form.vatAmount || null, gross: form.grossAmount || null },
+        form.currencyType
+      );
+      if (result !== "ok") headerLineMismatch = true;
     } catch {
       // ignore arithmetic errors during render
     }

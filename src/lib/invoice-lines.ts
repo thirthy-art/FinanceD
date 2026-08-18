@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { parseDecimalInput, safeParseDecimal, toDecimal } from "./invoice-validation";
+import { parseDecimalInput, safeParseDecimal, toDecimal, amountsWithinTolerance } from "./invoice-validation";
 import { Decimal } from "./decimal";
 
 const nullableText = (max: number) => z.string().max(max).nullable();
@@ -246,6 +246,51 @@ export function validateLineRecognitionForApproval(
     return `Line ${lineNumber}: Prepaid treatment requires a prepaid asset account.`;
   }
   return null;
+}
+
+/**
+ * Validate that line totals are consistent with header totals for approval.
+ *
+ * - Net is always checked when lines are present.
+ * - VAT is only checked when at least one line has a non-blank vatAmount.
+ *   If ALL line VAT amounts are absent, the check is skipped — this is a
+ *   legitimate invoice structure (VAT only at header level).
+ * - Gross follows the same rule as VAT.
+ * - Missing ≠ contradictory: blank line fields are not treated as zero for the
+ *   purposes of deciding whether to check; they simply don't participate.
+ */
+export function checkLineTotalsForApproval(
+  lines: Array<{ netAmount?: string | null; vatAmount?: string | null; grossAmount?: string | null }>,
+  header: { net?: string | null; vat?: string | null; gross?: string | null },
+  currencyType: "fiat" | "crypto" = "fiat"
+): "ok" | "net-mismatch" | "vat-mismatch" | "gross-mismatch" {
+  if (lines.length === 0) return "ok";
+
+  const anyLineVat = lines.some(
+    (l) => l.vatAmount !== null && l.vatAmount !== undefined && l.vatAmount.trim() !== ""
+  );
+  const anyLineGross = lines.some(
+    (l) => l.grossAmount !== null && l.grossAmount !== undefined && l.grossAmount.trim() !== ""
+  );
+
+  let lineNet = toDecimal(null);
+  let lineVat = toDecimal(null);
+  let lineGross = toDecimal(null);
+
+  for (const l of lines) {
+    const np = safeParseDecimal(l.netAmount);
+    const vp = safeParseDecimal(l.vatAmount);
+    const gp = safeParseDecimal(l.grossAmount);
+    if (!np.error && np.value !== null) lineNet = lineNet.plus(toDecimal(np.value));
+    if (anyLineVat && !vp.error && vp.value !== null) lineVat = lineVat.plus(toDecimal(vp.value));
+    if (anyLineGross && !gp.error && gp.value !== null) lineGross = lineGross.plus(toDecimal(gp.value));
+  }
+
+  if (!amountsWithinTolerance(lineNet.toFixed(), header.net ?? null, currencyType)) return "net-mismatch";
+  if (anyLineVat && !amountsWithinTolerance(lineVat.toFixed(), header.vat ?? null, currencyType)) return "vat-mismatch";
+  if (anyLineGross && !amountsWithinTolerance(lineGross.toFixed(), header.gross ?? null, currencyType)) return "gross-mismatch";
+
+  return "ok";
 }
 
 export function sumInvoiceLineAmounts(lines: EditableInvoiceLine[]): { sum: string; invalidLineNumbers: number[] } {

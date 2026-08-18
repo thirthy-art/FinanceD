@@ -2,7 +2,7 @@
 
 import type { EditableInvoiceLine } from "@/src/lib/invoice-lines";
 import { emptyEditableInvoiceLine, sumInvoiceLineAmounts, applyAutoCalcToLine, parsePageInput } from "@/src/lib/invoice-lines";
-import { safeParseDecimal, amountsWithinTolerance, FIAT_TOLERANCE } from "@/src/lib/invoice-validation";
+import { safeParseDecimal, amountsWithinTolerance, FIAT_TOLERANCE, stripTrailingZeros } from "@/src/lib/invoice-validation";
 import { Decimal } from "@/src/lib/decimal";
 import { deriveRecognitionSchedule } from "@/src/lib/recognition";
 
@@ -332,7 +332,7 @@ export default function InvoiceLinesEditor({
                       className="invoice-line-control"
                       aria-label={`Line ${index + 1} netAmount`}
                       style={fieldInputStyle(line.netAmount, ld.netDerived, !!ld.netError)}
-                      value={ld.netDerived ? displayLine.netAmount : line.netAmount}
+                      value={ld.netDerived ? stripTrailingZeros(displayLine.netAmount) : line.netAmount}
                       onChange={(e) => update(index, "netAmount", e.target.value)}
                       title={ld.netDerived ? "Auto-calculated from Qty × Unit Price" : undefined}
                     />
@@ -353,7 +353,7 @@ export default function InvoiceLinesEditor({
                       className="invoice-line-control"
                       aria-label={`Line ${index + 1} vatAmount`}
                       style={fieldInputStyle(line.vatAmount, ld.vatDerived, !!ld.vatAmtError)}
-                      value={ld.vatDerived ? displayLine.vatAmount : line.vatAmount}
+                      value={ld.vatDerived ? stripTrailingZeros(displayLine.vatAmount) : line.vatAmount}
                       onChange={(e) => update(index, "vatAmount", e.target.value)}
                       title={ld.vatDerived ? "Auto-calculated from Net × VAT rate" : undefined}
                     />
@@ -364,7 +364,7 @@ export default function InvoiceLinesEditor({
                       className="invoice-line-control"
                       aria-label={`Line ${index + 1} grossAmount`}
                       style={fieldInputStyle(line.grossAmount, ld.grossDerived, !!ld.grossError)}
-                      value={ld.grossDerived ? displayLine.grossAmount : line.grossAmount}
+                      value={ld.grossDerived ? stripTrailingZeros(displayLine.grossAmount) : line.grossAmount}
                       onChange={(e) => update(index, "grossAmount", e.target.value)}
                       title={ld.grossDerived ? "Auto-calculated from Net + VAT" : undefined}
                     />
