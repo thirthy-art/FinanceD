@@ -1,0 +1,631 @@
+"use client";
+import { useEffect, useState, useCallback, useRef } from "react";
+
+const inputStyle: React.CSSProperties = {
+  padding: "6px 8px",
+  border: "1px solid #e2e8f0",
+  borderRadius: 5,
+  fontSize: 13,
+};
+
+const cardStyle: React.CSSProperties = {
+  background: "#fff",
+  border: "1px solid #e2e8f0",
+  borderRadius: 8,
+  overflow: "hidden",
+};
+
+const MONTHS_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+interface Category {
+  id: number;
+  name: string;
+  isActive: boolean;
+  sortOrder: number;
+}
+
+interface MonthData {
+  budget: string;
+  invoiceActual: string;
+  manualActual: string;
+  actual: string;
+  variance: string;
+}
+
+interface ReportCategory {
+  id: number;
+  name: string;
+  isActive: boolean;
+  months: Record<string, MonthData>;
+}
+
+interface Report {
+  categories: ReportCategory[];
+  months: string[];
+  baseCurrency: string;
+  unmappedCount: number;
+}
+
+interface AccountMapping {
+  id: number;
+  accountId: number;
+  accountCode: string;
+  accountName: string;
+}
+
+interface CoaAccount {
+  id: number;
+  code: string;
+  name: string;
+  type: string;
+  isPosting: boolean;
+  isActive: boolean;
+}
+
+interface ManualEntry {
+  id: number;
+  budgetCategoryId: number;
+  month: string;
+  amount: string;
+  description: string | null;
+  source: string;
+}
+
+type Tab = "budget" | "categories" | "actuals";
+
+function fmt(v: string | undefined | null): string {
+  if (!v || v === "0.00" || v === "0") return "—";
+  const n = parseFloat(v);
+  if (isNaN(n)) return "—";
+  return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function varColor(v: string): string {
+  const n = parseFloat(v);
+  if (isNaN(n) || n === 0) return "#374151";
+  return n > 0 ? "#15803d" : "#dc2626";
+}
+
+export default function BudgetPage() {
+  const currentYear = new Date().getFullYear();
+  const [year, setYear] = useState(currentYear);
+  const [tab, setTab] = useState<Tab>("budget");
+  const [report, setReport] = useState<Report | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [unmapped, setUnmapped] = useState<{ unmappedCount: number; accounts: { code: string; name: string; count: number }[] } | null>(null);
+  const [manualActuals, setManualActuals] = useState<ManualEntry[]>([]);
+
+  // Category management state
+  const [selectedCatId, setSelectedCatId] = useState<number | null>(null);
+  const [catMappings, setCatMappings] = useState<AccountMapping[]>([]);
+  const [coaAccounts, setCoaAccounts] = useState<CoaAccount[]>([]);
+  const [newCatName, setNewCatName] = useState("");
+  const [catError, setCatError] = useState("");
+  const [mappingAccountId, setMappingAccountId] = useState("");
+  const [mappingError, setMappingError] = useState("");
+
+  // Inline budget editing state
+  const [editingCell, setEditingCell] = useState<{ catId: number; month: string } | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const editRef = useRef<HTMLInputElement>(null);
+
+  // Manual actual form state
+  const [newActual, setNewActual] = useState({ budgetCategoryId: "", month: "", amount: "", description: "" });
+  const [actualError, setActualError] = useState("");
+
+  const loadReport = useCallback(async () => {
+    setLoading(true);
+    const [rep, cats, unm] = await Promise.all([
+      fetch(`/api/budget/report?year=${year}`).then((r) => r.json()),
+      fetch("/api/budget/categories").then((r) => r.json()),
+      fetch(`/api/budget/unmapped?year=${year}`).then((r) => r.json()),
+    ]);
+    setReport(rep);
+    setCategories(cats);
+    setUnmapped(unm);
+    setLoading(false);
+  }, [year]);
+
+  const loadManualActuals = useCallback(async () => {
+    const data = await fetch(`/api/budget/actuals?year=${year}`).then((r) => r.json());
+    setManualActuals(Array.isArray(data) ? data : []);
+  }, [year]);
+
+  useEffect(() => {
+    void loadReport();
+    void loadManualActuals();
+  }, [loadReport, loadManualActuals]);
+
+  useEffect(() => {
+    if (editingCell && editRef.current) editRef.current.focus();
+  }, [editingCell]);
+
+  async function seedCategories() {
+    await fetch("/api/budget/seed-categories", { method: "POST" });
+    await loadReport();
+  }
+
+  async function createCategory(e: React.FormEvent) {
+    e.preventDefault();
+    setCatError("");
+    const res = await fetch("/api/budget/categories", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: newCatName }),
+    });
+    if (!res.ok) { setCatError("Could not create category (name may already exist)."); return; }
+    setNewCatName("");
+    await loadReport();
+  }
+
+  async function toggleCatActive(cat: Category) {
+    await fetch(`/api/budget/categories/${cat.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ isActive: !cat.isActive }),
+    });
+    await loadReport();
+  }
+
+  async function loadCatMappings(catId: number) {
+    setSelectedCatId(catId);
+    const [maps, coa] = await Promise.all([
+      fetch(`/api/budget/categories/${catId}/accounts`).then((r) => r.json()),
+      fetch("/api/settings/chart-of-accounts").then((r) => r.json()),
+    ]);
+    setCatMappings(Array.isArray(maps) ? maps : []);
+    setCoaAccounts(Array.isArray(coa) ? coa.filter((a: CoaAccount) => a.type === "expense" && a.isPosting && a.isActive) : []);
+    setMappingAccountId("");
+    setMappingError("");
+  }
+
+  async function addMapping(e: React.FormEvent) {
+    e.preventDefault();
+    setMappingError("");
+    const accountId = parseInt(mappingAccountId, 10);
+    if (isNaN(accountId)) { setMappingError("Select an account."); return; }
+    const res = await fetch(`/api/budget/categories/${selectedCatId}/accounts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accountId }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      setMappingError(err.error ?? "Could not add mapping.");
+      return;
+    }
+    await loadCatMappings(selectedCatId!);
+  }
+
+  async function removeMapping(accountId: number) {
+    await fetch(`/api/budget/categories/${selectedCatId}/accounts?accountId=${accountId}`, { method: "DELETE" });
+    await loadCatMappings(selectedCatId!);
+  }
+
+  async function saveBudgetCell(catId: number, month: string, value: string) {
+    const amount = value.trim() === "" ? "0" : value.trim();
+    await fetch("/api/budget/entries", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ budgetCategoryId: catId, month, amount }),
+    });
+    setEditingCell(null);
+    await loadReport();
+  }
+
+  async function addManualActual(e: React.FormEvent) {
+    e.preventDefault();
+    setActualError("");
+    const catId = parseInt(newActual.budgetCategoryId, 10);
+    if (isNaN(catId)) { setActualError("Select a category."); return; }
+    if (!newActual.month || !newActual.amount) { setActualError("Month and amount are required."); return; }
+    const res = await fetch("/api/budget/actuals", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        budgetCategoryId: catId,
+        month: newActual.month,
+        amount: newActual.amount,
+        description: newActual.description || undefined,
+      }),
+    });
+    if (!res.ok) { const e2 = await res.json(); setActualError(e2.error ?? "Error"); return; }
+    setNewActual({ budgetCategoryId: "", month: "", amount: "", description: "" });
+    await loadReport();
+    await loadManualActuals();
+  }
+
+  async function deleteManualActual(id: number) {
+    await fetch(`/api/budget/actuals?id=${id}`, { method: "DELETE" });
+    await loadReport();
+    await loadManualActuals();
+  }
+
+  const allMonths: string[] = report?.months ?? Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, "0")}`);
+
+  return (
+    <div style={{ maxWidth: 1400 }}>
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20, flexWrap: "wrap" }}>
+        <h1 style={{ fontSize: 20, fontWeight: 700, color: "#1e3a5f", margin: 0 }}>Budget</h1>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <button onClick={() => setYear((y) => y - 1)} style={{ ...inputStyle, cursor: "pointer", background: "#f8fafc" }}>‹</button>
+          <span style={{ fontSize: 16, fontWeight: 600, color: "#374151", minWidth: 48, textAlign: "center" }}>{year}</span>
+          <button onClick={() => setYear((y) => y + 1)} style={{ ...inputStyle, cursor: "pointer", background: "#f8fafc" }}>›</button>
+        </div>
+        {report?.baseCurrency && (
+          <span style={{ fontSize: 12, color: "#64748b", background: "#f1f5f9", padding: "3px 8px", borderRadius: 4 }}>
+            {report.baseCurrency}
+          </span>
+        )}
+        {unmapped && unmapped.unmappedCount > 0 && (
+          <span style={{ fontSize: 12, color: "#b45309", background: "#fef3c7", padding: "4px 10px", borderRadius: 4 }}>
+            ⚠ {unmapped.unmappedCount} invoice line{unmapped.unmappedCount !== 1 ? "s" : ""} from approved invoices have unmapped accounts
+          </span>
+        )}
+      </div>
+
+      {/* Tabs */}
+      <div style={{ display: "flex", gap: 4, marginBottom: 20, borderBottom: "2px solid #e2e8f0" }}>
+        {([["budget", "Budget & Actuals"], ["categories", "Categories & Accounts"], ["actuals", "Manual Entries"]] as [Tab, string][]).map(([t, label]) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            style={{
+              padding: "8px 16px",
+              fontSize: 13,
+              fontWeight: tab === t ? 600 : 400,
+              color: tab === t ? "#1e3a5f" : "#64748b",
+              background: "transparent",
+              border: "none",
+              borderBottom: tab === t ? "2px solid #1e3a5f" : "2px solid transparent",
+              cursor: "pointer",
+              marginBottom: -2,
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* ─── TAB: Budget & Actuals ─────────────────────────────────────── */}
+      {tab === "budget" && (
+        <>
+          {loading ? (
+            <p style={{ color: "#64748b" }}>Loading…</p>
+          ) : !report || !report.categories.length ? (
+            <div style={{ ...cardStyle, padding: 32, textAlign: "center" }}>
+              <p style={{ color: "#64748b", marginBottom: 16 }}>No budget categories yet.</p>
+              <button
+                onClick={seedCategories}
+                style={{ ...inputStyle, cursor: "pointer", background: "#2563eb", color: "#fff", fontWeight: 600, border: "none" }}
+              >
+                Create starter categories
+              </button>
+              <p style={{ color: "#94a3b8", fontSize: 12, marginTop: 8 }}>Or go to the Categories tab to create your own.</p>
+            </div>
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ borderCollapse: "collapse", minWidth: 900, width: "100%" }}>
+                <thead>
+                  <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
+                    <th style={{ textAlign: "left", padding: "8px 12px", fontSize: 12, fontWeight: 600, color: "#64748b", textTransform: "uppercase", minWidth: 160, position: "sticky", left: 0, background: "#f8fafc", zIndex: 1 }}>Category</th>
+                    {allMonths.map((m, i) => (
+                      <th key={m} style={{ textAlign: "right", padding: "8px 6px", fontSize: 11, fontWeight: 600, color: "#64748b", textTransform: "uppercase", minWidth: 80 }}>
+                        {MONTHS_SHORT[i]}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {report.categories.map((cat) => (
+                    <tr key={cat.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                      <td style={{ padding: "6px 12px", fontSize: 13, fontWeight: 500, color: "#1e3a5f", position: "sticky", left: 0, background: "#fff", zIndex: 1, borderRight: "1px solid #e2e8f0" }}>
+                        {cat.name}
+                      </td>
+                      {allMonths.map((month) => {
+                        const data = cat.months[month];
+                        const isEditing = editingCell?.catId === cat.id && editingCell?.month === month;
+                        const budgetVal = data?.budget ?? "0.00";
+                        return (
+                          <td key={month} style={{ padding: "4px 6px", verticalAlign: "top", minWidth: 80 }}>
+                            {/* Budget row — editable */}
+                            {isEditing ? (
+                              <input
+                                ref={editRef}
+                                value={editValue}
+                                onChange={(e) => setEditValue(e.target.value)}
+                                onBlur={() => saveBudgetCell(cat.id, month, editValue)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") saveBudgetCell(cat.id, month, editValue);
+                                  if (e.key === "Escape") setEditingCell(null);
+                                }}
+                                style={{ width: "100%", padding: "2px 4px", fontSize: 12, border: "1px solid #2563eb", borderRadius: 3, textAlign: "right", outline: "2px solid #93c5fd" }}
+                              />
+                            ) : (
+                              <div
+                                onClick={() => { setEditingCell({ catId: cat.id, month }); setEditValue(budgetVal === "0.00" ? "" : budgetVal); }}
+                                title="Click to edit budget"
+                                style={{ fontSize: 12, color: "#374151", textAlign: "right", cursor: "pointer", padding: "2px 0", borderRadius: 2 }}
+                              >
+                                {fmt(budgetVal)}
+                              </div>
+                            )}
+                            {/* Actual row */}
+                            <div style={{ fontSize: 11, color: "#6b7280", textAlign: "right", marginTop: 1 }}>
+                              {fmt(data?.actual)}
+                            </div>
+                            {/* Variance row */}
+                            <div style={{ fontSize: 11, textAlign: "right", color: varColor(data?.variance ?? "0"), marginTop: 1 }}>
+                              {data?.variance && parseFloat(data.variance) !== 0 ? fmt(data.variance) : ""}
+                            </div>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div style={{ marginTop: 10, padding: "4px 12px", fontSize: 11, color: "#94a3b8" }}>
+                Click any budget cell to edit. Row: <strong>Budget</strong> / <span style={{ color: "#6b7280" }}>Actual</span> / <span style={{ color: "#15803d" }}>Variance (B−A)</span>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ─── TAB: Categories & Accounts ───────────────────────────────── */}
+      {tab === "categories" && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+          {/* Left: category list */}
+          <div>
+            <h2 style={{ fontSize: 15, fontWeight: 600, color: "#374151", marginBottom: 12 }}>Budget Categories</h2>
+            {!categories.length ? (
+              <div style={{ ...cardStyle, padding: 20 }}>
+                <p style={{ color: "#64748b", marginBottom: 12 }}>No categories yet.</p>
+                <button
+                  onClick={seedCategories}
+                  style={{ ...inputStyle, cursor: "pointer", background: "#2563eb", color: "#fff", fontWeight: 600, border: "none" }}
+                >
+                  Create starter categories
+                </button>
+              </div>
+            ) : (
+              <div style={cardStyle}>
+                {categories.map((cat) => (
+                  <div
+                    key={cat.id}
+                    onClick={() => loadCatMappings(cat.id)}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      padding: "10px 14px",
+                      borderBottom: "1px solid #f1f5f9",
+                      cursor: "pointer",
+                      background: selectedCatId === cat.id ? "#eff6ff" : "transparent",
+                    }}
+                  >
+                    <span style={{ fontSize: 13, color: cat.isActive ? "#1e293b" : "#94a3b8", fontWeight: selectedCatId === cat.id ? 600 : 400 }}>
+                      {cat.name}
+                    </span>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); toggleCatActive(cat); }}
+                      style={{ fontSize: 11, color: cat.isActive ? "#dc2626" : "#15803d", background: "transparent", border: "none", cursor: "pointer" }}
+                    >
+                      {cat.isActive ? "Deactivate" : "Activate"}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Add category form */}
+            <form onSubmit={createCategory} style={{ marginTop: 16 }}>
+              <h2 style={{ fontSize: 14, fontWeight: 600, color: "#374151", marginBottom: 8 }}>New Category</h2>
+              <div style={{ display: "flex", gap: 8 }}>
+                <input
+                  value={newCatName}
+                  onChange={(e) => setNewCatName(e.target.value)}
+                  placeholder="Category name"
+                  style={{ ...inputStyle, flex: 1 }}
+                  required
+                />
+                <button type="submit" style={{ ...inputStyle, background: "#2563eb", color: "#fff", fontWeight: 600, border: "none", cursor: "pointer" }}>
+                  Add
+                </button>
+              </div>
+              {catError && <p style={{ color: "#dc2626", fontSize: 12, marginTop: 4 }}>{catError}</p>}
+            </form>
+          </div>
+
+          {/* Right: account mappings for selected category */}
+          <div>
+            {selectedCatId !== null && categories.find((c) => c.id === selectedCatId) ? (
+              <>
+                <h2 style={{ fontSize: 15, fontWeight: 600, color: "#374151", marginBottom: 12 }}>
+                  Expense Accounts → {categories.find((c) => c.id === selectedCatId)?.name}
+                </h2>
+                <div style={cardStyle}>
+                  {catMappings.length === 0 ? (
+                    <p style={{ padding: "14px", color: "#94a3b8", fontSize: 13 }}>No accounts mapped yet.</p>
+                  ) : (
+                    catMappings.map((m) => (
+                      <div key={m.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 14px", borderBottom: "1px solid #f1f5f9" }}>
+                        <span style={{ fontSize: 13 }}>
+                          <span style={{ color: "#64748b", fontFamily: "monospace" }}>{m.accountCode}</span>
+                          {" "}
+                          <span style={{ color: "#374151" }}>{m.accountName}</span>
+                        </span>
+                        <button
+                          onClick={() => removeMapping(m.accountId)}
+                          style={{ fontSize: 11, color: "#dc2626", background: "transparent", border: "none", cursor: "pointer" }}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                <form onSubmit={addMapping} style={{ marginTop: 12 }}>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <select
+                      value={mappingAccountId}
+                      onChange={(e) => setMappingAccountId(e.target.value)}
+                      style={{ ...inputStyle, flex: 1 }}
+                    >
+                      <option value="">— select expense account —</option>
+                      {coaAccounts
+                        .filter((a) => !catMappings.some((m) => m.accountId === a.id))
+                        .map((a) => (
+                          <option key={a.id} value={a.id}>
+                            {a.code} – {a.name}
+                          </option>
+                        ))}
+                    </select>
+                    <button type="submit" style={{ ...inputStyle, background: "#2563eb", color: "#fff", fontWeight: 600, border: "none", cursor: "pointer" }}>
+                      Map
+                    </button>
+                  </div>
+                  {mappingError && <p style={{ color: "#dc2626", fontSize: 12, marginTop: 4 }}>{mappingError}</p>}
+                </form>
+
+                {unmapped && unmapped.unmappedCount > 0 && (
+                  <div style={{ marginTop: 16, padding: "10px 14px", background: "#fef3c7", borderRadius: 6, fontSize: 12 }}>
+                    <strong style={{ color: "#92400e" }}>Unmapped accounts in approved invoices:</strong>
+                    {unmapped.accounts.map((a, i) => (
+                      <div key={i} style={{ color: "#78350f", marginTop: 4 }}>
+                        <span style={{ fontFamily: "monospace" }}>{a.code}</span> – {a.name} ({a.count} line{a.count !== 1 ? "s" : ""})
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            ) : (
+              <div style={{ color: "#94a3b8", fontSize: 13, padding: 20 }}>
+                ← Select a category to manage its account mappings.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ─── TAB: Manual Entries ──────────────────────────────────────── */}
+      {tab === "actuals" && (
+        <>
+          <h2 style={{ fontSize: 15, fontWeight: 600, color: "#374151", marginBottom: 12 }}>Manual Actual Entries ({year})</h2>
+          <p style={{ fontSize: 13, color: "#64748b", marginBottom: 16 }}>
+            Add non-invoice actuals such as payroll, depreciation, and journal adjustments.
+          </p>
+
+          {/* Add form */}
+          <div style={{ ...cardStyle, padding: 20, marginBottom: 20 }}>
+            <h3 style={{ fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 12 }}>Add Entry</h3>
+            <form onSubmit={addManualActual}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end" }}>
+                <div>
+                  <label style={{ fontSize: 11, color: "#64748b", display: "block", marginBottom: 3 }}>Category</label>
+                  <select
+                    value={newActual.budgetCategoryId}
+                    onChange={(e) => setNewActual((p) => ({ ...p, budgetCategoryId: e.target.value }))}
+                    style={{ ...inputStyle, minWidth: 180 }}
+                    required
+                  >
+                    <option value="">— select —</option>
+                    {categories.filter((c) => c.isActive).map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: 11, color: "#64748b", display: "block", marginBottom: 3 }}>Month</label>
+                  <input
+                    type="month"
+                    value={newActual.month}
+                    onChange={(e) => setNewActual((p) => ({ ...p, month: e.target.value }))}
+                    style={inputStyle}
+                    required
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: 11, color: "#64748b", display: "block", marginBottom: 3 }}>Amount ({report?.baseCurrency ?? ""})</label>
+                  <input
+                    type="text"
+                    placeholder="0.00"
+                    value={newActual.amount}
+                    onChange={(e) => setNewActual((p) => ({ ...p, amount: e.target.value }))}
+                    style={{ ...inputStyle, width: 100, textAlign: "right" }}
+                    required
+                  />
+                </div>
+                <div style={{ flex: 1, minWidth: 160 }}>
+                  <label style={{ fontSize: 11, color: "#64748b", display: "block", marginBottom: 3 }}>Description</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Payroll Aug 2026"
+                    value={newActual.description}
+                    onChange={(e) => setNewActual((p) => ({ ...p, description: e.target.value }))}
+                    style={{ ...inputStyle, width: "100%" }}
+                  />
+                </div>
+                <button type="submit" style={{ ...inputStyle, background: "#2563eb", color: "#fff", fontWeight: 600, border: "none", cursor: "pointer" }}>
+                  Add
+                </button>
+              </div>
+              {actualError && <p style={{ color: "#dc2626", fontSize: 12, marginTop: 6 }}>{actualError}</p>}
+            </form>
+          </div>
+
+          {/* Entries list */}
+          <div style={cardStyle}>
+            {manualActuals.filter((e) => e.month.startsWith(String(year))).length === 0 ? (
+              <p style={{ padding: 20, color: "#94a3b8", fontSize: 13 }}>No manual entries for {year}.</p>
+            ) : (
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
+                    <th style={{ textAlign: "left", padding: "8px 12px", fontSize: 12, fontWeight: 600, color: "#64748b", textTransform: "uppercase" }}>Month</th>
+                    <th style={{ textAlign: "left", padding: "8px 12px", fontSize: 12, fontWeight: 600, color: "#64748b", textTransform: "uppercase" }}>Category</th>
+                    <th style={{ textAlign: "left", padding: "8px 12px", fontSize: 12, fontWeight: 600, color: "#64748b", textTransform: "uppercase" }}>Description</th>
+                    <th style={{ textAlign: "left", padding: "8px 12px", fontSize: 12, fontWeight: 600, color: "#64748b", textTransform: "uppercase" }}>Source</th>
+                    <th style={{ textAlign: "right", padding: "8px 12px", fontSize: 12, fontWeight: 600, color: "#64748b", textTransform: "uppercase" }}>Amount</th>
+                    <th style={{ width: 60 }}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {manualActuals
+                    .filter((e) => e.month.startsWith(String(year)))
+                    .sort((a, b) => a.month.localeCompare(b.month))
+                    .map((entry) => {
+                      const cat = categories.find((c) => c.id === entry.budgetCategoryId);
+                      return (
+                        <tr key={entry.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                          <td style={{ padding: "8px 12px", fontSize: 13, color: "#374151" }}>{entry.month}</td>
+                          <td style={{ padding: "8px 12px", fontSize: 13, color: "#374151" }}>{cat?.name ?? entry.budgetCategoryId}</td>
+                          <td style={{ padding: "8px 12px", fontSize: 13, color: "#374151" }}>{entry.description ?? "—"}</td>
+                          <td style={{ padding: "8px 12px", fontSize: 12, color: "#64748b" }}>{entry.source}</td>
+                          <td style={{ padding: "8px 12px", fontSize: 13, color: "#374151", textAlign: "right", fontFamily: "monospace" }}>
+                            {fmt(entry.amount)}
+                          </td>
+                          <td style={{ padding: "8px 12px" }}>
+                            <button
+                              onClick={() => deleteManualActual(entry.id)}
+                              style={{ fontSize: 11, color: "#dc2626", background: "transparent", border: "none", cursor: "pointer" }}
+                            >
+                              Delete
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}

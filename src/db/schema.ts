@@ -189,6 +189,64 @@ export const supplierInvoiceLines = pgTable("supplier_invoice_lines", {
   invoicePositionUnique: unique("uq_invoice_line_position").on(table.invoiceId, table.position),
 }));
 
+// ─── Budget Categories ────────────────────────────────────────────────────────
+
+export const budgetCategories = pgTable("budget_categories", {
+  id: serial("id").primaryKey(),
+  companyId: integer("company_id").notNull().references(() => companies.id),
+  name: varchar("name", { length: 255 }).notNull(),
+  isActive: boolean("is_active").notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  companyNameUnique: unique("uq_budget_category_company_name").on(table.companyId, table.name),
+}));
+
+// Maps expense posting accounts to budget categories (1 account → at most 1 category)
+export const budgetCategoryAccounts = pgTable("budget_category_accounts", {
+  id: serial("id").primaryKey(),
+  budgetCategoryId: integer("budget_category_id")
+    .notNull()
+    .references(() => budgetCategories.id, { onDelete: "cascade" }),
+  accountId: integer("account_id")
+    .notNull()
+    .references(() => chartOfAccounts.id),
+}, (table) => ({
+  accountUnique: unique("uq_budget_category_account").on(table.accountId),
+}));
+
+// Budgeted amounts per category/month/optional cost centre
+export const budgetEntries = pgTable("budget_entries", {
+  id: serial("id").primaryKey(),
+  companyId: integer("company_id").notNull().references(() => companies.id),
+  budgetCategoryId: integer("budget_category_id")
+    .notNull()
+    .references(() => budgetCategories.id),
+  month: varchar("month", { length: 7 }).notNull(), // YYYY-MM
+  costCentreId: integer("cost_centre_id").references(() => costCentres.id),
+  amount: numeric("amount", { precision: 18, scale: 2 }).notNull().default("0"),
+  note: text("note"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Manual actual entries (salaries, depreciation, journals not in AP)
+export const budgetActualEntries = pgTable("budget_actual_entries", {
+  id: serial("id").primaryKey(),
+  companyId: integer("company_id").notNull().references(() => companies.id),
+  budgetCategoryId: integer("budget_category_id")
+    .notNull()
+    .references(() => budgetCategories.id),
+  month: varchar("month", { length: 7 }).notNull(), // YYYY-MM
+  costCentreId: integer("cost_centre_id").references(() => costCentres.id),
+  amount: numeric("amount", { precision: 18, scale: 2 }).notNull(),
+  description: varchar("description", { length: 500 }),
+  source: varchar("source", { length: 100 }).notNull().default("Manual"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 // ─── Relations ────────────────────────────────────────────────────────────────
 
 export const supplierInvoiceRelations = relations(
