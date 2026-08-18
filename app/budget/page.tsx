@@ -104,6 +104,9 @@ export default function BudgetPage() {
   const [catError, setCatError] = useState("");
   const [mappingAccountId, setMappingAccountId] = useState("");
   const [mappingError, setMappingError] = useState("");
+  const [renamingCatId, setRenamingCatId] = useState<number | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [renameError, setRenameError] = useState("");
 
   // Inline budget editing state
   const [editingCell, setEditingCell] = useState<{ catId: number; month: string } | null>(null);
@@ -165,6 +168,30 @@ export default function BudgetPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ isActive: !cat.isActive }),
     });
+    await loadReport();
+  }
+
+  function startRename(cat: Category) {
+    setRenamingCatId(cat.id);
+    setRenameValue(cat.name);
+    setRenameError("");
+  }
+
+  async function saveRename(catId: number) {
+    setRenameError("");
+    const name = renameValue.trim();
+    if (!name) { setRenameError("Name cannot be empty."); return; }
+    const res = await fetch(`/api/budget/categories/${catId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      setRenameError(body.error ?? "Could not rename category.");
+      return;
+    }
+    setRenamingCatId(null);
     await loadReport();
   }
 
@@ -396,26 +423,65 @@ export default function BudgetPage() {
                 {categories.map((cat) => (
                   <div
                     key={cat.id}
-                    onClick={() => loadCatMappings(cat.id)}
                     style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      padding: "10px 14px",
                       borderBottom: "1px solid #f1f5f9",
-                      cursor: "pointer",
                       background: selectedCatId === cat.id ? "#eff6ff" : "transparent",
                     }}
                   >
-                    <span style={{ fontSize: 13, color: cat.isActive ? "#1e293b" : "#94a3b8", fontWeight: selectedCatId === cat.id ? 600 : 400 }}>
-                      {cat.name}
-                    </span>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); toggleCatActive(cat); }}
-                      style={{ fontSize: 11, color: cat.isActive ? "#dc2626" : "#15803d", background: "transparent", border: "none", cursor: "pointer" }}
-                    >
-                      {cat.isActive ? "Deactivate" : "Activate"}
-                    </button>
+                    {renamingCatId === cat.id ? (
+                      // Inline rename mode
+                      <div style={{ padding: "8px 14px" }}>
+                        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                          <input
+                            autoFocus
+                            value={renameValue}
+                            onChange={(e) => setRenameValue(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") void saveRename(cat.id);
+                              if (e.key === "Escape") setRenamingCatId(null);
+                            }}
+                            style={{ ...inputStyle, flex: 1 }}
+                          />
+                          <button
+                            onClick={() => void saveRename(cat.id)}
+                            style={{ fontSize: 12, color: "#fff", background: "#2563eb", border: "none", borderRadius: 4, padding: "5px 10px", cursor: "pointer", fontWeight: 600 }}
+                          >
+                            Save
+                          </button>
+                          <button
+                            onClick={() => setRenamingCatId(null)}
+                            style={{ fontSize: 12, color: "#64748b", background: "transparent", border: "none", cursor: "pointer" }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                        {renameError && <p style={{ color: "#dc2626", fontSize: 12, margin: "4px 0 0" }}>{renameError}</p>}
+                      </div>
+                    ) : (
+                      // Normal display mode
+                      <div
+                        onClick={() => loadCatMappings(cat.id)}
+                        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", cursor: "pointer" }}
+                      >
+                        <span style={{ fontSize: 13, color: cat.isActive ? "#1e293b" : "#94a3b8", fontWeight: selectedCatId === cat.id ? 600 : 400, flex: 1 }}>
+                          {cat.name}
+                        </span>
+                        <div style={{ display: "flex", gap: 8 }}>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); startRename(cat); }}
+                            style={{ fontSize: 11, color: "#2563eb", background: "transparent", border: "none", cursor: "pointer" }}
+                          >
+                            Rename
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); toggleCatActive(cat); }}
+                            style={{ fontSize: 11, color: cat.isActive ? "#dc2626" : "#15803d", background: "transparent", border: "none", cursor: "pointer" }}
+                          >
+                            {cat.isActive ? "Deactivate" : "Activate"}
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

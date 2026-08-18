@@ -11,7 +11,11 @@ import {
 } from "@/src/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { getOrCreateCompany } from "@/src/lib/db-helpers";
-import { computeInvoiceActuals } from "@/src/lib/budget-actuals";
+import {
+  computeInvoiceActuals,
+  resolveLineCategory,
+  resolveBudgetForMonth,
+} from "@/src/lib/budget-actuals";
 import { Decimal } from "@/src/lib/decimal";
 
 function months(year: string): string[] {
@@ -55,7 +59,7 @@ export async function GET(req: NextRequest) {
   const catIds = cats.map((c) => c.id);
 
   // 2. Budget entries for year
-  const entries = await db
+  const allBudgetEntries = await db
     .select()
     .from(budgetEntries)
     .where(
@@ -64,7 +68,7 @@ export async function GET(req: NextRequest) {
         inArray(budgetEntries.budgetCategoryId, catIds)
       )
     );
-  const budgetYearEntries = entries.filter((e) => e.month.startsWith(year));
+  const budgetYearEntries = allBudgetEntries.filter((e) => e.month.startsWith(year));
 
   // 3. Manual actual entries for year
   const manualActuals = await db
@@ -87,7 +91,6 @@ export async function GET(req: NextRequest) {
   for (const m of mappings) {
     accountToCategoryId.set(m.accountId, m.budgetCategoryId);
   }
-  const mappedAccountIds = mappings.map((m) => m.accountId);
 
   // 5. Approved supplier invoices for this company
   const invoices = await db
@@ -105,8 +108,8 @@ export async function GET(req: NextRequest) {
       )
     );
 
-  // 6. Invoice lines for those invoices
-  let invoiceActualLines: {
+  // 6. Invoice lines — resolve account with correct precedence, no double fallback
+  const invoiceActualLines: {
     invoiceId: number;
     netAmount: string | null;
     fxRateToBase: string | null;
@@ -117,10 +120,9 @@ export async function GET(req: NextRequest) {
     budgetCategoryId: number;
   }[] = [];
 
-  // Track unmapped invoice line amounts
   let unmappedCount = 0;
 
-  if (invoices.length && mappedAccountIds.length) {
+  if (invoices.length) {
     const invoiceIds = invoices.map((i) => i.id);
     const invoiceMap = new Map(invoices.map((i) => [i.id, i]));
 
@@ -129,43 +131,29 @@ export async function GET(req: NextRequest) {
       .from(supplierInvoiceLines)
       .where(inArray(supplierInvoiceLines.invoiceId, invoiceIds));
 
-    // Build COA code→id map for accounts that are mapped
-    let coaCodeToId = new Map<string, number>();
-    if (mappedAccountIds.length) {
-      const coaRows = await db
-        .select({ id: chartOfAccounts.id, code: chartOfAccounts.code })
-        .from(chartOfAccounts)
-        .where(
-          and(
-            eq(chartOfAccounts.companyId, company.id),
-            inArray(chartOfAccounts.id, mappedAccountIds)
-          )
-        );
-      for (const r of coaRows) coaCodeToId.set(r.code, r.id);
-    }
+    // Build company-wide COA code→id map (needed for full resolution, not just mapped accounts)
+    const coaRows = await db
+      .select({ id: chartOfAccounts.id, code: chartOfAccounts.code })
+      .from(chartOfAccounts)
+      .where(eq(chartOfAccounts.companyId, company.id));
+    const coaCodeToId = new Map(coaRows.map((r) => [r.code, r.id]));
 
     for (const line of lines) {
       const inv = invoiceMap.get(line.invoiceId)!;
 
-      // Resolve account: line accountingAccountNumber → COA id, else invoice expenseAccountId
-      let resolvedAccountId: number | null = null;
-      if (line.accountingAccountNumber) {
-        const id = coaCodeToId.get(line.accountingAccountNumber);
-        if (id !== undefined) resolvedAccountId = id;
-      }
-      if (resolvedAccountId === null && inv.expenseAccountId) {
-        if (accountToCategoryId.has(inv.expenseAccountId)) {
-          resolvedAccountId = inv.expenseAccountId;
-        }
-      }
+      // Correct precedence: accountingAccountNumber takes exclusive priority.
+      // Only blank accountingAccountNumber allows fallback to expenseAccountId.
+      const budgetCategoryId = resolveLineCategory(
+        line.accountingAccountNumber,
+        inv.expenseAccountId,
+        coaCodeToId,
+        accountToCategoryId
+      );
 
-      if (resolvedAccountId === null || !accountToCategoryId.has(resolvedAccountId)) {
-        // Count as unmapped if the line has a net amount
+      if (budgetCategoryId === null) {
         if (line.netAmount && d(line.netAmount).gt(0)) unmappedCount++;
         continue;
       }
-
-      const budgetCategoryId = accountToCategoryId.get(resolvedAccountId)!;
 
       invoiceActualLines.push({
         invoiceId: line.invoiceId,
@@ -178,9 +166,6 @@ export async function GET(req: NextRequest) {
         budgetCategoryId,
       });
     }
-  } else if (invoices.length) {
-    // Count unmapped — invoices exist but no account mappings set up
-    unmappedCount = invoices.length;
   }
 
   // 7. Compute invoice actuals via recognition schedule
@@ -199,9 +184,8 @@ export async function GET(req: NextRequest) {
     }> = {};
 
     for (const month of allMonths) {
-      const budget = budgetYearEntries
-        .filter((e) => e.budgetCategoryId === cat.id && e.month === month)
-        .reduce((acc, e) => acc.plus(e.amount ?? "0"), new Decimal(0));
+      // Apply double-counting rule: company-level entry takes exclusive precedence
+      const budget = resolveBudgetForMonth(budgetYearEntries, cat.id, month);
 
       const invoiceActual = invoiceActualMap.get(`${cat.id}:${month}`) ?? new Decimal(0);
 

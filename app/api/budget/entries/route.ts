@@ -1,11 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/src/db";
-import { budgetEntries, budgetCategories } from "@/src/db/schema";
+import { budgetEntries, budgetCategories, costCentres } from "@/src/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { getOrCreateCompany } from "@/src/lib/db-helpers";
 import { z } from "zod";
 import { isValidMonth } from "@/src/lib/budget-actuals";
 import { Decimal } from "@/src/lib/decimal";
+
+async function verifyCostCentre(
+  db: ReturnType<typeof getDb>,
+  costCentreId: number,
+  companyId: number
+): Promise<boolean> {
+  const [cc] = await db
+    .select({ id: costCentres.id })
+    .from(costCentres)
+    .where(
+      and(
+        eq(costCentres.id, costCentreId),
+        eq(costCentres.companyId, companyId)
+      )
+    );
+  return cc !== undefined;
+}
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -21,7 +38,6 @@ export async function GET(req: NextRequest) {
     .from(budgetEntries)
     .where(eq(budgetEntries.companyId, company.id));
 
-  // Filter to requested year in JS (month is YYYY-MM)
   const filtered = rows.filter((r) => r.month.startsWith(year));
   return NextResponse.json(filtered);
 }
@@ -44,7 +60,6 @@ export async function PUT(req: NextRequest) {
   const company = await getOrCreateCompany();
   const db = getDb();
 
-  // Verify category belongs to company
   const [cat] = await db
     .select()
     .from(budgetCategories)
@@ -58,7 +73,11 @@ export async function PUT(req: NextRequest) {
 
   const { budgetCategoryId, month, amount, note, costCentreId } = parsed.data;
 
-  // Find existing entry matching scope
+  if (costCentreId != null) {
+    const valid = await verifyCostCentre(db, costCentreId, company.id);
+    if (!valid) return NextResponse.json({ error: "Cost centre not found or does not belong to this company" }, { status: 422 });
+  }
+
   const existing = await db
     .select()
     .from(budgetEntries)
@@ -98,7 +117,6 @@ export async function PUT(req: NextRequest) {
   }
 }
 
-// Bulk upsert for a whole year's grid
 const BulkUpsertSchema = z.object({
   entries: z.array(UpsertSchema),
 });
@@ -106,7 +124,6 @@ const BulkUpsertSchema = z.object({
 export async function POST(req: NextRequest) {
   const body = await req.json();
 
-  // Check if it's a bulk or single entry
   if (Array.isArray(body?.entries)) {
     const parsed = BulkUpsertSchema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
@@ -125,8 +142,34 @@ export async function POST(req: NextRequest) {
         )
       );
     const validCatIds = new Set(cats.map((c) => c.id));
-    const invalid = catIds.find((id) => !validCatIds.has(id));
-    if (invalid) return NextResponse.json({ error: `Category ${invalid} not found` }, { status: 404 });
+    const invalidCat = catIds.find((id) => !validCatIds.has(id));
+    if (invalidCat) return NextResponse.json({ error: `Category ${invalidCat} not found` }, { status: 404 });
+
+    // Validate all distinct non-null cost centre IDs up front
+    const ccIds = [...new Set(
+      parsed.data.entries
+        .map((e) => e.costCentreId)
+        .filter((id): id is number => id != null)
+    )];
+    if (ccIds.length) {
+      const validCcs = await db
+        .select({ id: costCentres.id })
+        .from(costCentres)
+        .where(
+          and(
+            inArray(costCentres.id, ccIds),
+            eq(costCentres.companyId, company.id)
+          )
+        );
+      const validCcIds = new Set(validCcs.map((c) => c.id));
+      const invalidCc = ccIds.find((id) => !validCcIds.has(id));
+      if (invalidCc) {
+        return NextResponse.json(
+          { error: `Cost centre ${invalidCc} not found or does not belong to this company` },
+          { status: 422 }
+        );
+      }
+    }
 
     const now = new Date();
     const results = [];
@@ -170,7 +213,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(results);
   }
 
-  // Single entry (same as PUT)
+  // Single entry
   const parsed = UpsertSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
@@ -188,6 +231,12 @@ export async function POST(req: NextRequest) {
   if (!cat) return NextResponse.json({ error: "Category not found" }, { status: 404 });
 
   const { budgetCategoryId, month, amount, note, costCentreId } = parsed.data;
+
+  if (costCentreId != null) {
+    const valid = await verifyCostCentre(db, costCentreId, company.id);
+    if (!valid) return NextResponse.json({ error: "Cost centre not found or does not belong to this company" }, { status: 422 });
+  }
+
   const existing = await db
     .select()
     .from(budgetEntries)

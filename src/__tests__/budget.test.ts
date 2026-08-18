@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { computeInvoiceActuals, isValidMonth, type InvoiceLineForBudget } from "@/src/lib/budget-actuals";
+import {
+  computeInvoiceActuals,
+  isValidMonth,
+  resolveLineCategory,
+  resolveBudgetForMonth,
+  type InvoiceLineForBudget,
+  type BudgetEntrySlim,
+} from "@/src/lib/budget-actuals";
 import { Decimal } from "@/src/lib/decimal";
 
 // ─── Month validation ─────────────────────────────────────────────────────────
@@ -298,5 +305,85 @@ describe("unmapped accounts excluded from actuals", () => {
     const map = computeInvoiceActuals(mappedLines, "2026");
     expect(map.get("11:2026-09")?.toFixed(2)).toBe("600.00");
     expect(map.size).toBe(1);
+  });
+});
+
+// ─── resolveLineCategory: account precedence regression ──────────────────────
+
+describe("resolveLineCategory", () => {
+  const coaCodeToId = new Map([
+    ["4000", 10],
+    ["5000", 20],
+  ]);
+  const accountToCategoryId = new Map([
+    [10, 100], // COA id 10 → category 100
+    [20, 200], // COA id 20 → category 200
+  ]);
+
+  it("uses accountingAccountNumber when present and resolves category", () => {
+    const result = resolveLineCategory("4000", 20, coaCodeToId, accountToCategoryId);
+    expect(result).toBe(100); // resolves via "4000" → id 10 → cat 100, NOT via fallback 20
+  });
+
+  it("regression: non-blank accountingAccountNumber NOT in COA → null (no fallback to expenseAccountId)", () => {
+    // "9999" is not in coaCodeToId. Even though fallbackAccountId=20 maps to category 200,
+    // the fallback must NOT be used — the correct result is null (unmapped).
+    const result = resolveLineCategory("9999", 20, coaCodeToId, accountToCategoryId);
+    expect(result).toBeNull();
+  });
+
+  it("blank accountingAccountNumber falls back to expenseAccountId", () => {
+    const result = resolveLineCategory(null, 20, coaCodeToId, accountToCategoryId);
+    expect(result).toBe(200);
+  });
+
+  it("both null → null", () => {
+    const result = resolveLineCategory(null, null, coaCodeToId, accountToCategoryId);
+    expect(result).toBeNull();
+  });
+
+  it("accountingAccountNumber present but account not mapped to any category → null", () => {
+    const coaWithUnmapped = new Map([["6000", 30]]);
+    const result = resolveLineCategory("6000", 20, coaWithUnmapped, accountToCategoryId);
+    expect(result).toBeNull();
+  });
+});
+
+// ─── resolveBudgetForMonth: double-counting prevention ───────────────────────
+
+describe("resolveBudgetForMonth", () => {
+  it("company-level (null CC) entry takes exclusive precedence over CC entries", () => {
+    const entries: BudgetEntrySlim[] = [
+      { budgetCategoryId: 1, month: "2026-08", costCentreId: null, amount: "50000" },
+      { budgetCategoryId: 1, month: "2026-08", costCentreId: 10, amount: "20000" },
+      { budgetCategoryId: 1, month: "2026-08", costCentreId: 11, amount: "30000" },
+    ];
+    const result = resolveBudgetForMonth(entries, 1, "2026-08");
+    expect(result.toFixed(2)).toBe("50000.00"); // not 100000 (no double-counting)
+  });
+
+  it("when no company-level entry exists, sums cost-centre entries", () => {
+    const entries: BudgetEntrySlim[] = [
+      { budgetCategoryId: 1, month: "2026-08", costCentreId: 10, amount: "20000" },
+      { budgetCategoryId: 1, month: "2026-08", costCentreId: 11, amount: "30000" },
+    ];
+    const result = resolveBudgetForMonth(entries, 1, "2026-08");
+    expect(result.toFixed(2)).toBe("50000.00");
+  });
+
+  it("returns zero when no entries exist for the category/month", () => {
+    const result = resolveBudgetForMonth([], 1, "2026-08");
+    expect(result.toFixed(2)).toBe("0.00");
+  });
+
+  it("only considers entries matching the given catId and month", () => {
+    const entries: BudgetEntrySlim[] = [
+      { budgetCategoryId: 1, month: "2026-08", costCentreId: null, amount: "50000" },
+      { budgetCategoryId: 2, month: "2026-08", costCentreId: null, amount: "9000" },
+      { budgetCategoryId: 1, month: "2026-09", costCentreId: null, amount: "8000" },
+    ];
+    expect(resolveBudgetForMonth(entries, 1, "2026-08").toFixed(2)).toBe("50000.00");
+    expect(resolveBudgetForMonth(entries, 2, "2026-08").toFixed(2)).toBe("9000.00");
+    expect(resolveBudgetForMonth(entries, 1, "2026-09").toFixed(2)).toBe("8000.00");
   });
 });

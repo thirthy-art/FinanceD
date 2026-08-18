@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/src/db";
-import { budgetActualEntries, budgetCategories } from "@/src/db/schema";
+import { budgetActualEntries, budgetCategories, costCentres } from "@/src/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrCreateCompany } from "@/src/lib/db-helpers";
 import { z } from "zod";
@@ -55,6 +55,20 @@ export async function POST(req: NextRequest) {
   if (!cat) return NextResponse.json({ error: "Category not found" }, { status: 404 });
 
   const { budgetCategoryId, month, amount, description, source, costCentreId } = parsed.data;
+
+  if (costCentreId != null) {
+    const [cc] = await db
+      .select({ id: costCentres.id })
+      .from(costCentres)
+      .where(
+        and(
+          eq(costCentres.id, costCentreId),
+          eq(costCentres.companyId, company.id)
+        )
+      );
+    if (!cc) return NextResponse.json({ error: "Cost centre not found or does not belong to this company" }, { status: 422 });
+  }
+
   const [row] = await db
     .insert(budgetActualEntries)
     .values({

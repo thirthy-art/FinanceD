@@ -12,6 +12,11 @@ import { getOrCreateCompany } from "@/src/lib/db-helpers";
 /**
  * Returns invoice lines from approved invoices whose accounting account
  * is not mapped to any budget category.
+ *
+ * Account resolution precedence (consistent with report route):
+ *  - If line.accountingAccountNumber is non-blank, use only that code.
+ *    No fallback to invoice.expenseAccountId.
+ *  - Only when accountingAccountNumber is blank may expenseAccountId be used.
  */
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -20,11 +25,13 @@ export async function GET(req: NextRequest) {
   const company = await getOrCreateCompany();
   const db = getDb();
 
-  // All account IDs that are mapped
-  const mappings = await db.select().from(budgetCategoryAccounts);
+  // All account IDs that are mapped (for this company)
+  const mappings = await db
+    .select()
+    .from(budgetCategoryAccounts);
   const mappedAccountIds = new Set(mappings.map((m) => m.accountId));
 
-  // Approved invoices
+  // Approved invoices for this company
   const invoices = await db
     .select({
       id: supplierInvoices.id,
@@ -53,7 +60,7 @@ export async function GET(req: NextRequest) {
     .from(supplierInvoiceLines)
     .where(inArray(supplierInvoiceLines.invoiceId, invoiceIds));
 
-  // All COA codes for this company
+  // Company-wide COA map
   const coaRows = await db
     .select({ id: chartOfAccounts.id, code: chartOfAccounts.code, name: chartOfAccounts.name })
     .from(chartOfAccounts)
@@ -68,29 +75,42 @@ export async function GET(req: NextRequest) {
     const inv = invoiceMap.get(line.invoiceId);
     if (!inv) continue;
 
+    // Correct precedence: if accountingAccountNumber is present, use it exclusively.
+    // Do NOT fall back to expenseAccountId when accountingAccountNumber is set.
     let resolvedId: number | null = null;
+    let stopFallback = false;
+
     if (line.accountingAccountNumber) {
+      stopFallback = true;
       const id = coaCodeToId.get(line.accountingAccountNumber);
       if (id !== undefined) resolvedId = id;
+      // If not found in COA, resolvedId stays null → treated as unmapped below
     }
-    if (resolvedId === null && inv.expenseAccountId) {
+
+    if (!stopFallback && inv.expenseAccountId != null) {
       resolvedId = inv.expenseAccountId;
     }
 
-    if (resolvedId !== null && !mappedAccountIds.has(resolvedId)) {
+    if (resolvedId !== null && mappedAccountIds.has(resolvedId)) {
+      // This line is mapped — skip it (not unmapped)
+      continue;
+    }
+
+    if (resolvedId !== null) {
+      // Resolved to an account but not mapped
       const info = coaIdToInfo.get(resolvedId);
-      const key = resolvedId;
-      const existing = unmappedAccounts.get(key);
+      const existing = unmappedAccounts.get(resolvedId);
       if (existing) {
         existing.count++;
       } else {
-        unmappedAccounts.set(key, {
+        unmappedAccounts.set(resolvedId, {
           code: info?.code ?? String(resolvedId),
           name: info?.name ?? "Unknown",
           count: 1,
         });
       }
-    } else if (resolvedId === null && line.netAmount) {
+    } else if (line.netAmount) {
+      // No account could be determined
       const key = "no-account";
       const existing = unmappedAccounts.get(key);
       if (existing) { existing.count++; } else {
