@@ -26,17 +26,24 @@ export async function PATCH(
   const company = await getOrCreateCompany();
   const db = getDb();
 
-  const updated = await db
-    .update(budgetCategories)
-    .set({ ...parsed.data, updatedAt: new Date() })
-    .where(
-      and(
-        eq(budgetCategories.id, categoryId),
-        eq(budgetCategories.companyId, company.id)
+  try {
+    const updated = await db
+      .update(budgetCategories)
+      .set({ ...parsed.data, updatedAt: new Date() })
+      .where(
+        and(
+          eq(budgetCategories.id, categoryId),
+          eq(budgetCategories.companyId, company.id)
+        )
       )
-    )
-    .returning();
+      .returning();
 
-  if (!updated.length) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json(updated[0]);
+    if (!updated.length) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return NextResponse.json(updated[0]);
+  } catch (err: unknown) {
+    if ((err as { code?: string }).code === "23505") {
+      return NextResponse.json({ error: "Category name already exists" }, { status: 409 });
+    }
+    throw err;
+  }
 }

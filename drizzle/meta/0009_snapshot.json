@@ -330,7 +330,35 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "uq_budget_entry_no_cc": {
+          "name": "uq_budget_entry_no_cc",
+          "columns": [
+            { "expression": "company_id", "isExpression": false, "asc": true, "nulls": "last" },
+            { "expression": "budget_category_id", "isExpression": false, "asc": true, "nulls": "last" },
+            { "expression": "month", "isExpression": false, "asc": true, "nulls": "last" }
+          ],
+          "isUnique": true,
+          "where": "\"budget_entries\".\"cost_centre_id\" is null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "uq_budget_entry_with_cc": {
+          "name": "uq_budget_entry_with_cc",
+          "columns": [
+            { "expression": "company_id", "isExpression": false, "asc": true, "nulls": "last" },
+            { "expression": "budget_category_id", "isExpression": false, "asc": true, "nulls": "last" },
+            { "expression": "month", "isExpression": false, "asc": true, "nulls": "last" },
+            { "expression": "cost_centre_id", "isExpression": false, "asc": true, "nulls": "last" }
+          ],
+          "isUnique": true,
+          "where": "\"budget_entries\".\"cost_centre_id\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "budget_entries_company_id_companies_id_fk": {
           "name": "budget_entries_company_id_companies_id_fk",

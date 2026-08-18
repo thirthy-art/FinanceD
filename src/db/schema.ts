@@ -229,7 +229,14 @@ export const budgetEntries = pgTable("budget_entries", {
   note: text("note"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  noCcUnique: uniqueIndex("uq_budget_entry_no_cc")
+    .on(table.companyId, table.budgetCategoryId, table.month)
+    .where(sql`${table.costCentreId} is null`),
+  withCcUnique: uniqueIndex("uq_budget_entry_with_cc")
+    .on(table.companyId, table.budgetCategoryId, table.month, table.costCentreId)
+    .where(sql`${table.costCentreId} is not null`),
+}));
 
 // Manual actual entries (salaries, depreciation, journals not in AP)
 export const budgetActualEntries = pgTable("budget_actual_entries", {

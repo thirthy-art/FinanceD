@@ -4,6 +4,7 @@ import {
   supplierInvoices,
   supplierInvoiceLines,
   budgetCategoryAccounts,
+  budgetCategories,
   chartOfAccounts,
 } from "@/src/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
@@ -25,10 +26,19 @@ export async function GET(req: NextRequest) {
   const company = await getOrCreateCompany();
   const db = getDb();
 
-  // All account IDs that are mapped (for this company)
+  // Account IDs mapped to an ACTIVE budget category for this company.
+  // Mappings to inactive categories are treated as unmapped (consistent with report route).
   const mappings = await db
-    .select()
-    .from(budgetCategoryAccounts);
+    .select({ accountId: budgetCategoryAccounts.accountId })
+    .from(budgetCategoryAccounts)
+    .innerJoin(
+      budgetCategories,
+      and(
+        eq(budgetCategoryAccounts.budgetCategoryId, budgetCategories.id),
+        eq(budgetCategories.companyId, company.id),
+        eq(budgetCategories.isActive, true)
+      )
+    );
   const mappedAccountIds = new Set(mappings.map((m) => m.accountId));
 
   // Approved invoices for this company
