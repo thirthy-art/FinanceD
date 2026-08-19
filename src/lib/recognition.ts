@@ -99,7 +99,7 @@ export function deriveRecognitionSchedule(params: {
     const totalBase = net.mul(rate).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
     const perMonthBase = unroundedPerMonth
       .mul(rate)
-      .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+      .toDecimalPlaces(2, Decimal.ROUND_DOWN);
     const lastBase = totalBase.minus(perMonthBase.mul(count.minus(1)));
 
     return months.map((month, i) => ({

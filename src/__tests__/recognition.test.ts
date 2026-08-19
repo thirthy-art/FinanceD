@@ -188,5 +188,33 @@ describe("deriveRecognitionSchedule", () => {
       expect(origTotal.toFixed()).toBe("0.001");
       expect(baseTotal.toFixed(2)).toBe("100.00");
     });
+
+    it("does not create a negative final base residual for a positive tiny prepaid amount", () => {
+      const rows = deriveRecognitionSchedule({
+        netAmount: "0.0000006",
+        fxRate: "100000",
+        currencyType: "crypto",
+        treatment: "Prepaid",
+        invoiceDate: "2024-01-01",
+        startDate: "2024-01-01",
+        endDate: "2024-12-31",
+      });
+
+      expect(rows).toHaveLength(12);
+      expect(rows.slice(0, -1).every((row) => row.baseAmount === "0.00")).toBe(true);
+      expect(rows[11].baseAmount).toBe("0.06");
+      expect(rows.every((row) => new Decimal(row.baseAmount).gte(0))).toBe(true);
+
+      const origTotal = rows.reduce(
+        (total, row) => total.plus(row.origAmount),
+        new Decimal(0)
+      );
+      const baseTotal = rows.reduce(
+        (total, row) => total.plus(row.baseAmount),
+        new Decimal(0)
+      );
+      expect(origTotal.toFixed()).toBe("0.0000006");
+      expect(baseTotal.toFixed(2)).toBe("0.06");
+    });
   });
 });

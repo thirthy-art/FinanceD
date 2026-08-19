@@ -63,7 +63,9 @@ function decimalCellValue(value: string | null): number | string | null {
   try {
     const decimal = new Decimal(value);
     const numeric = decimal.toNumber();
-    return new Decimal(numeric).eq(decimal) ? numeric : decimal.toFixed();
+    return decimal.sd() <= 15 && new Decimal(numeric).eq(decimal)
+      ? numeric
+      : decimal.toFixed();
   } catch {
     return null;
   }
