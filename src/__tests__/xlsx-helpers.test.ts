@@ -65,4 +65,9 @@ describe("excelDateFromString", () => {
     expect(excelDateFromString("2026-08")).toBeNull();
     expect(excelDateFromString("2026")).toBeNull();
   });
+
+  it("returns null for an out-of-range day that JavaScript normalizes", () => {
+    expect(excelDateFromString("2026-02-31")).toBeNull();
+    expect(excelDateFromString("2026-04-31")).toBeNull();
+  });
 });
