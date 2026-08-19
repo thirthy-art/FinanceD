@@ -3,20 +3,15 @@ import { getDb } from "@/src/db";
 import { supplierInvoices, vendors } from "@/src/db/schema";
 import { classifyBucket, BUCKET_LABELS } from "@/src/lib/cash-flow-buckets";
 import { setDecimalAmountCell } from "@/src/lib/cash-flow-xlsx";
+import { excelDateFromString } from "@/src/lib/xlsx-helpers";
 import ExcelJS from "exceljs";
 
 function todayString(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function asExcelDate(value: string | null): Date | null {
-  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
-  const date = new Date(`${value}T00:00:00.000Z`);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
 function setDateCell(cell: ExcelJS.Cell, value: string | null) {
-  cell.value = asExcelDate(value);
+  cell.value = excelDateFromString(value);
   cell.numFmt = "yyyy-mm-dd";
 }
 

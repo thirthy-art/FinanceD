@@ -1,5 +1,5 @@
 import ExcelJS from "exceljs";
-import { Decimal } from "@/src/lib/decimal";
+import { excelDateFromString, decimalCellValue } from "@/src/lib/xlsx-helpers";
 
 export interface InvoiceExportRow {
   id: number;
@@ -52,25 +52,6 @@ export interface InvoiceLineExportRow {
 const fiatFormat = "0.00";
 const precisionFormat = "0.##################";
 
-function asExcelDate(value: string | null): Date | null {
-  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
-  const date = new Date(`${value}T00:00:00.000Z`);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-function decimalCellValue(value: string | null): number | string | null {
-  if (value === null || value.trim() === "") return null;
-  try {
-    const decimal = new Decimal(value);
-    const numeric = decimal.toNumber();
-    return decimal.sd() <= 15 && new Decimal(numeric).eq(decimal)
-      ? numeric
-      : decimal.toFixed();
-  } catch {
-    return null;
-  }
-}
-
 function styleWorksheet(worksheet: ExcelJS.Worksheet) {
   worksheet.views = [{ state: "frozen", ySplit: 1 }];
   worksheet.autoFilter = {
@@ -85,7 +66,7 @@ function styleWorksheet(worksheet: ExcelJS.Worksheet) {
 }
 
 function setDateCell(cell: ExcelJS.Cell, value: string | null) {
-  cell.value = asExcelDate(value);
+  cell.value = excelDateFromString(value);
   cell.numFmt = "yyyy-mm-dd";
 }
 
