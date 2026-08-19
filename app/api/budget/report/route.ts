@@ -98,6 +98,7 @@ export async function GET(req: NextRequest) {
       id: supplierInvoices.id,
       invoiceDate: supplierInvoices.invoiceDate,
       fxRateToBase: supplierInvoices.fxRateToBase,
+      currencyType: supplierInvoices.currencyType,
       expenseAccountId: supplierInvoices.expenseAccountId,
     })
     .from(supplierInvoices)
@@ -113,6 +114,7 @@ export async function GET(req: NextRequest) {
     invoiceId: number;
     netAmount: string | null;
     fxRateToBase: string | null;
+    currencyType: "fiat" | "crypto";
     invoiceDate: string | null;
     recognitionTreatment: "Immediate" | "Prepaid";
     recognitionStartDate: string | null;
@@ -159,6 +161,7 @@ export async function GET(req: NextRequest) {
         invoiceId: line.invoiceId,
         netAmount: line.netAmount,
         fxRateToBase: inv.fxRateToBase,
+        currencyType: inv.currencyType,
         invoiceDate: inv.invoiceDate,
         recognitionTreatment: line.recognitionTreatment,
         recognitionStartDate: line.recognitionStartDate,

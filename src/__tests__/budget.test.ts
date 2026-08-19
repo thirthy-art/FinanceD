@@ -128,6 +128,32 @@ describe("computeInvoiceActuals – Immediate treatment", () => {
 // ─── Prepaid recognition ──────────────────────────────────────────────────────
 
 describe("computeInvoiceActuals – Prepaid treatment", () => {
+  it("uses crypto precision when computing budget actuals", () => {
+    const lines: InvoiceLineForBudget[] = [
+      {
+        invoiceId: 19,
+        netAmount: "0.001",
+        fxRateToBase: "100000",
+        currencyType: "crypto",
+        invoiceDate: "2026-01-01",
+        recognitionTreatment: "Prepaid",
+        recognitionStartDate: "2026-01-01",
+        recognitionEndDate: "2026-12-31",
+        budgetCategoryId: 7,
+      },
+    ];
+
+    const map = computeInvoiceActuals(lines, "2026");
+    const total = Array.from(map.values()).reduce(
+      (sum, amount) => sum.plus(amount),
+      new Decimal(0)
+    );
+
+    expect(map.get("7:2026-01")?.toFixed(2)).toBe("8.33");
+    expect(map.get("7:2026-12")?.toFixed(2)).toBe("8.37");
+    expect(total.toFixed(2)).toBe("100.00");
+  });
+
   it("spreads amount across recognition months", () => {
     const lines: InvoiceLineForBudget[] = [
       {

@@ -58,10 +58,12 @@ function asExcelDate(value: string | null): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-function decimalFormula(value: string | null): ExcelJS.CellFormulaValue | null {
+function decimalCellValue(value: string | null): number | string | null {
   if (value === null || value.trim() === "") return null;
   try {
-    return { formula: new Decimal(value).toFixed() };
+    const decimal = new Decimal(value);
+    const numeric = decimal.toNumber();
+    return new Decimal(numeric).eq(decimal) ? numeric : decimal.toFixed();
   } catch {
     return null;
   }
@@ -86,7 +88,7 @@ function setDateCell(cell: ExcelJS.Cell, value: string | null) {
 }
 
 function setDecimalCell(cell: ExcelJS.Cell, value: string | null, format: string) {
-  cell.value = decimalFormula(value);
+  cell.value = decimalCellValue(value);
   cell.numFmt = format;
 }
 

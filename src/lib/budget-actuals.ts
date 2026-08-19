@@ -5,6 +5,7 @@ export interface InvoiceLineForBudget {
   invoiceId: number;
   netAmount: string | null | undefined;
   fxRateToBase: string | null | undefined;
+  currencyType?: "fiat" | "crypto";
   invoiceDate: string | null | undefined;
   recognitionTreatment: "Immediate" | "Prepaid";
   recognitionStartDate: string | null | undefined;
@@ -28,6 +29,7 @@ export function computeInvoiceActuals(
     const schedule = deriveRecognitionSchedule({
       netAmount: line.netAmount,
       fxRate: line.fxRateToBase,
+      currencyType: line.currencyType,
       treatment: line.recognitionTreatment,
       invoiceDate: line.invoiceDate,
       startDate: line.recognitionStartDate,

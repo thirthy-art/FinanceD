@@ -1,10 +1,12 @@
-import Decimal from "decimal.js";
+import { Decimal } from "./decimal";
 
 Decimal.set({ rounding: Decimal.ROUND_HALF_UP });
 
+const CRYPTO_DECIMAL_PLACES = 18;
+
 export interface RecognitionScheduleRow {
   month: string; // YYYY-MM
-  origAmount: string; // original-currency, numeric(18,2)
+  origAmount: string; // original-currency amount
   baseAmount: string; // base-currency, numeric(18,2)
 }
 
@@ -47,8 +49,17 @@ export function deriveRecognitionSchedule(params: {
   invoiceDate: string | null | undefined;
   startDate?: string | null;
   endDate?: string | null;
+  currencyType?: "fiat" | "crypto";
 }): RecognitionScheduleRow[] {
-  const { netAmount, fxRate, treatment, invoiceDate, startDate, endDate } = params;
+  const {
+    netAmount,
+    fxRate,
+    treatment,
+    invoiceDate,
+    startDate,
+    endDate,
+    currencyType = "fiat",
+  } = params;
 
   if (!netAmount) return [];
 
@@ -58,6 +69,13 @@ export function deriveRecognitionSchedule(params: {
   if (treatment === "Immediate") {
     if (!invoiceDate) return [];
     const month = toMonth(invoiceDate);
+    if (currencyType === "crypto") {
+      const origAmt = net
+        .toDecimalPlaces(CRYPTO_DECIMAL_PLACES, Decimal.ROUND_HALF_UP)
+        .toFixed();
+      const baseAmt = net.mul(rate).toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toFixed(2);
+      return [{ month, origAmount: origAmt, baseAmount: baseAmt }];
+    }
     const origAmt = net.toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toFixed(2);
     const baseAmt = net.mul(rate).toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toFixed(2);
     return [{ month, origAmount: origAmt, baseAmount: baseAmt }];
@@ -71,6 +89,26 @@ export function deriveRecognitionSchedule(params: {
   if (months.length === 0) return [];
 
   const count = new Decimal(months.length);
+  if (currencyType === "crypto") {
+    const unroundedPerMonth = net.div(count);
+    const perMonthOrig = unroundedPerMonth.toDecimalPlaces(
+      CRYPTO_DECIMAL_PLACES,
+      Decimal.ROUND_HALF_UP
+    );
+    const lastOrig = net.minus(perMonthOrig.mul(count.minus(1)));
+    const totalBase = net.mul(rate).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+    const perMonthBase = unroundedPerMonth
+      .mul(rate)
+      .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+    const lastBase = totalBase.minus(perMonthBase.mul(count.minus(1)));
+
+    return months.map((month, i) => ({
+      month,
+      origAmount: (i === months.length - 1 ? lastOrig : perMonthOrig).toFixed(),
+      baseAmount: (i === months.length - 1 ? lastBase : perMonthBase).toFixed(2),
+    }));
+  }
+
   const perMonth = net.div(count).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
 
   // Residual goes to the final month (rounding difference)

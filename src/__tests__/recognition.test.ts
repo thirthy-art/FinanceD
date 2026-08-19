@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { deriveRecognitionSchedule } from "@/src/lib/recognition";
+import { Decimal } from "@/src/lib/decimal";
 
 describe("deriveRecognitionSchedule", () => {
   describe("Immediate treatment", () => {
@@ -134,6 +135,58 @@ describe("deriveRecognitionSchedule", () => {
       expect(rows).toHaveLength(4);
       expect(rows.map((r) => r.month)).toEqual(["2024-11", "2024-12", "2025-01", "2025-02"]);
       expect(rows.map((r) => r.origAmount)).toEqual(["30.00", "30.00", "30.00", "30.00"]);
+    });
+  });
+
+  describe("crypto treatment", () => {
+    it("preserves original precision before immediate FX conversion", () => {
+      const rows = deriveRecognitionSchedule({
+        netAmount: "0.000001",
+        fxRate: "3000",
+        currencyType: "crypto",
+        treatment: "Immediate",
+        invoiceDate: "2024-01-01",
+      });
+
+      expect(rows).toEqual([
+        { month: "2024-01", origAmount: "0.000001", baseAmount: "0.00" },
+      ]);
+    });
+
+    it("preserves and reconciles prepaid allocations before FX conversion", () => {
+      const rows = deriveRecognitionSchedule({
+        netAmount: "0.001",
+        fxRate: "100000",
+        currencyType: "crypto",
+        treatment: "Prepaid",
+        invoiceDate: "2024-01-01",
+        startDate: "2024-01-01",
+        endDate: "2024-12-31",
+      });
+
+      expect(rows).toHaveLength(12);
+      expect(rows.every((row) => !new Decimal(row.origAmount).isZero())).toBe(true);
+      expect(rows[0]).toEqual({
+        month: "2024-01",
+        origAmount: "0.000083333333333333",
+        baseAmount: "8.33",
+      });
+      expect(rows[11]).toEqual({
+        month: "2024-12",
+        origAmount: "0.000083333333333337",
+        baseAmount: "8.37",
+      });
+
+      const origTotal = rows.reduce(
+        (total, row) => total.plus(row.origAmount),
+        new Decimal(0)
+      );
+      const baseTotal = rows.reduce(
+        (total, row) => total.plus(row.baseAmount),
+        new Decimal(0)
+      );
+      expect(origTotal.toFixed()).toBe("0.001");
+      expect(baseTotal.toFixed(2)).toBe("100.00");
     });
   });
 });

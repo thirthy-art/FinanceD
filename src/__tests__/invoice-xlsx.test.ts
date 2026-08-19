@@ -1,8 +1,59 @@
 import ExcelJS from "exceljs";
 import { describe, expect, it } from "vitest";
-import { invoiceExportToXlsx, type InvoiceLineExportRow } from "@/src/lib/invoice-xlsx";
+import {
+  invoiceExportToXlsx,
+  type InvoiceExportRow,
+  type InvoiceLineExportRow,
+} from "@/src/lib/invoice-xlsx";
 
 describe("invoice XLSX export", () => {
+  it("preserves high-precision invoice and line decimals while keeping exact fiat numeric", async () => {
+    const highPrecision = "0.123456789012345678";
+    const invoice: InvoiceExportRow = {
+      id: 8, vendorName: "Crypto Vendor", vendorTaxId: null, vendorExternalNumber: null,
+      invoiceNumber: "INV-8", invoiceDate: "2026-08-15", dueDate: null,
+      currency: "BTC", currencyType: "crypto", netAmount: highPrecision,
+      vatAmount: "0", grossAmount: highPrecision, baseNetAmount: "1234.56",
+      baseVatAmount: "0", baseGrossAmount: "1234.56", status: "approved",
+      paymentStatus: "Unpaid", paidDate: null,
+    };
+    const line: InvoiceLineExportRow = {
+      invoiceId: 8, vendorName: "Crypto Vendor", vendorTaxId: null, invoiceNumber: "INV-8",
+      invoiceDate: "2026-08-15", invoiceStatus: "approved", currency: "BTC",
+      currencyType: "crypto", lineNumber: "1", descriptionOriginal: null,
+      description: "Precise line", quantity: highPrecision, unit: "BTC",
+      unitPrice: "1234.56", netAmount: highPrecision, vatRate: "0", vatAmount: "0",
+      grossAmount: highPrecision, sourcePage: 1, recognitionTreatment: "Immediate",
+      recognitionStartDate: null, recognitionEndDate: null,
+      accountingAccountNumber: null, prepaidAccountNumber: null,
+    };
+
+    const fiatInvoice: InvoiceExportRow = {
+      ...invoice,
+      id: 9,
+      invoiceNumber: "INV-9",
+      currency: "EUR",
+      currencyType: "fiat",
+      netAmount: "1234.56",
+      grossAmount: "1234.56",
+    };
+
+    const bytes = await invoiceExportToXlsx([invoice, fiatInvoice], [line]);
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(bytes);
+    const invoiceSheet = workbook.getWorksheet("Invoices")!;
+    const lineSheet = workbook.getWorksheet("Invoice Lines")!;
+
+    expect(invoiceSheet.getCell("I2").value).toBe(highPrecision);
+    expect(invoiceSheet.getCell("I2").type).not.toBe(ExcelJS.ValueType.Formula);
+    expect(invoiceSheet.getCell("L2").value).toBe(1234.56);
+    expect(invoiceSheet.getCell("I3").value).toBe(1234.56);
+    expect(lineSheet.getCell("K2").value).toBe(highPrecision);
+    expect(lineSheet.getCell("N2").value).toBe(highPrecision);
+    expect(lineSheet.getCell("N2").type).not.toBe(ExcelJS.ValueType.Formula);
+    expect(lineSheet.getCell("M2").value).toBe(1234.56);
+  });
+
   it("contains both worksheets and one row for each of six invoice lines", async () => {
     const invoice = {
       id: 7, vendorName: "ACME", vendorTaxId: "CY123", vendorExternalNumber: null,
