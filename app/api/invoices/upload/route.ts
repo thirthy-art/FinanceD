@@ -10,6 +10,7 @@ import { getOrCreateCompany } from "@/src/lib/db-helpers";
 
 const UPLOAD_DIR = process.env.UPLOAD_DIR ?? "./uploads";
 const ALLOWED_TYPES = ["application/pdf", "image/jpeg", "image/png", "image/tiff", "image/webp"];
+const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 
 async function removeUpload(storagePath: string) {
   try {
@@ -41,6 +42,12 @@ export async function POST(req: NextRequest) {
   const mimeType = file.type || "application/octet-stream";
   if (!ALLOWED_TYPES.includes(mimeType)) {
     return NextResponse.json({ error: "Unsupported file type. Upload a PDF, JPEG, PNG, TIFF, or WebP." }, { status: 400 });
+  }
+  if (file.size > MAX_UPLOAD_BYTES) {
+    return NextResponse.json(
+      { error: "Invoice document exceeds the 25 MB upload limit." },
+      { status: 413 },
+    );
   }
 
   const db = getDb();

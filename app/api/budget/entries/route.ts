@@ -4,8 +4,7 @@ import { budgetEntries, budgetCategories, costCentres } from "@/src/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { getOrCreateCompany } from "@/src/lib/db-helpers";
 import { z } from "zod";
-import { isValidMonth } from "@/src/lib/budget-actuals";
-import { Decimal } from "@/src/lib/decimal";
+import { isValidBudgetAmount, isValidMonth } from "@/src/lib/budget-actuals";
 
 async function verifyCostCentre(
   db: ReturnType<typeof getDb>,
@@ -45,9 +44,9 @@ export async function GET(req: NextRequest) {
 const UpsertSchema = z.object({
   budgetCategoryId: z.number().int().positive(),
   month: z.string().refine(isValidMonth, { message: "month must be YYYY-MM" }),
-  amount: z.string().refine((v) => {
-    try { new Decimal(v); return true; } catch { return false; }
-  }, { message: "amount must be a valid decimal" }),
+  amount: z.string().refine(isValidBudgetAmount, {
+    message: "amount must be finite, have at most 2 decimal places, and fit numeric(18,2)",
+  }),
   note: z.string().max(500).optional(),
   costCentreId: z.number().int().positive().nullable().optional(),
 });
@@ -171,45 +170,48 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const now = new Date();
-    const results = [];
-    for (const entry of parsed.data.entries) {
-      const { budgetCategoryId, month, amount, note, costCentreId } = entry;
-      const existing = await db
-        .select()
-        .from(budgetEntries)
-        .where(
-          and(
-            eq(budgetEntries.companyId, company.id),
-            eq(budgetEntries.budgetCategoryId, budgetCategoryId),
-            eq(budgetEntries.month, month)
-          )
+    const results = await db.transaction(async (tx) => {
+      const now = new Date();
+      const rows = [];
+      for (const entry of parsed.data.entries) {
+        const { budgetCategoryId, month, amount, note, costCentreId } = entry;
+        const existing = await tx
+          .select()
+          .from(budgetEntries)
+          .where(
+            and(
+              eq(budgetEntries.companyId, company.id),
+              eq(budgetEntries.budgetCategoryId, budgetCategoryId),
+              eq(budgetEntries.month, month)
+            )
+          );
+        const matchingEntry = existing.find(
+          (e) => (e.costCentreId ?? null) === (costCentreId ?? null)
         );
-      const matchingEntry = existing.find(
-        (e) => (e.costCentreId ?? null) === (costCentreId ?? null)
-      );
-      if (matchingEntry) {
-        const [updated] = await db
-          .update(budgetEntries)
-          .set({ amount, note: note ?? null, updatedAt: now })
-          .where(eq(budgetEntries.id, matchingEntry.id))
-          .returning();
-        results.push(updated);
-      } else {
-        const [created] = await db
-          .insert(budgetEntries)
-          .values({
-            companyId: company.id,
-            budgetCategoryId,
-            month,
-            amount,
-            note: note ?? null,
-            costCentreId: costCentreId ?? null,
-          })
-          .returning();
-        results.push(created);
+        if (matchingEntry) {
+          const [updated] = await tx
+            .update(budgetEntries)
+            .set({ amount, note: note ?? null, updatedAt: now })
+            .where(eq(budgetEntries.id, matchingEntry.id))
+            .returning();
+          rows.push(updated);
+        } else {
+          const [created] = await tx
+            .insert(budgetEntries)
+            .values({
+              companyId: company.id,
+              budgetCategoryId,
+              month,
+              amount,
+              note: note ?? null,
+              costCentreId: costCentreId ?? null,
+            })
+            .returning();
+          rows.push(created);
+        }
       }
-    }
+      return rows;
+    });
     return NextResponse.json(results);
   }
 

@@ -53,6 +53,19 @@ export function isValidMonth(m: string): boolean {
   return MONTH_RE.test(m);
 }
 
+const MAX_BUDGET_AMOUNT = new Decimal("9999999999999999.99");
+
+export function isValidBudgetAmount(value: string): boolean {
+  try {
+    const amount = new Decimal(value);
+    return amount.isFinite()
+      && amount.decimalPlaces() <= 2
+      && amount.abs().lte(MAX_BUDGET_AMOUNT);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Resolves which budget category a supplier invoice line belongs to.
  *

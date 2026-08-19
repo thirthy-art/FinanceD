@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   computeInvoiceActuals,
+  isValidBudgetAmount,
   isValidMonth,
   resolveLineCategory,
   resolveBudgetForMonth,
@@ -26,6 +27,27 @@ describe("isValidMonth", () => {
     expect(isValidMonth("2026/08")).toBe(false);
     expect(isValidMonth("")).toBe(false);
     expect(isValidMonth("2026-08-01")).toBe(false);
+  });
+});
+
+describe("isValidBudgetAmount", () => {
+  it("accepts normal, negative, and numeric(18,2) boundary amounts", () => {
+    expect(isValidBudgetAmount("0")).toBe(true);
+    expect(isValidBudgetAmount("1234.56")).toBe(true);
+    expect(isValidBudgetAmount("-1234.56")).toBe(true);
+    expect(isValidBudgetAmount("9999999999999999.99")).toBe(true);
+  });
+
+  it("rejects non-finite amounts", () => {
+    expect(isValidBudgetAmount("NaN")).toBe(false);
+    expect(isValidBudgetAmount("Infinity")).toBe(false);
+    expect(isValidBudgetAmount("-Infinity")).toBe(false);
+  });
+
+  it("rejects out-of-range and over-scale amounts", () => {
+    expect(isValidBudgetAmount("1e100")).toBe(false);
+    expect(isValidBudgetAmount("10000000000000000")).toBe(false);
+    expect(isValidBudgetAmount("12.345")).toBe(false);
   });
 });
 

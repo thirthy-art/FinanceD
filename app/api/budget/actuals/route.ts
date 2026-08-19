@@ -4,8 +4,7 @@ import { budgetActualEntries, budgetCategories, costCentres } from "@/src/db/sch
 import { eq, and } from "drizzle-orm";
 import { getOrCreateCompany } from "@/src/lib/db-helpers";
 import { z } from "zod";
-import { isValidMonth } from "@/src/lib/budget-actuals";
-import { Decimal } from "@/src/lib/decimal";
+import { isValidBudgetAmount, isValidMonth } from "@/src/lib/budget-actuals";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -27,9 +26,9 @@ export async function GET(req: NextRequest) {
 const CreateSchema = z.object({
   budgetCategoryId: z.number().int().positive(),
   month: z.string().refine(isValidMonth, { message: "month must be YYYY-MM" }),
-  amount: z.string().refine((v) => {
-    try { new Decimal(v); return true; } catch { return false; }
-  }, { message: "amount must be a valid decimal" }),
+  amount: z.string().refine(isValidBudgetAmount, {
+    message: "amount must be finite, have at most 2 decimal places, and fit numeric(18,2)",
+  }),
   description: z.string().max(500).optional(),
   source: z.string().max(100).optional(),
   costCentreId: z.number().int().positive().nullable().optional(),

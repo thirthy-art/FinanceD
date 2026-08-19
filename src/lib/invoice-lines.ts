@@ -29,6 +29,23 @@ export const InvoiceLineInputSchema = z.object({
 
 export type InvoiceLineInput = z.infer<typeof InvoiceLineInputSchema>;
 
+export type InvoiceLineApprovalFields = Pick<
+  InvoiceLineInput,
+  | "recognitionTreatment"
+  | "recognitionStartDate"
+  | "recognitionEndDate"
+  | "accountingAccountNumber"
+  | "prepaidAccountNumber"
+>;
+
+export interface InvoiceLineApprovalAccount {
+  code: string;
+  companyId: number;
+  type: "asset" | "liability" | "equity" | "revenue" | "expense";
+  isActive: boolean;
+  isPosting: boolean;
+}
+
 export interface EditableInvoiceLine {
   id?: number;
   lineNumber: string;
@@ -229,7 +246,7 @@ export function applyAutoCalcToLine(line: EditableInvoiceLine): EditableInvoiceL
  * Returns an error message or null if valid.
  */
 export function validateLineRecognitionForApproval(
-  line: InvoiceLineInput,
+  line: InvoiceLineApprovalFields,
   lineNumber: number
 ): string | null {
   if (line.recognitionTreatment !== "Prepaid") return null;
@@ -239,12 +256,49 @@ export function validateLineRecognitionForApproval(
   if (line.recognitionEndDate < line.recognitionStartDate) {
     return `Line ${lineNumber}: Recognition end date must be on or after start date.`;
   }
-  if (!line.accountingAccountNumber) {
+  if (!line.accountingAccountNumber?.trim()) {
     return `Line ${lineNumber}: Prepaid treatment requires an expense account (Accounting Account No.).`;
   }
-  if (!line.prepaidAccountNumber) {
+  if (!line.prepaidAccountNumber?.trim()) {
     return `Line ${lineNumber}: Prepaid treatment requires a prepaid asset account.`;
   }
+  return null;
+}
+
+export function validateLineAccountsForApproval(
+  line: InvoiceLineApprovalFields,
+  lineNumber: number,
+  companyId: number,
+  accountsByCode: ReadonlyMap<string, InvoiceLineApprovalAccount>,
+): string | null {
+  const expenseCode = line.accountingAccountNumber;
+  if (expenseCode?.trim()) {
+    const account = accountsByCode.get(expenseCode);
+    if (
+      !account
+      || account.companyId !== companyId
+      || !account.isActive
+      || !account.isPosting
+      || account.type !== "expense"
+    ) {
+      return `Line ${lineNumber}: Expense account "${expenseCode}" must be an active posting expense account for this company.`;
+    }
+  }
+
+  const prepaidCode = line.prepaidAccountNumber;
+  if (line.recognitionTreatment === "Prepaid" && prepaidCode?.trim()) {
+    const account = accountsByCode.get(prepaidCode);
+    if (
+      !account
+      || account.companyId !== companyId
+      || !account.isActive
+      || !account.isPosting
+      || account.type !== "asset"
+    ) {
+      return `Line ${lineNumber}: Prepaid asset account "${prepaidCode}" must be an active posting asset account for this company.`;
+    }
+  }
+
   return null;
 }
 

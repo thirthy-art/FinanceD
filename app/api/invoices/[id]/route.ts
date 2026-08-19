@@ -9,7 +9,7 @@ import {
   chartOfAccounts,
   companies,
 } from "@/src/db/schema";
-import { eq, and, asc } from "drizzle-orm";
+import { eq, and, asc, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { unlink } from "fs/promises";
 import {
@@ -20,7 +20,13 @@ import {
   validateBaseAmount,
   isVatRateValid,
 } from "@/src/lib/invoice-validation";
-import { InvoiceLineInputSchema, normalizeInvoiceLineInput, validateLineRecognitionForApproval, checkLineTotalsForApproval } from "@/src/lib/invoice-lines";
+import {
+  InvoiceLineInputSchema,
+  normalizeInvoiceLineInput,
+  validateLineRecognitionForApproval,
+  validateLineAccountsForApproval,
+  checkLineTotalsForApproval,
+} from "@/src/lib/invoice-lines";
 import { resolveSafeUploadPath } from "@/src/lib/safe-upload-path";
 import { findVendorIdentityMatches, normalizeVendorTaxId } from "@/src/lib/vendor-identity";
 
@@ -286,8 +292,23 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       );
     }
 
-    // Validate recognition and VAT rate on submitted lines
-    const linesToValidate = normalizedLines ?? [];
+    const linesToValidate = normalizedLines !== undefined
+      ? normalizedLines
+      : await db
+          .select({
+            recognitionTreatment: supplierInvoiceLines.recognitionTreatment,
+            recognitionStartDate: supplierInvoiceLines.recognitionStartDate,
+            recognitionEndDate: supplierInvoiceLines.recognitionEndDate,
+            vatRate: supplierInvoiceLines.vatRate,
+            accountingAccountNumber: supplierInvoiceLines.accountingAccountNumber,
+            prepaidAccountNumber: supplierInvoiceLines.prepaidAccountNumber,
+            netAmount: supplierInvoiceLines.netAmount,
+            vatAmount: supplierInvoiceLines.vatAmount,
+            grossAmount: supplierInvoiceLines.grossAmount,
+          })
+          .from(supplierInvoiceLines)
+          .where(eq(supplierInvoiceLines.invoiceId, Number(id)));
+
     for (let i = 0; i < linesToValidate.length; i++) {
       const line = linesToValidate[i];
       if (!isVatRateValid(line.vatRate)) {
@@ -299,57 +320,49 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       const err = validateLineRecognitionForApproval(line, i + 1);
       if (err) return NextResponse.json({ error: `Cannot approve: ${err}` }, { status: 422 });
     }
-    // Also check persisted lines if no lines submitted in this request
-    if (!normalizedLines) {
-      const persistedLines = await db
-        .select({
-          recognitionTreatment: supplierInvoiceLines.recognitionTreatment,
-          recognitionStartDate: supplierInvoiceLines.recognitionStartDate,
-          recognitionEndDate: supplierInvoiceLines.recognitionEndDate,
-          vatRate: supplierInvoiceLines.vatRate,
-          accountingAccountNumber: supplierInvoiceLines.accountingAccountNumber,
-          prepaidAccountNumber: supplierInvoiceLines.prepaidAccountNumber,
-        })
-        .from(supplierInvoiceLines)
-        .where(eq(supplierInvoiceLines.invoiceId, Number(id)));
-      for (let i = 0; i < persistedLines.length; i++) {
-        const pl = persistedLines[i];
-        if (!isVatRateValid(pl.vatRate)) {
-          return NextResponse.json(
-            { error: `Cannot approve: Line ${i + 1} VAT rate must be between 0 and 100.` },
-            { status: 422 }
-          );
-        }
-        const err = validateLineRecognitionForApproval(
-          {
-            recognitionTreatment: pl.recognitionTreatment,
-            recognitionStartDate: pl.recognitionStartDate,
-            recognitionEndDate: pl.recognitionEndDate,
-            accountingAccountNumber: pl.accountingAccountNumber,
-            prepaidAccountNumber: pl.prepaidAccountNumber,
-          } as Parameters<typeof validateLineRecognitionForApproval>[0],
-          i + 1
-        );
-        if (err) return NextResponse.json({ error: `Cannot approve: ${err}` }, { status: 422 });
-      }
+
+    const accountCodes = [...new Set(
+      linesToValidate
+        .flatMap((line) => [
+          line.accountingAccountNumber,
+          line.recognitionTreatment === "Prepaid" ? line.prepaidAccountNumber : null,
+        ])
+        .filter((code): code is string => Boolean(code?.trim()))
+    )];
+    const approvalAccounts = accountCodes.length > 0
+      ? await db
+          .select({
+            code: chartOfAccounts.code,
+            companyId: chartOfAccounts.companyId,
+            type: chartOfAccounts.type,
+            isActive: chartOfAccounts.isActive,
+            isPosting: chartOfAccounts.isPosting,
+          })
+          .from(chartOfAccounts)
+          .where(
+            and(
+              eq(chartOfAccounts.companyId, existing.companyId),
+              inArray(chartOfAccounts.code, accountCodes),
+            )
+          )
+      : [];
+    const approvalAccountsByCode = new Map(approvalAccounts.map((account) => [account.code, account]));
+
+    for (let i = 0; i < linesToValidate.length; i++) {
+      const err = validateLineAccountsForApproval(
+        linesToValidate[i],
+        i + 1,
+        existing.companyId,
+        approvalAccountsByCode,
+      );
+      if (err) return NextResponse.json({ error: `Cannot approve: ${err}` }, { status: 422 });
     }
 
     // Header totals must match sum of line totals (within tolerance).
     // Missing per-line VAT/gross is allowed; present-but-contradictory values are not.
-    const linesForTotalCheck = normalizedLines !== undefined
-      ? normalizedLines
-      : await db
-          .select({
-            netAmount: supplierInvoiceLines.netAmount,
-            vatAmount: supplierInvoiceLines.vatAmount,
-            grossAmount: supplierInvoiceLines.grossAmount,
-          })
-          .from(supplierInvoiceLines)
-          .where(eq(supplierInvoiceLines.invoiceId, Number(id)));
-
-    if (linesForTotalCheck.length > 0) {
+    if (linesToValidate.length > 0) {
       const totalsResult = checkLineTotalsForApproval(
-        linesForTotalCheck,
+        linesToValidate,
         { net: finalNet, vat: finalVat, gross: finalGross },
         finalCurrencyType
       );

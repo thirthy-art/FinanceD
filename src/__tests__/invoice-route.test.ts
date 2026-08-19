@@ -44,6 +44,7 @@ afterAll(async () => {
 
 const createdInvoiceIds: number[] = [];
 const createdVendorIds: number[] = [];
+const createdAccountIds: number[] = [];
 
 afterEach(async () => {
   if (!HAS_DB) return;
@@ -57,6 +58,10 @@ afterEach(async () => {
     await db.delete(schema.vendors).where(eq(schema.vendors.id, id));
   }
   createdVendorIds.length = 0;
+  for (const id of createdAccountIds) {
+    await db.delete(schema.chartOfAccounts).where(eq(schema.chartOfAccounts.id, id));
+  }
+  createdAccountIds.length = 0;
 });
 
 async function getCompanyId(): Promise<number> {
@@ -99,6 +104,27 @@ async function createTestVendor(): Promise<number> {
     .returning();
   createdVendorIds.push(v.id);
   return v.id;
+}
+
+async function createTestAccount(
+  code: string,
+  type: "asset" | "expense",
+  overrides: Partial<typeof schema.chartOfAccounts.$inferInsert> = {},
+) {
+  const [account] = await db
+    .insert(schema.chartOfAccounts)
+    .values({
+      companyId: await getCompanyId(),
+      code,
+      name: `Test ${code}`,
+      type,
+      isActive: true,
+      isPosting: true,
+      ...overrides,
+    })
+    .returning();
+  createdAccountIds.push(account.id);
+  return account;
 }
 
 async function attachDocument(invoiceId: number) {
@@ -362,6 +388,42 @@ describe("PATCH /api/invoices/[id] — route-level", () => {
     );
 
     expect(res.status).toBe(422);
+  });
+
+  it.skipIf(!HAS_DB)("validates account codes on already-persisted lines during approval", async () => {
+    const vendorId = await createTestVendor();
+    const inv = await createTestInvoice({ vendorId });
+    await attachDocument(inv.id);
+    const expense = await createTestAccount(`EXP${inv.id}`, "expense");
+    await db.insert(schema.supplierInvoiceLines).values({
+      invoiceId: inv.id,
+      position: 0,
+      netAmount: "1000",
+      vatAmount: "200",
+      grossAmount: "1200",
+      accountingAccountNumber: expense.code,
+    });
+
+    const response = await PATCH(patchRequest(inv.id, { status: "approved" }), params(inv.id));
+    expect(response.status).toBe(200);
+  });
+
+  it.skipIf(!HAS_DB)("rejects an invalid account code on an already-persisted line", async () => {
+    const vendorId = await createTestVendor();
+    const inv = await createTestInvoice({ vendorId });
+    await attachDocument(inv.id);
+    await db.insert(schema.supplierInvoiceLines).values({
+      invoiceId: inv.id,
+      position: 0,
+      netAmount: "1000",
+      vatAmount: "200",
+      grossAmount: "1200",
+      accountingAccountNumber: `MISSING${inv.id}`,
+    });
+
+    const response = await PATCH(patchRequest(inv.id, { status: "approved" }), params(inv.id));
+    expect(response.status).toBe(422);
+    expect((await response.json()).error).toMatch(/Line 1.*Expense account/);
   });
 });
 
