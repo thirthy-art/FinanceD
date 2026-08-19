@@ -93,7 +93,7 @@ export function deriveRecognitionSchedule(params: {
     const unroundedPerMonth = net.div(count);
     const perMonthOrig = unroundedPerMonth.toDecimalPlaces(
       CRYPTO_DECIMAL_PLACES,
-      Decimal.ROUND_HALF_UP
+      Decimal.ROUND_DOWN
     );
     const lastOrig = net.minus(perMonthOrig.mul(count.minus(1)));
     const totalBase = net.mul(rate).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
