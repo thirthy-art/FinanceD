@@ -9,13 +9,16 @@ vi.mock("@/src/lib/active-company", () => ({
   getActiveCompanyFromRequest: vi.fn().mockResolvedValue({ id: 1, baseCurrency: "EUR" }),
 }));
 vi.mock("@/src/lib/ai-provider", () => ({ getAiProviderConfig: vi.fn() }));
-vi.mock("@/src/lib/document-storage", () => ({ readDocument: vi.fn() }));
+vi.mock("@/src/lib/document-storage", () => ({
+  readDocument: vi.fn(),
+  DocumentNotFoundError: class DocumentNotFoundError extends Error {},
+}));
 
 // ── Imports after mocks ───────────────────────────────────────────────────────
 import { PDFParse } from "pdf-parse";
 import { getDb } from "@/src/db";
 import { getAiProviderConfig } from "@/src/lib/ai-provider";
-import { readDocument } from "@/src/lib/document-storage";
+import { DocumentNotFoundError, readDocument } from "@/src/lib/document-storage";
 import { AI_EXTRACTION_PROMPT } from "@/src/lib/ai-extraction";
 import { POST } from "@/app/api/invoices/[id]/extract/route";
 
@@ -379,7 +382,7 @@ describe("PDF read/render failures", () => {
         extractedText: null,
       }),
     );
-    mockReadDocument.mockRejectedValue(new Error("ENOENT"));
+    mockReadDocument.mockRejectedValue(new DocumentNotFoundError());
 
     const res = await POST(makeRequest(1), params(1));
 
@@ -387,6 +390,24 @@ describe("PDF read/render failures", () => {
     const body = await res.json();
     expect(body.error).toMatch(/could not be read/i);
     // PDF renderer should not be instantiated if file read failed
+    expect(MockPDFParse).not.toHaveBeenCalled();
+  });
+
+  it("returns 503 when scanned PDF storage is unavailable", async () => {
+    mockGetAiProviderConfig.mockReturnValue(imageCapableConfig());
+    mockGetDb.mockReturnValue(
+      makeDbWithDocument({
+        mimeType: "application/pdf",
+        storagePath: "object:companies/1/invoice-documents/scanned.pdf",
+        extractedText: null,
+      }),
+    );
+    mockReadDocument.mockRejectedValue(new Error("credential details must not leak"));
+
+    const res = await POST(makeRequest(1), params(1));
+
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ error: "The document storage service is unavailable." });
     expect(MockPDFParse).not.toHaveBeenCalled();
   });
 

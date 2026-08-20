@@ -15,6 +15,7 @@ vi.mock("@aws-sdk/client-s3", async (importOriginal) => {
 
 import {
   deleteDocument,
+  DocumentNotFoundError,
   readDocument,
   storeDocument,
 } from "@/src/lib/document-storage";
@@ -92,5 +93,38 @@ describe("document storage", () => {
     await expect(readDocument("object:companies/1/invoice-documents/a.pdf"))
       .rejects.toThrow(/DOCUMENT_STORAGE_S3_BUCKET/);
     expect(send).not.toHaveBeenCalled();
+  });
+
+  it("classifies a missing local file as document-not-found", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "financed-documents-"));
+    process.env.UPLOAD_DIR = temporaryDirectory;
+
+    await expect(readDocument(path.join(temporaryDirectory, "missing.pdf")))
+      .rejects.toBeInstanceOf(DocumentNotFoundError);
+  });
+
+  it("classifies an S3 NoSuchKey response as document-not-found", async () => {
+    process.env.DOCUMENT_STORAGE_S3_ENDPOINT = "https://example.r2.cloudflarestorage.com";
+    process.env.DOCUMENT_STORAGE_S3_REGION = "auto";
+    process.env.DOCUMENT_STORAGE_S3_BUCKET = "documents";
+    process.env.DOCUMENT_STORAGE_S3_ACCESS_KEY_ID = "key";
+    process.env.DOCUMENT_STORAGE_S3_SECRET_ACCESS_KEY = "secret";
+    send.mockRejectedValueOnce(Object.assign(new Error("missing"), { name: "NoSuchKey" }));
+
+    await expect(readDocument("object:companies/1/invoice-documents/missing.pdf"))
+      .rejects.toBeInstanceOf(DocumentNotFoundError);
+  });
+
+  it("does not classify a generic S3 failure as document-not-found", async () => {
+    process.env.DOCUMENT_STORAGE_S3_ENDPOINT = "https://example.r2.cloudflarestorage.com";
+    process.env.DOCUMENT_STORAGE_S3_REGION = "auto";
+    process.env.DOCUMENT_STORAGE_S3_BUCKET = "documents";
+    process.env.DOCUMENT_STORAGE_S3_ACCESS_KEY_ID = "key";
+    process.env.DOCUMENT_STORAGE_S3_SECRET_ACCESS_KEY = "secret";
+    const failure = new Error("service unavailable");
+    send.mockRejectedValueOnce(failure);
+
+    await expect(readDocument("object:companies/1/invoice-documents/invoice.pdf"))
+      .rejects.toBe(failure);
   });
 });

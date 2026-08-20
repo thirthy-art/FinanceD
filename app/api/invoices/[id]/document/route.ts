@@ -3,7 +3,7 @@ import { getDb } from "@/src/db";
 import { supplierInvoiceDocuments, supplierInvoices } from "@/src/db/schema";
 import { and, eq } from "drizzle-orm";
 import { getActiveCompanyFromRequest } from "@/src/lib/active-company";
-import { readDocument } from "@/src/lib/document-storage";
+import { DocumentNotFoundError, readDocument } from "@/src/lib/document-storage";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -25,8 +25,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   let buffer: Buffer;
   try {
     buffer = await readDocument(document.storagePath);
-  } catch {
-    return NextResponse.json({ error: "File not on disk" }, { status: 404 });
+  } catch (error) {
+    return error instanceof DocumentNotFoundError
+      ? NextResponse.json({ error: "File not on disk" }, { status: 404 })
+      : NextResponse.json({ error: "The document storage service is unavailable." }, { status: 503 });
   }
   return new NextResponse(new Uint8Array(buffer), {
     headers: {

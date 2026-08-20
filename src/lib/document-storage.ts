@@ -4,6 +4,7 @@ import path from "path";
 import {
   DeleteObjectCommand,
   GetObjectCommand,
+  type GetObjectCommandOutput,
   PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
@@ -24,6 +25,12 @@ type S3Configuration = {
 };
 
 export class UnsafeDocumentStoragePathError extends Error {}
+export class DocumentNotFoundError extends Error {
+  constructor() {
+    super("Document not found.");
+    this.name = "DocumentNotFoundError";
+  }
+}
 
 function storageBackend(): "local" | "s3" {
   const backend = process.env.DOCUMENT_STORAGE_BACKEND ?? "local";
@@ -82,6 +89,15 @@ function objectKey(reference: string): string {
   return key;
 }
 
+function isS3NotFoundError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const storageError = error as {
+    name?: string;
+    $metadata?: { httpStatusCode?: number };
+  };
+  return storageError.name === "NoSuchKey" || storageError.$metadata?.httpStatusCode === 404;
+}
+
 export async function storeDocument(input: StoreDocumentInput): Promise<string> {
   const filename = `${randomUUID()}${safeExtension(input.extension)}`;
   if (storageBackend() === "local") {
@@ -104,13 +120,26 @@ export async function storeDocument(input: StoreDocumentInput): Promise<string> 
 }
 
 export async function readDocument(reference: string): Promise<Buffer> {
-  if (!reference.startsWith(OBJECT_REFERENCE_PREFIX)) return readFile(reference);
+  if (!reference.startsWith(OBJECT_REFERENCE_PREFIX)) {
+    try {
+      return await readFile(reference);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") throw new DocumentNotFoundError();
+      throw error;
+    }
+  }
 
   const { bucket, client } = s3Configuration();
-  const result = await client.send(new GetObjectCommand({
-    Bucket: bucket,
-    Key: objectKey(reference),
-  }));
+  let result: GetObjectCommandOutput;
+  try {
+    result = await client.send(new GetObjectCommand({
+      Bucket: bucket,
+      Key: objectKey(reference),
+    }));
+  } catch (error) {
+    if (isS3NotFoundError(error)) throw new DocumentNotFoundError();
+    throw error;
+  }
   if (!result.Body) throw new Error("The stored document has no content.");
   return Buffer.from(await result.Body.transformToByteArray());
 }

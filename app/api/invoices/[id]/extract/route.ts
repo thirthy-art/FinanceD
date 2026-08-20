@@ -9,7 +9,7 @@ import {
   AiInvoiceExtractionSchema,
 } from "@/src/lib/ai-extraction";
 import { getAiProviderConfig } from "@/src/lib/ai-provider";
-import { readDocument } from "@/src/lib/document-storage";
+import { DocumentNotFoundError, readDocument } from "@/src/lib/document-storage";
 
 export const runtime = "nodejs";
 
@@ -30,6 +30,12 @@ const AiResponseSchema = z.object({
 
 function errorResponse(error: string, status: number) {
   return Response.json({ error }, { status });
+}
+
+function documentReadError(error: unknown) {
+  return error instanceof DocumentNotFoundError
+    ? errorResponse("The invoice document could not be read.", 404)
+    : errorResponse("The document storage service is unavailable.", 503);
 }
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -84,8 +90,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         },
         { type: "text", text: AI_EXTRACTION_PROMPT },
       ];
-    } catch {
-      return errorResponse("The invoice document could not be read.", 404);
+    } catch (error) {
+      return documentReadError(error);
     }
   } else if (document.mimeType === "application/pdf") {
     const extractedText = document.extractedText?.trim();
@@ -103,8 +109,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       let pdfBytes: Buffer;
       try {
         pdfBytes = await readDocument(document.storagePath);
-      } catch {
-        return errorResponse("The invoice document could not be read.", 404);
+      } catch (error) {
+        return documentReadError(error);
       }
 
       const parser = new PDFParse({ data: pdfBytes });
