@@ -8,6 +8,7 @@ import { getActiveCompanyFromRequest } from "@/src/lib/active-company";
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const company = await getActiveCompanyFromRequest(req);
+  if (company instanceof Response) return company;
   const db = getDb();
 
   const [doc] = await db

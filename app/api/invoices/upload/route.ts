@@ -51,6 +51,7 @@ export async function POST(req: NextRequest) {
   }
 
   const company = await getActiveCompanyFromRequest(req);
+  if (company instanceof Response) return company;
   const db = getDb();
   const [existing] = await db
     .select({ id: supplierInvoices.id })

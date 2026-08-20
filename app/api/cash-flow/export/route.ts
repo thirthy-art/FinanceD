@@ -19,6 +19,7 @@ function setDateCell(cell: ExcelJS.Cell, value: string | null) {
 export async function GET(request: Request) {
   const today = todayString();
   const company = await getActiveCompanyFromRequest(request);
+  if (company instanceof Response) return company;
   const db = getDb();
 
   const rows = await db

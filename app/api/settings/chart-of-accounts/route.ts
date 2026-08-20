@@ -7,6 +7,7 @@ import { z } from "zod";
 
 export async function GET(req: NextRequest) {
   const company = await getActiveCompanyFromRequest(req);
+  if (company instanceof Response) return company;
   const db = getDb();
   const rows = await db
     .select()
@@ -28,6 +29,7 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
   const company = await getActiveCompanyFromRequest(req);
+  if (company instanceof Response) return company;
   const db = getDb();
   const [row] = await db
     .insert(chartOfAccounts)

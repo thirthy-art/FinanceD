@@ -24,6 +24,7 @@ export async function PATCH(
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
   const company = await getActiveCompanyFromRequest(req);
+  if (company instanceof Response) return company;
   const db = getDb();
 
   try {

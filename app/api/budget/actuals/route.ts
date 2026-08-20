@@ -13,6 +13,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "year required (YYYY)" }, { status: 400 });
 
   const company = await getActiveCompanyFromRequest(req);
+  if (company instanceof Response) return company;
   const db = getDb();
   const rows = await db
     .select()
@@ -40,6 +41,7 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
   const company = await getActiveCompanyFromRequest(req);
+  if (company instanceof Response) return company;
   const db = getDb();
 
   const [cat] = await db
@@ -90,6 +92,7 @@ export async function DELETE(req: NextRequest) {
   if (isNaN(entryId)) return NextResponse.json({ error: "id required" }, { status: 400 });
 
   const company = await getActiveCompanyFromRequest(req);
+  if (company instanceof Response) return company;
   const db = getDb();
 
   await db

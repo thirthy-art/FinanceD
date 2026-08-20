@@ -33,6 +33,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "year required (YYYY)" }, { status: 400 });
 
   const company = await getActiveCompanyFromRequest(req);
+  if (company instanceof Response) return company;
   const db = getDb();
 
   // 1. All active categories for company

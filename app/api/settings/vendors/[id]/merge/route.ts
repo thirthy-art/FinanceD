@@ -20,6 +20,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   const company = await getActiveCompanyFromRequest(req);
+  if (company instanceof Response) return company;
   const db = getDb();
   try {
     const result = await db.transaction(async (tx) => {

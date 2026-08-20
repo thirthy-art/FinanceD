@@ -40,6 +40,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
 
   const company = await getActiveCompanyFromRequest(request);
+  if (company instanceof Response) return company;
   const db = getDb();
   const [document] = await db
     .select({

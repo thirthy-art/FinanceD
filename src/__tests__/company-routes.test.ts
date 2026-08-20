@@ -1,18 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/src/db", () => ({ getDb: vi.fn() }));
-vi.mock("@/src/lib/active-company", async (importOriginal) => {
-  const original = await importOriginal<typeof import("@/src/lib/active-company")>();
-  return { ...original, getActiveCompanyFromRequest: vi.fn() };
-});
 
 import { getDb } from "@/src/db";
-import { getActiveCompanyFromRequest } from "@/src/lib/active-company";
 import { GET, POST as createCompany } from "@/app/api/companies/route";
 import { POST as selectCompany } from "@/app/api/companies/active/route";
 
 const mockGetDb = vi.mocked(getDb);
-const mockGetActiveCompany = vi.mocked(getActiveCompanyFromRequest);
 
 function request(url: string, body?: unknown) {
   return new Request(url, body === undefined ? undefined : {
@@ -24,7 +18,6 @@ function request(url: string, body?: unknown) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockGetActiveCompany.mockResolvedValue({ id: 2 } as never);
 });
 
 describe("company management API", () => {
@@ -38,10 +31,28 @@ describe("company management API", () => {
       select: vi.fn().mockReturnValue({ from: vi.fn().mockReturnValue({ orderBy }) }),
     } as never);
 
-    const response = await GET(request("http://localhost/api/companies"));
+    const response = await GET(new Request("http://localhost/api/companies", {
+      headers: { Cookie: "financed_company_id=2" },
+    }));
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ companies: rows, activeCompanyId: 2 });
     expect(orderBy).toHaveBeenCalledOnce();
+  });
+
+  it("lists all companies with a null active id when selection is required", async () => {
+    const rows = [
+      { id: 1, name: "Company A", baseCurrency: "EUR" },
+      { id: 2, name: "Company B", baseCurrency: "GBP" },
+    ];
+    mockGetDb.mockReturnValue({
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({ orderBy: vi.fn().mockResolvedValue(rows) }),
+      }),
+    } as never);
+
+    const response = await GET(request("http://localhost/api/companies"));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ companies: rows, activeCompanyId: null });
   });
 
   it("creates a normalized company and makes it active", async () => {

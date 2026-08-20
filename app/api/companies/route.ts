@@ -4,7 +4,8 @@ import { z } from "zod";
 import { getDb } from "@/src/db";
 import { companies } from "@/src/db/schema";
 import {
-  getActiveCompanyFromRequest,
+  activeCompanyIdFromRequest,
+  resolveActiveCompany,
   setActiveCompanyCookie,
 } from "@/src/lib/active-company";
 
@@ -14,12 +15,19 @@ const CreateCompanySchema = z.object({
 });
 
 export async function GET(request: Request) {
-  const activeCompany = await getActiveCompanyFromRequest(request);
-  const rows = await getDb()
+  let rows = await getDb()
     .select({ id: companies.id, name: companies.name, baseCurrency: companies.baseCurrency })
     .from(companies)
     .orderBy(asc(companies.id));
-  return NextResponse.json({ companies: rows, activeCompanyId: activeCompany.id });
+  if (rows.length === 0) {
+    const company = await resolveActiveCompany();
+    rows = [{ id: company.id, name: company.name, baseCurrency: company.baseCurrency }];
+  }
+
+  const requestedId = activeCompanyIdFromRequest(request);
+  const selected = requestedId === null ? undefined : rows.find((company) => company.id === requestedId);
+  const activeCompanyId = selected?.id ?? (rows.length === 1 ? rows[0].id : null);
+  return NextResponse.json({ companies: rows, activeCompanyId });
 }
 
 export async function POST(request: Request) {

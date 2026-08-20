@@ -24,6 +24,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
 
   const company = await getActiveCompanyFromRequest(req);
+  if (company instanceof Response) return company;
   const db = getDb();
   const [current] = await db.select().from(vendors).where(and(
     eq(vendors.id, vendorId),
@@ -62,6 +63,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   }
 
   const company = await getActiveCompanyFromRequest(req);
+  if (company instanceof Response) return company;
   const db = getDb();
   const [current] = await db.select({ id: vendors.id }).from(vendors).where(and(
     eq(vendors.id, vendorId),

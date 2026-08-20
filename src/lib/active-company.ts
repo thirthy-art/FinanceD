@@ -1,6 +1,6 @@
 import { asc, eq, sql } from "drizzle-orm";
 import { cookies } from "next/headers";
-import { type NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { getDb } from "@/src/db";
 import { companies } from "@/src/db/schema";
 
@@ -17,6 +17,15 @@ export const ACTIVE_COMPANY_COOKIE_OPTIONS = {
 // A deployment-wide transaction lock used only while bootstrapping an empty
 // companies table. It does not serialize normal company resolution or creation.
 const INITIAL_COMPANY_LOCK_KEY = 1_179_868_371;
+
+export class ActiveCompanySelectionRequiredError extends Error {
+  readonly code = "ACTIVE_COMPANY_REQUIRED";
+
+  constructor() {
+    super("Active company selection required.");
+    this.name = "ActiveCompanySelectionRequiredError";
+  }
+}
 
 export function parseActiveCompanyId(value: string | undefined): number | null {
   if (!value || !/^[1-9]\d*$/.test(value)) return null;
@@ -40,6 +49,10 @@ function cookieValue(request: Request, name: string): string | undefined {
   return undefined;
 }
 
+export function activeCompanyIdFromRequest(request: Request): number | null {
+  return parseActiveCompanyId(cookieValue(request, ACTIVE_COMPANY_COOKIE));
+}
+
 export async function resolveActiveCompany(activeCompanyCookie?: string) {
   const db = getDb();
   const requestedId = parseActiveCompanyId(activeCompanyCookie);
@@ -53,22 +66,24 @@ export async function resolveActiveCompany(activeCompanyCookie?: string) {
     if (requested) return requested;
   }
 
-  const [existing] = await db
+  const existing = await db
     .select()
     .from(companies)
     .orderBy(asc(companies.id))
-    .limit(1);
-  if (existing) return existing;
+    .limit(2);
+  if (existing.length === 1) return existing[0];
+  if (existing.length > 1) throw new ActiveCompanySelectionRequiredError();
 
   return db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(${INITIAL_COMPANY_LOCK_KEY})`);
 
-    const [afterLock] = await tx
+    const afterLock = await tx
       .select()
       .from(companies)
       .orderBy(asc(companies.id))
-      .limit(1);
-    if (afterLock) return afterLock;
+      .limit(2);
+    if (afterLock.length === 1) return afterLock[0];
+    if (afterLock.length > 1) throw new ActiveCompanySelectionRequiredError();
 
     const [created] = await tx
       .insert(companies)
@@ -84,7 +99,17 @@ export async function getActiveCompany() {
 }
 
 export async function getActiveCompanyFromRequest(request: Request) {
-  return resolveActiveCompany(cookieValue(request, ACTIVE_COMPANY_COOKIE));
+  try {
+    return await resolveActiveCompany(cookieValue(request, ACTIVE_COMPANY_COOKIE));
+  } catch (error) {
+    if (error instanceof ActiveCompanySelectionRequiredError) {
+      return NextResponse.json(
+        { error: error.message, code: error.code },
+        { status: 409 },
+      );
+    }
+    throw error;
+  }
 }
 
 export function setActiveCompanyCookie(response: NextResponse, companyId: number) {
