@@ -19,7 +19,8 @@ import CashFlowView, {
 } from "@/src/components/CashFlowView";
 import { resolveLocale, getMessages } from "@/src/i18n/index";
 import { LOCALE_COOKIE } from "@/src/i18n/types";
-import { getActiveCompany } from "@/src/lib/active-company";
+import { getActiveCompanyForPage } from "@/src/lib/active-company-page";
+import CompanySelectionRequired from "@/src/components/CompanySelectionRequired";
 
 export const dynamic = "force-dynamic";
 
@@ -108,11 +109,12 @@ function CurrencyTotals({ totals }: { totals: { currency: string; total: string 
 
 export default async function CashFlowPage() {
   const today = todayString();
-  const company = await getActiveCompany();
-  const db = getDb();
-
   const cookieStore = await cookies();
   const locale = resolveLocale(cookieStore.get(LOCALE_COOKIE)?.value);
+  const company = await getActiveCompanyForPage();
+  if (!company) return <CompanySelectionRequired locale={locale} />;
+  const db = getDb();
+
   const { cashFlow: t } = getMessages(locale);
 
   const baseCurrency = company.baseCurrency;

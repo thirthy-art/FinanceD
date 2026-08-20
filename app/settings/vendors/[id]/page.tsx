@@ -9,7 +9,8 @@ import { Decimal } from "@/src/lib/decimal";
 import { calculateVendorInvoiceTotals } from "@/src/lib/vendor-totals";
 import { resolveLocale, getMessages } from "@/src/i18n/index";
 import { LOCALE_COOKIE } from "@/src/i18n/types";
-import { getActiveCompany } from "@/src/lib/active-company";
+import { getActiveCompanyForPage } from "@/src/lib/active-company-page";
+import CompanySelectionRequired from "@/src/components/CompanySelectionRequired";
 
 function displayAmount(value: string | null) {
   if (!value) return "—";
@@ -26,7 +27,10 @@ export default async function VendorDetailPage({
   const [{ id }, query] = await Promise.all([params, searchParams]);
   const vendorId = Number(id);
   if (!Number.isInteger(vendorId) || vendorId <= 0) notFound();
-  const activeCompany = await getActiveCompany();
+  const cookieStore = await cookies();
+  const locale = resolveLocale(cookieStore.get(LOCALE_COOKIE)?.value);
+  const activeCompany = await getActiveCompanyForPage();
+  if (!activeCompany) return <CompanySelectionRequired locale={locale} />;
   const db = getDb();
   const [vendor] = await db.select().from(vendors).where(and(
     eq(vendors.id, vendorId),
@@ -34,8 +38,6 @@ export default async function VendorDetailPage({
   ));
   if (!vendor) notFound();
 
-  const cookieStore = await cookies();
-  const locale = resolveLocale(cookieStore.get(LOCALE_COOKIE)?.value);
   const { vendorDetail: vd, common: cm } = getMessages(locale);
 
   const [invoiceRows, targetRows, [company]] = await Promise.all([

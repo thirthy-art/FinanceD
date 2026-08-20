@@ -17,11 +17,15 @@ import { parseInvoiceFields } from "@/src/lib/extract";
 import { stripTrailingZeros } from "@/src/lib/invoice-validation";
 import { resolveLocale, getMessages } from "@/src/i18n/index";
 import { LOCALE_COOKIE } from "@/src/i18n/types";
-import { getActiveCompany } from "@/src/lib/active-company";
+import { getActiveCompanyForPage } from "@/src/lib/active-company-page";
+import CompanySelectionRequired from "@/src/components/CompanySelectionRequired";
 
 export default async function InvoicePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const activeCompany = await getActiveCompany();
+  const cookieStore = await cookies();
+  const locale = resolveLocale(cookieStore.get(LOCALE_COOKIE)?.value);
+  const activeCompany = await getActiveCompanyForPage();
+  if (!activeCompany) return <CompanySelectionRequired locale={locale} />;
   const db = getDb();
 
   const [invoice] = await db
@@ -34,8 +38,6 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
 
   if (!invoice) notFound();
 
-  const cookieStore = await cookies();
-  const locale = resolveLocale(cookieStore.get(LOCALE_COOKIE)?.value);
   const { invoiceDetail: t } = getMessages(locale);
 
   const [docs, lines, vendorList, ccList, acctList, [company]] = await Promise.all([

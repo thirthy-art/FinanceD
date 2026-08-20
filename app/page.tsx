@@ -3,7 +3,8 @@ import { cookies } from "next/headers";
 import { getDb } from "@/src/db";
 import { supplierInvoices, vendors } from "@/src/db/schema";
 import { and, eq, desc } from "drizzle-orm";
-import { getActiveCompany } from "@/src/lib/active-company";
+import { getActiveCompanyForPage } from "@/src/lib/active-company-page";
+import CompanySelectionRequired from "@/src/components/CompanySelectionRequired";
 import { formatDisplayAmount } from "@/src/lib/invoice-validation";
 import { resolveLocale, getMessages } from "@/src/i18n/index";
 import { LOCALE_COOKIE } from "@/src/i18n/types";
@@ -21,9 +22,10 @@ function statusBadge(status: string, t: { statusApproved: string; statusDraft: s
 
 export default async function Home({ searchParams }: { searchParams: Promise<{ deleted?: string }> }) {
   const { deleted } = await searchParams;
-  const company = await getActiveCompany();
   const cookieStore = await cookies();
   const locale = resolveLocale(cookieStore.get(LOCALE_COOKIE)?.value);
+  const company = await getActiveCompanyForPage();
+  if (!company) return <CompanySelectionRequired locale={locale} />;
   const { invoiceList: t, common } = getMessages(locale);
 
   const db = getDb();

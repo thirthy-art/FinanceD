@@ -24,6 +24,7 @@ export interface Messages {
     couldNotLoad: string;
     couldNotSwitch: string;
     couldNotCreate: string;
+    selectAbove: string;
   };
   common: {
     loading: string;

@@ -20,6 +20,7 @@ export const ru: Messages = {
     couldNotLoad: "Не удалось загрузить компании",
     couldNotSwitch: "Не удалось сменить компанию",
     couldNotCreate: "Не удалось создать компанию",
+    selectAbove: "Выберите компанию выше, чтобы продолжить.",
   },
   common: {
     loading: "Загрузка…",
