@@ -106,3 +106,104 @@ describe("non-English message content", () => {
     expect(/[֐-׿]/.test(heMsg.common.del)).toBe(true);
   });
 });
+
+// ── budget month labels ───────────────────────────────────────────────────────
+
+describe("budget month labels via Intl.DateTimeFormat", () => {
+  it("Russian January short name differs from English", () => {
+    const enJan = new Intl.DateTimeFormat("en", { month: "short" }).format(new Date(2000, 0, 1));
+    const ruJan = new Intl.DateTimeFormat("ru", { month: "short" }).format(new Date(2000, 0, 1));
+    expect(ruJan).not.toBe(enJan);
+  });
+
+  it("Hebrew January short name differs from English", () => {
+    const enJan = new Intl.DateTimeFormat("en", { month: "short" }).format(new Date(2000, 0, 1));
+    const heJan = new Intl.DateTimeFormat("he", { month: "short" }).format(new Date(2000, 0, 1));
+    expect(heJan).not.toBe(enJan);
+  });
+});
+
+// ── no {s} placeholders ───────────────────────────────────────────────────────
+
+describe("no {s} placeholder in translated strings", () => {
+  const locales = ["en", "ru", "he"] as const;
+
+  it("enterValidLine has no {s} in any locale", () => {
+    for (const locale of locales) {
+      const msg = getMessages(locale);
+      expect(msg.invoiceLines.enterValidLine).not.toContain("{s}");
+    }
+  });
+
+  it("unmappedWarning has no {s} in any locale", () => {
+    for (const locale of locales) {
+      const msg = getMessages(locale);
+      expect(msg.budget.unmappedWarning).not.toContain("{s}");
+    }
+  });
+
+  it("recognitionScheduleTitle has no {s} in any locale", () => {
+    for (const locale of locales) {
+      const msg = getMessages(locale);
+      expect(msg.invoiceLines.recognitionScheduleTitle).not.toContain("{s}");
+    }
+  });
+});
+
+// ── singular/plural key pairs ─────────────────────────────────────────────────
+
+describe("singular key variants exist and differ from plural", () => {
+  const locales = ["en", "ru", "he"] as const;
+
+  it("enterValidLine1 exists and differs from enterValidLine in all locales", () => {
+    for (const locale of locales) {
+      const msg = getMessages(locale);
+      expect(msg.invoiceLines.enterValidLine1).toBeTruthy();
+      expect(msg.invoiceLines.enterValidLine1).not.toBe(msg.invoiceLines.enterValidLine);
+    }
+  });
+
+  it("recognitionScheduleTitle1 exists and differs from recognitionScheduleTitle in all locales", () => {
+    for (const locale of locales) {
+      const msg = getMessages(locale);
+      expect(msg.invoiceLines.recognitionScheduleTitle1).toBeTruthy();
+      expect(msg.invoiceLines.recognitionScheduleTitle1).not.toBe(msg.invoiceLines.recognitionScheduleTitle);
+    }
+  });
+
+  it("unmappedWarning1 exists in all locales", () => {
+    for (const locale of locales) {
+      const msg = getMessages(locale);
+      expect(msg.budget.unmappedWarning1).toBeTruthy();
+    }
+  });
+});
+
+// ── aria-label keys ───────────────────────────────────────────────────────────
+
+describe("aria-label keys contain {n} placeholder", () => {
+  const locales = ["en", "ru", "he"] as const;
+  const ariaKeys = [
+    "ariaLineNumber", "ariaOrigDesc", "ariaDesc", "ariaQty", "ariaUnit",
+    "ariaUnitPrice", "ariaNetAmount", "ariaVatRate", "ariaVatAmount",
+    "ariaGrossAmount", "ariaSourcePage", "ariaTreatment",
+    "ariaRecognitionStart", "ariaRecognitionEnd", "ariaAccountNumber",
+    "ariaPrepaidAccount",
+  ] as const;
+
+  it("ariaLineNumber exists in all three locales and contains {n}", () => {
+    for (const locale of locales) {
+      const msg = getMessages(locale);
+      expect(msg.invoiceLines.ariaLineNumber).toContain("{n}");
+    }
+  });
+
+  it("all 16 aria keys exist and contain {n} in every locale", () => {
+    for (const locale of locales) {
+      const msg = getMessages(locale);
+      for (const key of ariaKeys) {
+        expect(msg.invoiceLines[key]).toContain("{n}");
+      }
+    }
+  });
+});

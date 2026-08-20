@@ -16,7 +16,6 @@ const cardStyle: React.CSSProperties = {
   overflow: "hidden",
 };
 
-const MONTHS_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 interface Category {
   id: number;
@@ -88,7 +87,7 @@ function varColor(v: string): string {
 }
 
 export default function BudgetPage() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const b = t.budget;
   const cm = t.common;
 
@@ -299,7 +298,7 @@ export default function BudgetPage() {
         )}
         {unmapped && unmapped.unmappedCount > 0 && (
           <span style={{ fontSize: 12, color: "#b45309", background: "#fef3c7", padding: "4px 10px", borderRadius: 4 }}>
-            ⚠ {b.unmappedWarning.replace("{count}", String(unmapped.unmappedCount)).replace("{s}", unmapped.unmappedCount !== 1 ? "s" : "")}
+            ⚠ {unmapped.unmappedCount === 1 ? b.unmappedWarning1 : b.unmappedWarning.replace("{count}", String(unmapped.unmappedCount))}
           </span>
         )}
       </div>
@@ -351,7 +350,7 @@ export default function BudgetPage() {
                     <th style={{ textAlign: "left", padding: "8px 12px", fontSize: 12, fontWeight: 600, color: "#64748b", textTransform: "uppercase", minWidth: 160, position: "sticky", left: 0, background: "#f8fafc", zIndex: 1 }}>{b.categoryHeader}</th>
                     {allMonths.map((m, i) => (
                       <th key={m} style={{ textAlign: "right", padding: "8px 6px", fontSize: 11, fontWeight: 600, color: "#64748b", textTransform: "uppercase", minWidth: 80 }}>
-                        {MONTHS_SHORT[i]}
+                        {new Intl.DateTimeFormat(locale, { month: "short" }).format(new Date(2000, i, 1))}
                       </th>
                     ))}
                   </tr>
@@ -569,7 +568,7 @@ export default function BudgetPage() {
                     <strong style={{ color: "#92400e" }}>{b.unmappedAccountsTitle}</strong>
                     {unmapped.accounts.map((a, i) => (
                       <div key={i} style={{ color: "#78350f", marginTop: 4 }}>
-                        <span style={{ fontFamily: "monospace" }}>{a.code}</span> – {a.name} ({a.count} line{a.count !== 1 ? "s" : ""})
+                        <span style={{ fontFamily: "monospace" }}>{a.code}</span> – {a.name} ({a.count === 1 ? b.accountLineCount1 : b.accountLineCount.replace("{count}", String(a.count))})
                       </div>
                     ))}
                   </div>

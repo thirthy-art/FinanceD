@@ -204,13 +204,31 @@ export interface Messages {
     datesRequired: string;
     accountsRequired: string;
     enterValidLine: string;
+    enterValidLine1: string;
     lineSumMismatch: string;
     recognitionScheduleTitle: string;
+    recognitionScheduleTitle1: string;
     month: string;
     enterFxForBase: string;
     autoCalcNet: string;
     autoCalcVat: string;
     autoCalcGross: string;
+    ariaLineNumber: string;
+    ariaOrigDesc: string;
+    ariaDesc: string;
+    ariaQty: string;
+    ariaUnit: string;
+    ariaUnitPrice: string;
+    ariaNetAmount: string;
+    ariaVatRate: string;
+    ariaVatAmount: string;
+    ariaGrossAmount: string;
+    ariaSourcePage: string;
+    ariaTreatment: string;
+    ariaRecognitionStart: string;
+    ariaRecognitionEnd: string;
+    ariaAccountNumber: string;
+    ariaPrepaidAccount: string;
   };
   cashFlow: {
     title: string;
@@ -294,6 +312,9 @@ export interface Messages {
     monthAmountRequired: string;
     selectCategoryRequired: string;
     unmappedWarning: string;
+    unmappedWarning1: string;
+    accountLineCount: string;
+    accountLineCount1: string;
     nameCannotBeEmpty: string;
   };
   coa: {
