@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/src/db";
 import { supplierInvoiceDocuments, supplierInvoices } from "@/src/db/schema";
 import { and, eq } from "drizzle-orm";
-import fs from "fs";
 import { getActiveCompanyFromRequest } from "@/src/lib/active-company";
+import { readDocument } from "@/src/lib/document-storage";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -22,12 +22,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
   if (!doc) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const document = doc.supplier_invoice_documents;
-  if (!fs.existsSync(document.storagePath)) {
+  let buffer: Buffer;
+  try {
+    buffer = await readDocument(document.storagePath);
+  } catch {
     return NextResponse.json({ error: "File not on disk" }, { status: 404 });
   }
-
-  const buffer = fs.readFileSync(document.storagePath);
-  return new NextResponse(buffer, {
+  return new NextResponse(new Uint8Array(buffer), {
     headers: {
       "Content-Type": document.mimeType,
       "Content-Disposition": `inline; filename="${document.originalFilename}"`,

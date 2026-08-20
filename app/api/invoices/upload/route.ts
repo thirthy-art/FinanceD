@@ -1,5 +1,3 @@
-import { randomUUID } from "crypto";
-import { mkdir, unlink, writeFile } from "fs/promises";
 import path from "path";
 import { and, eq } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
@@ -7,18 +5,16 @@ import { getDb } from "@/src/db";
 import { supplierInvoices, supplierInvoiceDocuments } from "@/src/db/schema";
 import { extractPdfText, extractImageText, parseInvoiceFields } from "@/src/lib/extract";
 import { getActiveCompanyFromRequest } from "@/src/lib/active-company";
+import { deleteDocument, storeDocument } from "@/src/lib/document-storage";
 
-const UPLOAD_DIR = process.env.UPLOAD_DIR ?? "./uploads";
 const ALLOWED_TYPES = ["application/pdf", "image/jpeg", "image/png", "image/tiff", "image/webp"];
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 
 async function removeUpload(storagePath: string) {
   try {
-    await unlink(storagePath);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-      console.error("Could not remove an incomplete invoice upload.");
-    }
+    await deleteDocument(storagePath);
+  } catch {
+    console.error("Could not remove an incomplete invoice upload.");
   }
 }
 
@@ -64,12 +60,9 @@ export async function POST(req: NextRequest) {
 
   const originalFilename = file.name;
   const ext = path.extname(originalFilename) || (mimeType === "application/pdf" ? ".pdf" : ".jpg");
-  const storageName = `${Date.now()}-${randomUUID()}${ext}`;
-  const storagePath = path.join(UPLOAD_DIR, storageName);
-
+  let bytes: Buffer;
   try {
-    await mkdir(UPLOAD_DIR, { recursive: true });
-    await writeFile(storagePath, Buffer.from(await file.arrayBuffer()));
+    bytes = Buffer.from(await file.arrayBuffer());
   } catch {
     return NextResponse.json({ error: "The document could not be stored. Please retry." }, { status: 500 });
   }
@@ -77,14 +70,25 @@ export async function POST(req: NextRequest) {
   let extracted: { text: string; ocrPerformed: boolean };
   try {
     extracted = mimeType === "application/pdf"
-      ? await extractPdfText(storagePath)
-      : await extractImageText(storagePath);
+      ? await extractPdfText(bytes)
+      : await extractImageText(bytes);
   } catch {
-    await removeUpload(storagePath);
     return NextResponse.json(
       { error: "The document was uploaded, but its initial processing failed. Please retry." },
       { status: 422 },
     );
+  }
+
+  let storagePath: string;
+  try {
+    storagePath = await storeDocument({
+      bytes,
+      companyId: company.id,
+      extension: ext,
+      mimeType,
+    });
+  } catch {
+    return NextResponse.json({ error: "The document could not be stored. Please retry." }, { status: 500 });
   }
 
   try {

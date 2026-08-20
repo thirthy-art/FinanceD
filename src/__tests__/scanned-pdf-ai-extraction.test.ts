@@ -9,21 +9,20 @@ vi.mock("@/src/lib/active-company", () => ({
   getActiveCompanyFromRequest: vi.fn().mockResolvedValue({ id: 1, baseCurrency: "EUR" }),
 }));
 vi.mock("@/src/lib/ai-provider", () => ({ getAiProviderConfig: vi.fn() }));
-vi.mock("fs/promises", () => ({ readFile: vi.fn(), stat: vi.fn() }));
+vi.mock("@/src/lib/document-storage", () => ({ readDocument: vi.fn() }));
 
 // ── Imports after mocks ───────────────────────────────────────────────────────
 import { PDFParse } from "pdf-parse";
 import { getDb } from "@/src/db";
 import { getAiProviderConfig } from "@/src/lib/ai-provider";
-import { readFile, stat } from "fs/promises";
+import { readDocument } from "@/src/lib/document-storage";
 import { AI_EXTRACTION_PROMPT } from "@/src/lib/ai-extraction";
 import { POST } from "@/app/api/invoices/[id]/extract/route";
 
 const MockPDFParse = vi.mocked(PDFParse);
 const mockGetDb = vi.mocked(getDb);
 const mockGetAiProviderConfig = vi.mocked(getAiProviderConfig);
-const mockReadFile = vi.mocked(readFile);
-const mockStat = vi.mocked(stat);
+const mockReadDocument = vi.mocked(readDocument);
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -147,6 +146,7 @@ describe("digital PDF with extracted text", () => {
 
     // PDFParse must not have been instantiated
     expect(MockPDFParse).not.toHaveBeenCalled();
+    expect(mockReadDocument).not.toHaveBeenCalled();
 
     // AI fetch body must contain extracted text, not image_url items
     const fetchBody = JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string);
@@ -185,11 +185,11 @@ describe("scanned PDF with blank extracted text", () => {
     mockGetDb.mockReturnValue(
       makeDbWithDocument({
         mimeType: "application/pdf",
-        storagePath: "/uploads/scanned.pdf",
+        storagePath: "object:companies/1/invoice-documents/scanned.pdf",
         extractedText: null,
       }),
     );
-    mockReadFile.mockResolvedValue(Buffer.from("PDF bytes") as never);
+    mockReadDocument.mockResolvedValue(Buffer.from("PDF bytes"));
 
     const mockGetScreenshot = vi.fn().mockResolvedValue(
       makeScreenshotResult([{ dataUrl: "data:image/png;base64,PAGE1DATA", pageNumber: 1 }]),
@@ -202,6 +202,7 @@ describe("scanned PDF with blank extracted text", () => {
     const res = await POST(makeRequest(1), params(1));
 
     expect(res.status).toBe(200);
+    expect(mockReadDocument).toHaveBeenCalledWith("object:companies/1/invoice-documents/scanned.pdf");
     expect(MockPDFParse).toHaveBeenCalledOnce();
     expect(mockGetScreenshot).toHaveBeenCalledOnce();
 
@@ -238,7 +239,7 @@ describe("scanned PDF with blank extracted text", () => {
         extractedText: "",
       }),
     );
-    mockReadFile.mockResolvedValue(Buffer.from("PDF bytes") as never);
+    mockReadDocument.mockResolvedValue(Buffer.from("PDF bytes"));
 
     const mockDestroy = vi.fn().mockResolvedValue(undefined);
     installPDFParseMock(
@@ -264,7 +265,7 @@ describe("scanned PDF with blank extracted text", () => {
         extractedText: null,
       }),
     );
-    mockReadFile.mockResolvedValue(Buffer.from("PDF") as never);
+    mockReadDocument.mockResolvedValue(Buffer.from("PDF"));
     installPDFParseMock(
       vi.fn().mockResolvedValue(
         makeScreenshotResult([{ dataUrl: "data:image/png;base64,DATA", pageNumber: 1 }]),
@@ -294,7 +295,7 @@ describe("multiple rendered PDF pages", () => {
         extractedText: null,
       }),
     );
-    mockReadFile.mockResolvedValue(Buffer.from("PDF") as never);
+    mockReadDocument.mockResolvedValue(Buffer.from("PDF"));
     installPDFParseMock(
       vi.fn().mockResolvedValue(
         makeScreenshotResult([
@@ -345,7 +346,7 @@ describe("image-incompatible configured model (mimo-v2.5-pro)", () => {
 
     // PDFParse must never be instantiated and no file read should occur
     expect(MockPDFParse).not.toHaveBeenCalled();
-    expect(mockReadFile).not.toHaveBeenCalled();
+    expect(mockReadDocument).not.toHaveBeenCalled();
   });
 
   it("also blocks JPEG images with the existing error", async () => {
@@ -378,7 +379,7 @@ describe("PDF read/render failures", () => {
         extractedText: null,
       }),
     );
-    mockReadFile.mockRejectedValue(new Error("ENOENT") as never);
+    mockReadDocument.mockRejectedValue(new Error("ENOENT"));
 
     const res = await POST(makeRequest(1), params(1));
 
@@ -398,7 +399,7 @@ describe("PDF read/render failures", () => {
         extractedText: null,
       }),
     );
-    mockReadFile.mockResolvedValue(Buffer.from("bad PDF") as never);
+    mockReadDocument.mockResolvedValue(Buffer.from("bad PDF"));
 
     const mockDestroy = vi.fn().mockResolvedValue(undefined);
     installPDFParseMock(
@@ -431,8 +432,7 @@ describe("existing JPEG/PNG/WebP AI path", () => {
         extractedText: null,
       }),
     );
-    mockStat.mockResolvedValue({ size: 1024 } as never);
-    mockReadFile.mockResolvedValue(Buffer.from("JPEG bytes") as never);
+    mockReadDocument.mockResolvedValue(Buffer.from("JPEG bytes"));
     fetchSpy.mockImplementation(aiOkResponse);
 
     const res = await POST(makeRequest(1), params(1));

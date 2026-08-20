@@ -11,7 +11,6 @@ import {
 } from "@/src/db/schema";
 import { eq, and, asc, inArray } from "drizzle-orm";
 import { z } from "zod";
-import { unlink } from "fs/promises";
 import {
   isAmountMismatch,
   calculateBaseAmount,
@@ -27,11 +26,12 @@ import {
   validateLineAccountsForApproval,
   checkLineTotalsForApproval,
 } from "@/src/lib/invoice-lines";
-import { resolveSafeUploadPath } from "@/src/lib/safe-upload-path";
 import { findVendorIdentityMatches, normalizeVendorTaxId } from "@/src/lib/vendor-identity";
 import { getActiveCompanyFromRequest } from "@/src/lib/active-company";
-
-const UPLOAD_DIR = process.env.UPLOAD_DIR ?? "./uploads";
+import {
+  deleteDocument,
+  UnsafeDocumentStoragePathError,
+} from "@/src/lib/document-storage";
 
 const UpdateSchema = z.object({
   vendorId: z.number().nullable().optional(),
@@ -655,17 +655,12 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
 
   let fileWarning: string | undefined;
   for (const storagePath of outcome.paths) {
-    const safePath = resolveSafeUploadPath(storagePath, UPLOAD_DIR);
-    if (!safePath) {
-      fileWarning = "The invoice was deleted, but an unsafe document path was not removed.";
-      continue;
-    }
     try {
-      await unlink(safePath);
+      await deleteDocument(storagePath);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-        fileWarning = "The invoice was deleted, but its uploaded file could not be removed.";
-      }
+      fileWarning = error instanceof UnsafeDocumentStoragePathError
+        ? "The invoice was deleted, but an unsafe document path was not removed."
+        : "The invoice was deleted, but its uploaded file could not be removed.";
     }
   }
 

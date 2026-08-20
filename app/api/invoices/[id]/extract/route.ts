@@ -1,4 +1,3 @@
-import { readFile, stat } from "fs/promises";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { PDFParse } from "pdf-parse";
@@ -10,6 +9,7 @@ import {
   AiInvoiceExtractionSchema,
 } from "@/src/lib/ai-extraction";
 import { getAiProviderConfig } from "@/src/lib/ai-provider";
+import { readDocument } from "@/src/lib/document-storage";
 
 export const runtime = "nodejs";
 
@@ -72,12 +72,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     }
 
     try {
-      const fileStats = await stat(document.storagePath);
-      const base64Size = 4 * Math.ceil(fileStats.size / 3);
+      const image = await readDocument(document.storagePath);
+      const base64Size = 4 * Math.ceil(image.length / 3);
       if (base64Size > MAX_BASE64_IMAGE_BYTES) {
         return errorResponse("The Base64-encoded invoice image exceeds the AI extraction service's 50 MiB limit.", 413);
       }
-      const image = await readFile(document.storagePath);
       userContent = [
         {
           type: "image_url",
@@ -103,7 +102,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
       let pdfBytes: Buffer;
       try {
-        pdfBytes = await readFile(document.storagePath);
+        pdfBytes = await readDocument(document.storagePath);
       } catch {
         return errorResponse("The invoice document could not be read.", 404);
       }

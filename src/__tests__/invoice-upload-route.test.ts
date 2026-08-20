@@ -1,32 +1,31 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("fs/promises", () => ({
-  mkdir: vi.fn(),
-  unlink: vi.fn(),
-  writeFile: vi.fn(),
-}));
 vi.mock("@/src/db", () => ({ getDb: vi.fn() }));
 vi.mock("@/src/lib/active-company", () => ({ getActiveCompanyFromRequest: vi.fn() }));
+vi.mock("@/src/lib/document-storage", () => ({
+  storeDocument: vi.fn(),
+  deleteDocument: vi.fn(),
+}));
 vi.mock("@/src/lib/extract", () => ({
   extractPdfText: vi.fn(),
   extractImageText: vi.fn(),
   parseInvoiceFields: vi.fn(),
 }));
 
-import { mkdir, writeFile } from "fs/promises";
 import { getDb } from "@/src/db";
 import { getActiveCompanyFromRequest } from "@/src/lib/active-company";
+import { deleteDocument, storeDocument } from "@/src/lib/document-storage";
 import { extractImageText, extractPdfText, parseInvoiceFields } from "@/src/lib/extract";
 import { POST } from "@/app/api/invoices/upload/route";
 
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
-const mockMkdir = vi.mocked(mkdir);
-const mockWriteFile = vi.mocked(writeFile);
 const mockGetDb = vi.mocked(getDb);
 const mockGetActiveCompany = vi.mocked(getActiveCompanyFromRequest);
 const mockExtractPdfText = vi.mocked(extractPdfText);
 const mockExtractImageText = vi.mocked(extractImageText);
 const mockParseInvoiceFields = vi.mocked(parseInvoiceFields);
+const mockStoreDocument = vi.mocked(storeDocument);
+const mockDeleteDocument = vi.mocked(deleteDocument);
 
 function uploadRequest(file: {
   name: string;
@@ -64,8 +63,8 @@ function successfulDb() {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockMkdir.mockResolvedValue(undefined);
-  mockWriteFile.mockResolvedValue(undefined);
+  mockStoreDocument.mockResolvedValue("object:companies/1/invoice-documents/test.pdf");
+  mockDeleteDocument.mockResolvedValue(undefined);
   mockGetActiveCompany.mockResolvedValue({ id: 1, baseCurrency: "EUR" } as never);
   mockExtractPdfText.mockResolvedValue({ text: "Invoice text", ocrPerformed: false });
   mockExtractImageText.mockResolvedValue({ text: "Invoice text", ocrPerformed: true });
@@ -87,8 +86,13 @@ describe("invoice upload size limit", () => {
 
     expect(response.status).toBe(200);
     expect(arrayBuffer).toHaveBeenCalledOnce();
-    expect(mockWriteFile).toHaveBeenCalledOnce();
-    expect(mockExtractPdfText).toHaveBeenCalledOnce();
+    expect(mockExtractPdfText).toHaveBeenCalledWith(Buffer.from([1, 2, 3]));
+    expect(mockStoreDocument).toHaveBeenCalledWith(expect.objectContaining({
+      bytes: Buffer.from([1, 2, 3]),
+      companyId: 1,
+      extension: ".pdf",
+      mimeType: "application/pdf",
+    }));
   });
 
   it("assigns a new invoice to the active company", async () => {
@@ -135,6 +139,7 @@ describe("invoice upload size limit", () => {
 
     expect(response.status).toBe(500);
     expect(await response.json()).toEqual({ error: "The invoice record could not be created. Please retry safely." });
+    expect(mockDeleteDocument).toHaveBeenCalledWith("object:companies/1/invoice-documents/test.pdf");
   });
 
   it("returns 413 before writing or extracting an oversized file", async () => {
@@ -150,8 +155,7 @@ describe("invoice upload size limit", () => {
     expect(response.status).toBe(413);
     expect((await response.json()).error).toMatch(/25 MB upload limit/);
     expect(arrayBuffer).not.toHaveBeenCalled();
-    expect(mockMkdir).not.toHaveBeenCalled();
-    expect(mockWriteFile).not.toHaveBeenCalled();
+    expect(mockStoreDocument).not.toHaveBeenCalled();
     expect(mockExtractPdfText).not.toHaveBeenCalled();
     expect(mockExtractImageText).not.toHaveBeenCalled();
     expect(mockGetDb).not.toHaveBeenCalled();

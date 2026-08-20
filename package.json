@@ -18,6 +18,7 @@
     "test:watch": "vitest --config vitest.config.mjs"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1114.0",
     "@types/pdf-parse": "^1.1.5",
     "@types/pg": "^8.21.0",
     "decimal.js": "^10.6.0",
