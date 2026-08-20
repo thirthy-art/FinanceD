@@ -268,3 +268,7 @@ body {
   .cf-table-desktop { display: block !important; }
   .cf-table-mobile { display: none !important; }
 }
+
+/* RTL: override inline text-align on table cells */
+[dir="rtl"] th { text-align: start !important; }
+[dir="rtl"] td { text-align: start !important; }

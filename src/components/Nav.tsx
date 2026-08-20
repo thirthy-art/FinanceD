@@ -1,19 +1,26 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useI18n } from "@/src/i18n/context";
+import type { Locale } from "@/src/i18n/types";
+import { SUPPORTED_LOCALES } from "@/src/i18n/types";
 
-const links = [
-  { href: "/", label: "Invoices" },
-  { href: "/invoices/new", label: "New Invoice" },
-  { href: "/cash-flow", label: "Cash Forecast" },
-  { href: "/budget", label: "Budget" },
-  { href: "/settings/chart-of-accounts", label: "Chart of Accounts" },
-  { href: "/settings/vendors", label: "Vendors" },
-  { href: "/settings/company", label: "Company" },
-];
+const LOCALE_LABELS: Record<Locale, string> = { en: "EN", ru: "RU", he: "HE" };
 
 export default function Nav() {
   const pathname = usePathname();
+  const { t, locale, setLocale } = useI18n();
+
+  const links = [
+    { href: "/", label: t.nav.invoices },
+    { href: "/invoices/new", label: t.nav.newInvoice },
+    { href: "/cash-flow", label: t.nav.cashForecast },
+    { href: "/budget", label: t.nav.budget },
+    { href: "/settings/chart-of-accounts", label: t.nav.chartOfAccounts },
+    { href: "/settings/vendors", label: t.nav.vendors },
+    { href: "/settings/company", label: t.nav.company },
+  ];
+
   return (
     <nav style={{ background: "#1e3a5f", color: "#fff" }}>
       <div
@@ -22,7 +29,7 @@ export default function Nav() {
       >
         <Link
           href="/"
-          style={{ fontWeight: 700, fontSize: 18, marginRight: 24, color: "#fff", textDecoration: "none" }}
+          style={{ fontWeight: 700, fontSize: 18, marginInlineEnd: 24, color: "#fff", textDecoration: "none" }}
         >
           FinanceD
         </Link>
@@ -43,6 +50,26 @@ export default function Nav() {
             {l.label}
           </Link>
         ))}
+        <div style={{ marginInlineStart: "auto", display: "flex", gap: 4 }} dir="ltr">
+          {SUPPORTED_LOCALES.map((loc) => (
+            <button
+              key={loc}
+              onClick={() => setLocale(loc)}
+              style={{
+                padding: "4px 8px",
+                borderRadius: 4,
+                border: "none",
+                cursor: "pointer",
+                fontSize: 12,
+                fontWeight: locale === loc ? 700 : 400,
+                background: locale === loc ? "rgba(255,255,255,0.25)" : "transparent",
+                color: locale === loc ? "#fff" : "#94a3b8",
+              }}
+            >
+              {LOCALE_LABELS[loc]}
+            </button>
+          ))}
+        </div>
       </div>
     </nav>
   );

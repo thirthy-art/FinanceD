@@ -1,7 +1,18 @@
 import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import InvoiceLinesEditor from "@/src/components/InvoiceLinesEditor";
+
+vi.mock("@/src/i18n/context", async () => {
+  const { getMessages } = await import("@/src/i18n/index");
+  return {
+    useI18n: () => ({
+      locale: "en" as const,
+      t: getMessages("en"),
+      setLocale: () => undefined,
+    }),
+  };
+});
 import { emptyEditableInvoiceLine } from "@/src/lib/invoice-lines";
 
 describe("InvoiceLinesEditor", () => {
@@ -26,8 +37,8 @@ describe("InvoiceLinesEditor", () => {
   it("has a narrow-screen grid with full-width descriptions and account selection", () => {
     const css = readFileSync(new URL("../../app/globals.css", import.meta.url), "utf8");
 
-    expect(css).toMatch(/@media \(max-width: 767px\)[\s\S]*\.invoice-line-core-grid\s*{[\s\S]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
-    expect(css).toMatch(/\.invoice-line-description-field\s*{\s*grid-column: 1 \/ -1;/);
+    expect(css).toMatch(/@media \(max-width: 767px\)[\s\S]*\.invoice-line-core-grid\s*{[\s\S]*grid-template-columns: repeat\(4, minmax\(0, 1fr\)\)/);
+    expect(css).toMatch(/\.invoice-line-original-description-field\s*{\s*grid-column: 1 \/ -1;/);
     expect(css).toMatch(/\.invoice-line-account-field\s*{[\s\S]*width: 100%;[\s\S]*max-width: none;/);
     expect(css).toMatch(/\.invoice-line-control\s*{[\s\S]*min-height: 40px;[\s\S]*font-size: 16px !important;/);
   });

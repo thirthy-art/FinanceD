@@ -2,6 +2,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import type { CurrencyTotal } from "@/src/lib/cash-flow-buckets";
+import { useI18n } from "@/src/i18n/context";
 
 export interface WeeklyInvoice {
   id: number;
@@ -37,6 +38,8 @@ function formatAmount(amount: string | null, currencyType: "fiat" | "crypto"): s
 }
 
 function InvoiceDetailRow({ inv }: { inv: WeeklyInvoice }) {
+  const { t } = useI18n();
+  const cf = t.cashFlow;
   return (
     <div style={{
       display: "flex",
@@ -50,13 +53,13 @@ function InvoiceDetailRow({ inv }: { inv: WeeklyInvoice }) {
         href={`/invoices/${inv.id}`}
         style={{ color: "#2563eb", fontWeight: 500, textDecoration: "none", fontSize: 13 }}
       >
-        {inv.vendorName ?? <span style={{ color: "#94a3b8" }}>Unknown vendor</span>}
+        {inv.vendorName ?? <span style={{ color: "#94a3b8" }}>{cf.unknownVendor}</span>}
       </Link>
       <span style={{ color: "#64748b", fontSize: 12 }}>
         {inv.invoiceNumber ?? "—"}
       </span>
       <span style={{ color: "#64748b", fontSize: 12 }}>
-        Due: {inv.dueDate ?? "—"}
+        {cf.mobileDue} {inv.dueDate ?? "—"}
       </span>
       <span style={{ fontWeight: 600, fontSize: 13, marginLeft: "auto" }}>
         {inv.currency} {formatAmount(inv.grossAmount, inv.currencyType)}
@@ -93,6 +96,8 @@ function WeekCard({
   currencyTotals,
   accent,
 }: WeekData & { accent: string }) {
+  const { t } = useI18n();
+  const cf = t.cashFlow;
   const [open, setOpen] = useState(false);
   const count = invoices.length;
 
@@ -124,7 +129,7 @@ function WeekCard({
               <CurrencyTotalList totals={currencyTotals} />
             </div>
             <div style={{ fontSize: 11, color: "#94a3b8" }}>
-              {count === 0 ? "no invoices" : `${count} invoice${count === 1 ? "" : "s"}`}
+              {count === 0 ? cf.noInvoices : `${count} invoice${count === 1 ? "" : "s"}`}
             </div>
           </div>
           {count > 0 && (
@@ -147,6 +152,8 @@ function WeekCard({
 }
 
 function OverdueCard({ overdue }: { overdue: OverdueData }) {
+  const { t } = useI18n();
+  const cf = t.cashFlow;
   const [open, setOpen] = useState(false);
   const count = overdue.invoices.length;
 
@@ -169,8 +176,8 @@ function OverdueCard({ overdue }: { overdue: OverdueData }) {
         }}
       >
         <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-          <span style={{ fontWeight: 700, fontSize: 14, color: "#dc2626" }}>Overdue</span>
-          <span style={{ fontSize: 11, color: "#f87171" }}>Payment past due date</span>
+          <span style={{ fontWeight: 700, fontSize: 14, color: "#dc2626" }}>{cf.bucketOverdue}</span>
+          <span style={{ fontSize: 11, color: "#f87171" }}>{cf.paymentPastDue}</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ textAlign: "right" }}>
@@ -178,7 +185,7 @@ function OverdueCard({ overdue }: { overdue: OverdueData }) {
               <CurrencyTotalList totals={overdue.currencyTotals} />
             </div>
             <div style={{ fontSize: 11, color: "#f87171" }}>
-              {count === 0 ? "none" : `${count} invoice${count === 1 ? "" : "s"}`}
+              {count === 0 ? cf.noneLabel : `${count} invoice${count === 1 ? "" : "s"}`}
             </div>
           </div>
           {count > 0 && (

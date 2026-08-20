@@ -5,6 +5,7 @@ import { emptyEditableInvoiceLine, sumInvoiceLineAmounts, applyAutoCalcToLine, p
 import { safeParseDecimal, amountsWithinTolerance, FIAT_TOLERANCE, stripTrailingZeros } from "@/src/lib/invoice-validation";
 import { Decimal } from "@/src/lib/decimal";
 import { deriveRecognitionSchedule } from "@/src/lib/recognition";
+import { useI18n } from "@/src/i18n/context";
 
 interface Props {
   lines: EditableInvoiceLine[];
@@ -46,7 +47,7 @@ const selectStyle: React.CSSProperties = {
   cursor: "pointer",
 };
 
-function fieldInputStyle(raw: string, derived: boolean, hasError: boolean): React.CSSProperties {
+function fieldInputStyle(_raw: string, derived: boolean, hasError: boolean): React.CSSProperties {
   if (hasError) return errorInputStyle;
   if (derived) return derivedStyle;
   return inputStyle;
@@ -165,6 +166,9 @@ function RecognitionPreview({
   currency?: string;
   baseCurrency?: string;
 }) {
+  const { t } = useI18n();
+  const il = t.invoiceLines;
+
   if (line.recognitionTreatment !== "Prepaid") return null;
   if (!line.recognitionStartDate || !line.recognitionEndDate) return null;
 
@@ -192,15 +196,20 @@ function RecognitionPreview({
 
   if (rows.length === 0) return null;
 
+  const s = rows.length !== 1 ? "s" : "";
+  const title = il.recognitionScheduleTitle
+    .replace("{count}", String(rows.length))
+    .replace("{s}", s);
+
   return (
     <div style={{ marginTop: 8, padding: "8px 10px", background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 5 }}>
       <div style={{ fontSize: 10, fontWeight: 700, color: "#0369a1", textTransform: "uppercase", marginBottom: 6 }}>
-        Recognition schedule ({rows.length} month{rows.length !== 1 ? "s" : ""})
+        {title}
       </div>
       <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 11 }}>
         <thead>
           <tr style={{ color: "#64748b" }}>
-            <th style={{ textAlign: "left", padding: "2px 6px 2px 0" }}>Month</th>
+            <th style={{ textAlign: "left", padding: "2px 6px 2px 0" }}>{il.month}</th>
             <th style={{ textAlign: "right", padding: "2px 0 2px 6px" }}>{currency || "Orig"}</th>
             {showBase && <th style={{ textAlign: "right", padding: "2px 0 2px 6px" }}>{baseCurrency}</th>}
           </tr>
@@ -217,7 +226,7 @@ function RecognitionPreview({
       </table>
       {isForeignCurrency && !hasValidFx && (
         <div style={{ marginTop: 6, fontSize: 10, color: "#0369a1" }}>
-          Enter a valid FX rate to see {baseCurrency} amounts.
+          {il.enterFxForBase.replace("{base}", baseCurrency ?? "")}
         </div>
       )}
     </div>
@@ -236,6 +245,10 @@ export default function InvoiceLinesEditor({
   currencyType = "fiat",
   onChange,
 }: Props) {
+  const { t } = useI18n();
+  const il = t.invoiceLines;
+  const cm = t.common;
+
   const displayLines = lines.map(applyAutoCalcToLine);
   const lineAmountSummary = sumInvoiceLineAmounts(displayLines);
   const parsedInvoiceNet = safeParseDecimal(invoiceNetAmount);
@@ -261,20 +274,20 @@ export default function InvoiceLinesEditor({
     <div style={{ marginBottom: 20 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
         <div style={{ fontSize: 12, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.04em" }}>
-          Invoice lines ({lines.length})
+          {il.titleWithCount.replace("{count}", String(lines.length))}
         </div>
         <button
           type="button"
           onClick={() => onChange([...lines, emptyEditableInvoiceLine()])}
           style={{ padding: "6px 10px", border: "1px solid #cbd5e1", borderRadius: 6, background: "#fff", cursor: "pointer", fontSize: 12 }}
         >
-          + Add line
+          {il.addLine}
         </button>
       </div>
 
       {lines.length === 0 ? (
         <div style={{ padding: 14, border: "1px dashed #cbd5e1", borderRadius: 6, color: "#64748b", fontSize: 13 }}>
-          No invoice lines yet. Apply AI extraction or add a line manually.
+          {il.noLines}
         </div>
       ) : (
         <div>
@@ -291,19 +304,19 @@ export default function InvoiceLinesEditor({
                 {/* Row 1: core fields */}
                 <div className="invoice-line-core-grid">
                   <div className="invoice-line-field invoice-line-compact-field invoice-line-number-field">
-                    <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Line #</div>
+                    <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>{il.lineNum}</div>
                     <input className="invoice-line-control" aria-label={`Line ${index + 1} number`} style={inputStyle} value={line.lineNumber} onChange={(e) => update(index, "lineNumber", e.target.value)} />
                   </div>
                   <div className="invoice-line-field invoice-line-description-field invoice-line-original-description-field">
-                    <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Original description</div>
+                    <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>{il.origDesc}</div>
                     <textarea className="invoice-line-control" aria-label={`Line ${index + 1} original description`} style={{ ...inputStyle, resize: "vertical" }} value={line.descriptionOriginal} onChange={(e) => update(index, "descriptionOriginal", e.target.value)} />
                   </div>
                   <div className="invoice-line-field invoice-line-description-field invoice-line-english-description-field">
-                    <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Description</div>
+                    <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>{il.description}</div>
                     <textarea className="invoice-line-control" aria-label={`Line ${index + 1} English description`} style={{ ...inputStyle, resize: "vertical" }} value={line.description} onChange={(e) => update(index, "description", e.target.value)} />
                   </div>
                   <div className="invoice-line-field invoice-line-compact-field invoice-line-qty-field">
-                    <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Qty</div>
+                    <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>{il.qty}</div>
                     <input
                       className="invoice-line-control"
                       aria-label={`Line ${index + 1} quantity`}
@@ -313,11 +326,11 @@ export default function InvoiceLinesEditor({
                     />
                   </div>
                   <div className="invoice-line-field invoice-line-compact-field invoice-line-unit-field">
-                    <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Unit of measure</div>
+                    <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>{il.unit}</div>
                     <input className="invoice-line-control" aria-label={`Line ${index + 1} unit`} style={inputStyle} value={line.unit} onChange={(e) => update(index, "unit", e.target.value)} />
                   </div>
                   <div className="invoice-line-field invoice-line-compact-field invoice-line-amounts-field">
-                    <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Unit price</div>
+                    <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>{il.unitPrice}</div>
                     <input
                       className="invoice-line-control"
                       aria-label={`Line ${index + 1} unitPrice`}
@@ -327,18 +340,18 @@ export default function InvoiceLinesEditor({
                     />
                   </div>
                   <div className="invoice-line-field invoice-line-compact-field invoice-line-amounts-field">
-                    <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Net amount</div>
+                    <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>{il.netAmount}</div>
                     <input
                       className="invoice-line-control"
                       aria-label={`Line ${index + 1} netAmount`}
                       style={fieldInputStyle(line.netAmount, ld.netDerived, !!ld.netError)}
                       value={ld.netDerived ? stripTrailingZeros(displayLine.netAmount) : line.netAmount}
                       onChange={(e) => update(index, "netAmount", e.target.value)}
-                      title={ld.netDerived ? "Auto-calculated from Qty × Unit Price" : undefined}
+                      title={ld.netDerived ? il.autoCalcNet : undefined}
                     />
                   </div>
                   <div className="invoice-line-field invoice-line-compact-field invoice-line-amounts-field">
-                    <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>VAT rate (%)</div>
+                    <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>{il.vatRate}</div>
                     <input
                       className="invoice-line-control"
                       aria-label={`Line ${index + 1} vatRate`}
@@ -348,29 +361,29 @@ export default function InvoiceLinesEditor({
                     />
                   </div>
                   <div className="invoice-line-field invoice-line-compact-field invoice-line-amounts-field">
-                    <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>VAT amount</div>
+                    <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>{il.vatAmount}</div>
                     <input
                       className="invoice-line-control"
                       aria-label={`Line ${index + 1} vatAmount`}
                       style={fieldInputStyle(line.vatAmount, ld.vatDerived, !!ld.vatAmtError)}
                       value={ld.vatDerived ? stripTrailingZeros(displayLine.vatAmount) : line.vatAmount}
                       onChange={(e) => update(index, "vatAmount", e.target.value)}
-                      title={ld.vatDerived ? "Auto-calculated from Net × VAT rate" : undefined}
+                      title={ld.vatDerived ? il.autoCalcVat : undefined}
                     />
                   </div>
                   <div className="invoice-line-field invoice-line-compact-field invoice-line-amounts-field">
-                    <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Gross amount</div>
+                    <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>{il.grossAmount}</div>
                     <input
                       className="invoice-line-control"
                       aria-label={`Line ${index + 1} grossAmount`}
                       style={fieldInputStyle(line.grossAmount, ld.grossDerived, !!ld.grossError)}
                       value={ld.grossDerived ? stripTrailingZeros(displayLine.grossAmount) : line.grossAmount}
                       onChange={(e) => update(index, "grossAmount", e.target.value)}
-                      title={ld.grossDerived ? "Auto-calculated from Net + VAT" : undefined}
+                      title={ld.grossDerived ? il.autoCalcGross : undefined}
                     />
                   </div>
                   <div className="invoice-line-field invoice-line-compact-field invoice-line-page-field">
-                    <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Page</div>
+                    <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>{il.page}</div>
                     <input
                       className="invoice-line-control"
                       aria-label={`Line ${index + 1} sourcePage`}
@@ -388,7 +401,7 @@ export default function InvoiceLinesEditor({
                       onClick={() => onChange(lines.filter((_, lineIndex) => lineIndex !== index))}
                       style={{ padding: "6px 8px", border: "1px solid #fecaca", borderRadius: 5, background: "#fff", color: "#dc2626", cursor: "pointer", fontSize: 11 }}
                     >
-                      Delete
+                      {il.del}
                     </button>
                   </div>
                 </div>
@@ -396,29 +409,29 @@ export default function InvoiceLinesEditor({
                 {/* Per-line validation banners */}
                 {ld.vatRateOutOfRange && (
                   <div style={{ marginTop: 6, padding: "5px 8px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 4, color: "#dc2626", fontSize: 11 }}>
-                    VAT rate must be between 0 and 100 (as percentage points, e.g. 19 for 19%).
+                    {il.vatOutOfRange}
                   </div>
                 )}
                 {ld.qtyNetMismatch && (
                   <div style={{ marginTop: 6, padding: "5px 8px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 4, color: "#92400e", fontSize: 11 }}>
-                    Warning: Qty × Unit Price does not match Net Amount. Values were not changed automatically.
+                    {il.qtyNetMismatch}
                   </div>
                 )}
                 {ld.vatMismatch && (
                   <div style={{ marginTop: 6, padding: "5px 8px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 4, color: "#92400e", fontSize: 11 }}>
-                    Warning: Net × VAT rate does not match VAT Amount. Values were not changed automatically.
+                    {il.vatMismatch}
                   </div>
                 )}
                 {ld.grossMismatch && (
                   <div style={{ marginTop: 6, padding: "5px 8px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 4, color: "#92400e", fontSize: 11 }}>
-                    Warning: Net + VAT Amount does not match Gross Amount. Values were not changed automatically.
+                    {il.grossMismatch}
                   </div>
                 )}
 
                 {/* Row 2: recognition + accounting fields */}
                 <div className="invoice-line-recognition-grid">
                   <div className="invoice-line-treatment-field">
-                    <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Treatment</div>
+                    <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>{il.treatment}</div>
                     <select
                       aria-label={`Line ${index + 1} recognition treatment`}
                       className="invoice-line-control"
@@ -426,15 +439,15 @@ export default function InvoiceLinesEditor({
                       value={line.recognitionTreatment}
                       onChange={(e) => updateTreatment(index, e.target.value as "Immediate" | "Prepaid")}
                     >
-                      <option value="Immediate">Immediate</option>
-                      <option value="Prepaid">Prepaid</option>
+                      <option value="Immediate">{il.immediate}</option>
+                      <option value="Prepaid">{il.prepaid}</option>
                     </select>
                   </div>
 
                   {line.recognitionTreatment === "Prepaid" && (
                     <>
                       <div className="invoice-line-date-field">
-                        <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Recog. start date</div>
+                        <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>{il.recognitionStart}</div>
                         <input
                           type="date"
                           aria-label={`Line ${index + 1} recognition start date`}
@@ -445,7 +458,7 @@ export default function InvoiceLinesEditor({
                         />
                       </div>
                       <div className="invoice-line-date-field">
-                        <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Recog. end date</div>
+                        <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>{il.recognitionEnd}</div>
                         <input
                           type="date"
                           aria-label={`Line ${index + 1} recognition end date`}
@@ -460,7 +473,7 @@ export default function InvoiceLinesEditor({
                   )}
 
                   <div className="invoice-line-account-field">
-                    <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Expense account</div>
+                    <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>{il.expenseAccount}</div>
                     <select
                       aria-label={`Line ${index + 1} accounting account number`}
                       className="invoice-line-control"
@@ -468,7 +481,7 @@ export default function InvoiceLinesEditor({
                       value={line.accountingAccountNumber}
                       onChange={(e) => update(index, "accountingAccountNumber", e.target.value)}
                     >
-                      <option value="">-- none --</option>
+                      <option value="">{cm.selectNone}</option>
                       {postingAccounts.map((account) => (
                         <option key={account.code} value={account.code}>
                           {account.code} — {account.name}
@@ -479,7 +492,7 @@ export default function InvoiceLinesEditor({
 
                   {line.recognitionTreatment === "Prepaid" && (
                     <div className="invoice-line-account-field">
-                      <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>Prepaid asset account</div>
+                      <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>{il.prepaidAccount}</div>
                       <select
                         aria-label={`Line ${index + 1} prepaid account number`}
                         className="invoice-line-control"
@@ -487,7 +500,7 @@ export default function InvoiceLinesEditor({
                         value={line.prepaidAccountNumber}
                         onChange={(e) => update(index, "prepaidAccountNumber", e.target.value)}
                       >
-                        <option value="">-- none --</option>
+                        <option value="">{cm.selectNone}</option>
                         {prepaidAccounts.map((account) => (
                           <option key={account.code} value={account.code}>
                             {account.code} — {account.name}
@@ -501,17 +514,17 @@ export default function InvoiceLinesEditor({
                 {/* Prepaid date validation hints */}
                 {line.recognitionTreatment === "Prepaid" && line.recognitionStartDate && line.recognitionEndDate && line.recognitionEndDate < line.recognitionStartDate && (
                   <div style={{ marginTop: 6, padding: "5px 8px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 4, color: "#dc2626", fontSize: 11 }}>
-                    End date must be on or after start date.
+                    {il.endBeforeStart}
                   </div>
                 )}
                 {line.recognitionTreatment === "Prepaid" && (!line.recognitionStartDate || !line.recognitionEndDate) && (
                   <div style={{ marginTop: 6, padding: "5px 8px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 4, color: "#92400e", fontSize: 11 }}>
-                    Start and end dates are required before approval.
+                    {il.datesRequired}
                   </div>
                 )}
                 {line.recognitionTreatment === "Prepaid" && (!line.accountingAccountNumber || !line.prepaidAccountNumber) && (
                   <div style={{ marginTop: 6, padding: "5px 8px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 4, color: "#92400e", fontSize: 11 }}>
-                    Expense account and prepaid asset account are required before approval.
+                    {il.accountsRequired}
                   </div>
                 )}
 
@@ -531,21 +544,23 @@ export default function InvoiceLinesEditor({
 
       <div style={{ marginTop: 12, padding: 12, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 6, fontSize: 13 }}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 16 }}>
-          <span style={{ color: "#475569" }}>Sum of invoice lines</span>
+          <span style={{ color: "#475569" }}>{il.sumOfLines}</span>
           <strong style={{ color: "#1e293b" }}>{lineAmountSummary.sum}</strong>
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 16, marginTop: 5 }}>
-          <span style={{ color: "#475569" }}>Invoice net amount</span>
-          <strong style={{ color: "#1e293b" }}>{(comparableInvoiceNet ?? invoiceNetAmount) || "—"}</strong>
+          <span style={{ color: "#475569" }}>{il.invoiceNet}</span>
+          <strong style={{ color: "#1e293b" }}>{(comparableInvoiceNet ?? invoiceNetAmount) || cm.none}</strong>
         </div>
         {lineAmountSummary.invalidLineNumbers.length > 0 && (
           <div style={{ marginTop: 9, padding: "8px 10px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 5, color: "#b91c1c" }}>
-            Enter a valid line amount for line{lineAmountSummary.invalidLineNumbers.length === 1 ? "" : "s"} {lineAmountSummary.invalidLineNumbers.join(", ")} before comparing totals.
+            {il.enterValidLine
+              .replace("{s}", lineAmountSummary.invalidLineNumbers.length === 1 ? "" : "s")
+              .replace("{lines}", lineAmountSummary.invalidLineNumbers.join(", "))}
           </div>
         )}
         {amountsMismatch && (
           <div style={{ marginTop: 9, padding: "8px 10px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 5, color: "#92400e" }}>
-            The sum of invoice lines does not match the invoice net amount. Review the lines or net amount before saving; neither value was changed automatically.
+            {il.lineSumMismatch}
           </div>
         )}
       </div>

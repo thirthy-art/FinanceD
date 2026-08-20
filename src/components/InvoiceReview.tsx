@@ -8,6 +8,7 @@ import { editableLineToInput, applyAutoCalcToLine, isCompletelyEmptyLine, parseP
 import { applyExtractionLines, applyExtractionToDraft, extractionLinesToEditable } from "@/src/lib/apply-ai-extraction";
 import InvoiceLinesEditor from "@/src/components/InvoiceLinesEditor";
 import { selectableExpenseAccounts, selectablePrepaidAssetAccounts } from "@/src/lib/coa-hierarchy";
+import { useI18n } from "@/src/i18n/context";
 
 interface Vendor { id: number; name: string; taxId: string | null; normalizedTaxId?: string | null; invoiceCount?: number; }
 interface CostCentre { id: number; code: string; name: string; }
@@ -115,17 +116,20 @@ function extractionValue(value: string | number | null) {
 }
 
 function AiExtractionPreview({ extraction }: { extraction: AiInvoiceExtraction }) {
+  const { t } = useI18n();
+  const ir = t.invoiceReview;
+
   const headerFields: Array<[string, string | null]> = [
-    ["Vendor (original)", extraction.vendorOriginal],
-    ["Vendor (English)", extraction.vendorNormalized],
-    ["Vendor Tax ID", extraction.vendorTaxId],
-    ["Invoice number", extraction.invoiceNumber],
-    ["Invoice date", extraction.invoiceDate],
-    ["Due date", extraction.dueDate],
-    ["Currency", extraction.currency],
-    ["Net amount", extraction.netAmount],
-    ["VAT amount", extraction.vatAmount],
-    ["Gross amount", extraction.grossAmount],
+    [ir.aiFieldVendorOriginal, extraction.vendorOriginal],
+    [ir.aiFieldVendorEnglish, extraction.vendorNormalized],
+    [ir.aiFieldVendorTaxId, extraction.vendorTaxId],
+    [ir.aiFieldInvoiceNumber, extraction.invoiceNumber],
+    [ir.aiFieldInvoiceDate, extraction.invoiceDate],
+    [ir.aiFieldDueDate, extraction.dueDate],
+    [ir.aiFieldCurrency, extraction.currency],
+    [ir.aiFieldNetAmount, extraction.netAmount],
+    [ir.aiFieldVatAmount, extraction.vatAmount],
+    [ir.aiFieldGrossAmount, extraction.grossAmount],
   ];
 
   const cellStyle: React.CSSProperties = {
@@ -139,12 +143,12 @@ function AiExtractionPreview({ extraction }: { extraction: AiInvoiceExtraction }
   return (
     <div style={{ background: "#fff", border: "1px solid #bfdbfe", borderRadius: 8, marginBottom: 16, overflow: "hidden" }}>
       <div style={{ padding: "14px 16px", background: "#eff6ff", borderBottom: "1px solid #bfdbfe" }}>
-        <div style={{ fontWeight: 700, color: "#1e3a5f" }}>AI extraction preview</div>
+        <div style={{ fontWeight: 700, color: "#1e3a5f" }}>{ir.aiPreviewTitle}</div>
       </div>
 
       <div style={{ padding: 16 }}>
         <div style={{ fontSize: 12, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 10 }}>
-          Invoice header
+          {ir.aiPreviewHeader}
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10, marginBottom: 20 }}>
           {headerFields.map(([label, value]) => (
@@ -156,18 +160,18 @@ function AiExtractionPreview({ extraction }: { extraction: AiInvoiceExtraction }
         </div>
 
         <div style={{ fontSize: 12, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 10 }}>
-          Invoice lines ({extraction.lines.length})
+          {t.invoiceLines.titleWithCount.replace("{count}", String(extraction.lines.length))}
         </div>
         {extraction.lines.length === 0 ? (
-          <div style={{ color: "#64748b", fontSize: 13 }}>AI extraction did not find any invoice lines.</div>
+          <div style={{ color: "#64748b", fontSize: 13 }}>{ir.aiNoLinesFound}</div>
         ) : (
           <div style={{ overflowX: "auto", border: "1px solid #e2e8f0", borderRadius: 6 }}>
             <table style={{ borderCollapse: "collapse", minWidth: 1180, width: "100%", textAlign: "left" }}>
               <thead style={{ background: "#f8fafc", color: "#475569" }}>
                 <tr>
                   {[
-                    "#", "Line", "Description (original)", "Description (English)", "Qty", "Unit",
-                    "Unit price", "Net", "VAT rate", "VAT", "Gross", "Page",
+                    ir.aiColNum, ir.aiColLine, ir.aiColDescOriginal, ir.aiColDescEnglish, ir.aiColQty, ir.aiColUnit,
+                    ir.aiColUnitPrice, ir.aiColNet, ir.aiColVatRate, ir.aiColVat, ir.aiColGross, ir.aiColPage,
                   ].map((heading) => (
                     <th key={heading} style={{ ...cellStyle, fontWeight: 700 }}>{heading}</th>
                   ))}
@@ -201,6 +205,10 @@ function AiExtractionPreview({ extraction }: { extraction: AiInvoiceExtraction }
 
 export default function InvoiceReview({ invoice, documents, lines, vendors, costCentres, accounts, extractedFields, baseCurrency }: Props) {
   const router = useRouter();
+  const { t } = useI18n();
+  const ir = t.invoiceReview;
+  const cm = t.common;
+
   const isApproved = invoice.status === "approved";
   const isSameCurrency = invoice.currency === baseCurrency;
 
@@ -302,7 +310,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
 
   async function save(action: "save" | "approve") {
     if (hasInvalidPage) {
-      setSaveError("Fix invalid page numbers before saving.");
+      setSaveError(ir.fixInvalidPages);
       return;
     }
     setSaving(true);
@@ -405,8 +413,8 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
     );
 
     const applied = [...draftResult.appliedFields];
-    const skipped = draftResult.skippedFields.filter((field) => !field.includes("(unrecognized date)"));
-    const warnings = draftResult.skippedFields.filter((field) => field.includes("(unrecognized date)"));
+    const skipped = draftResult.skippedFields.filter((f) => !f.includes("(unrecognized date)"));
+    const warnings = draftResult.skippedFields.filter((f) => f.includes("(unrecognized date)"));
     if (aiExtraction.lines.length > 0) {
       if (lineResult.applied) applied.push("Invoice lines");
       else skipped.push("Invoice lines");
@@ -545,6 +553,9 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
   const expenseAccounts = selectableExpenseAccounts(accounts);
   const prepaidAssetAccounts = selectablePrepaidAssetAccounts(accounts);
 
+  const paymentStatusLabel = paymentStatus === "Paid" ? cm.statusPaid : cm.statusUnpaid;
+  const invoiceStatusLabel = isApproved ? cm.statusApproved : cm.statusDraft;
+
   return (
     <div className="invoice-layout">
       {/* Narrow-screen: link to open document without the full side panel */}
@@ -568,7 +579,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
               textDecoration: "none",
             }}
           >
-            📄 View Original Document
+            📄 {t.invoiceDetail.viewDocument}
           </a>
         </div>
       )}
@@ -599,10 +610,10 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
             alignItems: "center",
           }}
         >
-          <span>Original Document</span>
+          <span>{ir.originalDocument}</span>
           {doc && (
             <span style={{ fontSize: 11, color: "#94a3b8", fontWeight: 400 }}>
-              {doc.ocrPerformed ? "OCR applied" : "Text extracted"} · {doc.originalFilename}
+              {doc.ocrPerformed ? ir.ocrApplied : ir.textExtracted} · {doc.originalFilename}
             </span>
           )}
         </div>
@@ -623,7 +634,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
           )
         ) : (
           <div style={{ padding: 40, textAlign: "center", color: "#94a3b8" }}>
-            No document attached
+            {ir.noDocument}
           </div>
         )}
       </div>
@@ -631,10 +642,9 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
       {/* Editable fields */}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: 16, marginBottom: 16 }}>
-          <div style={{ fontWeight: 700, color: "#1e3a5f", marginBottom: 5 }}>AI extraction preview</div>
+          <div style={{ fontWeight: 700, color: "#1e3a5f", marginBottom: 5 }}>{ir.aiSectionTitle}</div>
           <div style={{ fontSize: 13, lineHeight: 1.5, color: "#475569", marginBottom: 12 }}>
-            Before sending: this invoice document will be processed by the configured AI extraction service.
-            AI extraction produces a preview only. Clicking Apply replaces current invoice-header fields where AI returned a value; null AI values leave current values unchanged. Applying the preview does not save or approve the invoice automatically.
+            {ir.aiSectionDesc}
           </div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <button
@@ -652,7 +662,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
                 fontWeight: 600,
               }}
             >
-              {extracting ? "Running AI extraction…" : "Try AI extraction"}
+              {extracting ? ir.runningAiExtraction : ir.tryAiExtraction}
             </button>
             {aiExtraction && (
               <button
@@ -660,16 +670,16 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
                 onClick={applyAiExtraction}
                 style={{ padding: "9px 14px", border: "none", borderRadius: 6, background: "#16a34a", color: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 700 }}
               >
-                Apply AI extraction
+                {ir.applyAiExtraction}
               </button>
             )}
           </div>
           {aiExtraction && !applyNotice && (
             <div style={{ marginTop: 10, color: "#475569", fontSize: 13 }}>
-              Review the extracted values, then apply them to the draft.
+              {ir.reviewThenApply}
             </div>
           )}
-          {!doc && <div style={{ marginTop: 8, color: "#64748b", fontSize: 12 }}>Attach a document before trying AI extraction.</div>}
+          {!doc && <div style={{ marginTop: 8, color: "#64748b", fontSize: 12 }}>{ir.attachFirst}</div>}
           {extractionError && (
             <div style={{ marginTop: 12, padding: "9px 12px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 6, color: "#b91c1c", fontSize: 13 }}>
               {extractionError}
@@ -677,21 +687,21 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
           )}
           {applyNotice && (
             <div style={{ marginTop: 12, padding: "9px 12px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 6, color: "#166534", fontSize: 13 }}>
-              <div>AI values were applied to the draft. Review them before saving.</div>
-              {applyNotice.applied.length > 0 && <div>Applied: {applyNotice.applied.join(", ")}.</div>}
+              <div>{ir.aiApplied}</div>
+              {applyNotice.applied.length > 0 && <div>{ir.aiAppliedFields} {applyNotice.applied.join(", ")}.</div>}
               {applyNotice.skipped.length > 0 && (
                 <div style={{ color: "#92400e", marginTop: 4 }}>
-                  Not applied: {applyNotice.skipped.join(", ")}.
+                  {ir.aiNotApplied} {applyNotice.skipped.join(", ")}.
                 </div>
               )}
               {applyNotice.warnings.length > 0 && (
-                <div style={{ color: "#92400e", marginTop: 4 }}>Could not apply: {applyNotice.warnings.join(", ")}.</div>
+                <div style={{ color: "#92400e", marginTop: 4 }}>{ir.aiCouldNotApply} {applyNotice.warnings.join(", ")}.</div>
               )}
             </div>
           )}
           {vendorCandidates.length > 1 && (
             <div style={{ marginTop: 10, padding: "9px 12px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 6, color: "#92400e", fontSize: 13 }}>
-              <div style={{ fontWeight: 700, marginBottom: 6 }}>Multiple vendors match. Select one or merge duplicates from Vendor settings.</div>
+              <div style={{ fontWeight: 700, marginBottom: 6 }}>{ir.multipleVendors}</div>
               {vendorCandidates.map((candidate) => (
                 <button
                   key={candidate.id}
@@ -723,7 +733,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
           }}
         >
           <div className="invoice-details-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-            <h2 style={{ fontSize: 18, fontWeight: 700, color: "#1e3a5f" }}>Invoice Details</h2>
+            <h2 style={{ fontSize: 18, fontWeight: 700, color: "#1e3a5f" }}>{ir.invoiceDetails}</h2>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
               <span
                 style={{
@@ -735,7 +745,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
                   color: isApproved ? "#166534" : "#713f12",
                 }}
               >
-                {invoice.status}
+                {invoiceStatusLabel}
               </span>
               <span
                 style={{
@@ -747,7 +757,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
                   color: paymentStatus === "Paid" ? "#166534" : "#475569",
                 }}
               >
-                {paymentStatus}
+                {paymentStatusLabel}
               </span>
             </div>
           </div>
@@ -755,14 +765,14 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
           {/* Payment status controls */}
           <div className="invoice-payment-section" style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: 12, marginBottom: 16 }}>
             <div style={{ fontSize: 12, fontWeight: 600, color: "#64748b", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.04em" }}>
-              Payment
+              {ir.payment}
             </div>
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
               {paymentStatus === "Unpaid" ? (
                 <>
                   <input
                     type="date"
-                    aria-label="Paid date"
+                    aria-label={ir.paidDateLabel}
                     value={pendingPaidDate}
                     onChange={(e) => setPendingPaidDate(e.target.value)}
                     style={{ padding: "6px 8px", border: "1px solid #e2e8f0", borderRadius: 5, fontSize: 13 }}
@@ -773,14 +783,14 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
                     disabled={paymentSaving}
                     style={{ padding: "6px 14px", border: "none", borderRadius: 5, background: paymentSaving ? "#cbd5e1" : "#16a34a", color: "#fff", cursor: paymentSaving ? "default" : "pointer", fontSize: 13, fontWeight: 600 }}
                   >
-                    Mark paid
+                    {ir.markPaid}
                   </button>
                 </>
               ) : (
                 <>
                   <input
                     type="date"
-                    aria-label="Paid date"
+                    aria-label={ir.paidDateLabel}
                     value={pendingPaidDate}
                     onChange={(e) => setPendingPaidDate(e.target.value)}
                     style={{ padding: "6px 8px", border: "1px solid #e2e8f0", borderRadius: 5, fontSize: 13 }}
@@ -792,7 +802,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
                       disabled={paymentSaving}
                       style={{ padding: "6px 14px", border: "none", borderRadius: 5, background: paymentSaving ? "#cbd5e1" : "#2563eb", color: "#fff", cursor: paymentSaving ? "default" : "pointer", fontSize: 13, fontWeight: 600 }}
                     >
-                      Save date
+                      {ir.saveDate}
                     </button>
                   )}
                   <button
@@ -801,7 +811,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
                     disabled={paymentSaving}
                     style={{ padding: "6px 14px", border: "1px solid #e2e8f0", borderRadius: 5, background: paymentSaving ? "#f1f5f9" : "#fff", color: "#475569", cursor: paymentSaving ? "default" : "pointer", fontSize: 13 }}
                   >
-                    Mark unpaid
+                    {ir.markUnpaid}
                   </button>
                 </>
               )}
@@ -815,7 +825,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
 
           {/* Vendor */}
           {field(
-            "Vendor",
+            ir.vendor,
             <>
               {!addVendor ? (
                 <div style={{ display: "flex", gap: 8 }}>
@@ -823,7 +833,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
                     set("vendorId")(event);
                     setVendorCandidates([]);
                   }}>
-                    <option value="">-- select vendor --</option>
+                    <option value="">{ir.selectVendor}</option>
                     {vendorOptions.map((v) => (
                       <option key={v.id} value={v.id}>{v.name}</option>
                     ))}
@@ -837,13 +847,13 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
                     style={{ padding: "8px 12px", border: "1px solid #e2e8f0", borderRadius: 6, background: "#f8fafc", cursor: "pointer", fontSize: 13 }}
                     type="button"
                   >
-                    + New
+                    {ir.newVendorBtn}
                   </button>
                 </div>
               ) : (
                 <div className="invoice-vendor-new-grid" style={{ display: "grid", gridTemplateColumns: "1fr 160px auto", gap: 8 }}>
-                  <input style={inputStyle} placeholder="Vendor name" aria-label="New vendor name" value={form.newVendorName} onChange={set("newVendorName")} />
-                  <input style={inputStyle} placeholder="VAT / Tax ID" aria-label="New vendor VAT or Tax ID" value={form.newVendorTaxId} onChange={set("newVendorTaxId")} />
+                  <input style={inputStyle} placeholder={ir.vendorNamePlaceholder} aria-label="New vendor name" value={form.newVendorName} onChange={set("newVendorName")} />
+                  <input style={inputStyle} placeholder={ir.vatTaxId} aria-label="New vendor VAT or Tax ID" value={form.newVendorTaxId} onChange={set("newVendorTaxId")} />
                   <button
                     onClick={() => {
                       setAddVendor(false);
@@ -852,7 +862,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
                     style={{ padding: "8px 12px", border: "1px solid #e2e8f0", borderRadius: 6, background: "#f8fafc", cursor: "pointer", fontSize: 13 }}
                     type="button"
                   >
-                    Cancel
+                    {cm.cancel}
                   </button>
                 </div>
               )}
@@ -861,14 +871,14 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
 
           {/* Invoice number + date */}
           <div className="invoice-field-row" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-            {field("Invoice Number", <input style={inputStyle} value={form.invoiceNumber} onChange={set("invoiceNumber")} placeholder="INV-001" />)}
-            {field("Invoice Date", <input style={inputStyle} type="date" value={form.invoiceDate} onChange={set("invoiceDate")} />)}
+            {field(ir.invoiceNumber, <input style={inputStyle} value={form.invoiceNumber} onChange={set("invoiceNumber")} placeholder="INV-001" />)}
+            {field(ir.invoiceDate, <input style={inputStyle} type="date" value={form.invoiceDate} onChange={set("invoiceDate")} />)}
           </div>
 
           <div className="invoice-field-row" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-            {field("Due Date (optional)", <input style={inputStyle} type="date" value={form.dueDate} onChange={set("dueDate")} />)}
+            {field(ir.dueDate, <input style={inputStyle} type="date" value={form.dueDate} onChange={set("dueDate")} />)}
             {field(
-              "Currency",
+              ir.currency,
               <div style={{ display: "flex", gap: 8 }}>
                 <select style={{ ...inputStyle, flex: 1 }} value={form.currency} onChange={handleCurrencyChange}>
                   {CURRENCIES.map((c) => <option key={c}>{c}</option>)}
@@ -886,15 +896,15 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
 
           <div className="invoice-field-row" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
             {field(
-              "Currency Type",
+              ir.currencyType,
               <select style={inputStyle} value={form.currencyType} onChange={set("currencyType")}>
-                <option value="fiat">Fiat</option>
-                <option value="crypto">Crypto</option>
+                <option value="fiat">{ir.fiat}</option>
+                <option value="crypto">{ir.crypto}</option>
               </select>,
-              "Affects validation tolerance and display formatting"
+              ir.currencyTypeHint
             )}
             {field(
-              "FX Rate to Base",
+              ir.fxRateToBase,
               currentIsSameCurrency ? (
                 <input style={readOnlyStyle} value="1" readOnly />
               ) : (
@@ -906,19 +916,19 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
                 />
               ),
               currentIsSameCurrency
-                ? `Same as base currency (${baseCurrency}) — rate is 1`
-                : `1 ${form.currency} = ? ${baseCurrency}`
+                ? ir.fxSameCurrency
+                : ir.fxHint.replace("{currency}", form.currency).replace("{base}", baseCurrency)
             )}
           </div>
 
           {/* Amounts */}
           <div className="invoice-amounts-section" style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: 16, marginBottom: 16 }}>
             <div className="invoice-section-header" style={{ fontSize: 12, fontWeight: 600, color: "#64748b", marginBottom: 12, textTransform: "uppercase", letterSpacing: "0.04em" }}>
-              Amounts ({form.currency})
+              {ir.amountsTitle.replace("{currency}", form.currency)}
             </div>
             <div className="invoice-amounts-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
               <div>
-                <label style={{ display: "block", fontSize: 12, color: "#64748b", marginBottom: 4 }}>Net Amount</label>
+                <label style={{ display: "block", fontSize: 12, color: "#64748b", marginBottom: 4 }}>{ir.netAmount}</label>
                 <input
                   style={form.netAmount && safeParseDecimal(form.netAmount).error ? errorInputStyle : inputStyle}
                   value={form.netAmount}
@@ -927,7 +937,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
                 />
               </div>
               <div>
-                <label style={{ display: "block", fontSize: 12, color: "#64748b", marginBottom: 4 }}>VAT Amount</label>
+                <label style={{ display: "block", fontSize: 12, color: "#64748b", marginBottom: 4 }}>{ir.vatAmount}</label>
                 <input
                   style={form.vatAmount && safeParseDecimal(form.vatAmount).error ? errorInputStyle : inputStyle}
                   value={form.vatAmount}
@@ -937,7 +947,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
               </div>
               <div>
                 <label style={{ display: "block", fontSize: 12, color: "#64748b", marginBottom: 4 }}>
-                  Gross Amount
+                  {ir.grossAmount}
                   {mismatch && " !!"}
                 </label>
                 <input
@@ -978,9 +988,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
                 }}
               >
                 Net + VAT = {computedSum} but Gross = {grossDisplay}
-                {form.currencyType === "fiat"
-                  ? " (difference exceeds 0.01 tolerance). Please verify."
-                  : " (crypto amounts must match exactly). Please verify."}
+                {form.currencyType === "fiat" ? ir.mismatchFiat : ir.mismatchCrypto}
               </div>
             )}
           </div>
@@ -1005,25 +1013,25 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
           {showBaseAmounts && (
             <div className="invoice-base-amounts-section" style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: 16, marginBottom: 16 }}>
               <div className="invoice-section-header" style={{ fontSize: 12, fontWeight: 600, color: "#0369a1", marginBottom: 12, textTransform: "uppercase", letterSpacing: "0.04em" }}>
-                Base Amounts ({baseCurrency})
+                {ir.baseAmountsTitle.replace("{currency}", baseCurrency)}
               </div>
               <div className="invoice-amounts-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
                 <div>
-                  <label style={{ display: "block", fontSize: 12, color: "#64748b", marginBottom: 4 }}>Base Net</label>
+                  <label style={{ display: "block", fontSize: 12, color: "#64748b", marginBottom: 4 }}>{ir.baseNet}</label>
                   <input style={readOnlyStyle} value={previewBaseNet ? formatDisplayAmount(previewBaseNet, "fiat") : ""} readOnly />
                 </div>
                 <div>
-                  <label style={{ display: "block", fontSize: 12, color: "#64748b", marginBottom: 4 }}>Base VAT</label>
+                  <label style={{ display: "block", fontSize: 12, color: "#64748b", marginBottom: 4 }}>{ir.baseVat}</label>
                   <input style={readOnlyStyle} value={previewBaseVat ? formatDisplayAmount(previewBaseVat, "fiat") : ""} readOnly />
                 </div>
                 <div>
-                  <label style={{ display: "block", fontSize: 12, color: "#64748b", marginBottom: 4 }}>Base Gross</label>
+                  <label style={{ display: "block", fontSize: 12, color: "#64748b", marginBottom: 4 }}>{ir.baseGross}</label>
                   <input style={readOnlyStyle} value={previewBaseGross ? formatDisplayAmount(previewBaseGross, "fiat") : ""} readOnly />
                 </div>
               </div>
               {!currentIsSameCurrency && !form.fxRateToBase && (
                 <div style={{ marginTop: 8, fontSize: 12, color: "#0369a1" }}>
-                  Enter an FX rate to see base amounts.
+                  {ir.enterFxRate}
                 </div>
               )}
             </div>
@@ -1032,18 +1040,18 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
           {/* Cost centre + account */}
           <div className="invoice-field-row" style={{ display: "grid", gridTemplateColumns: editableLines.length > 0 ? "1fr" : "1fr 1fr", gap: 16 }}>
             {field(
-              "Cost Centre (optional)",
+              ir.costCentre,
               <select style={inputStyle} value={form.costCentreId} onChange={set("costCentreId")}>
-                <option value="">-- none --</option>
+                <option value="">{cm.selectNone}</option>
                 {costCentres.map((c) => (
                   <option key={c.id} value={c.id}>{c.code} · {c.name}</option>
                 ))}
               </select>
             )}
             {editableLines.length === 0 && field(
-              "Expense Account (optional)",
+              ir.expenseAccount,
               <select style={inputStyle} value={form.expenseAccountId} onChange={set("expenseAccountId")}>
-                <option value="">-- none --</option>
+                <option value="">{cm.selectNone}</option>
                 {expenseAccounts.map((a) => (
                   <option key={a.id} value={a.id}>{"— ".repeat(a.depth)}{a.code} · {a.name}</option>
                 ))}
@@ -1052,12 +1060,12 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
           </div>
 
           {field(
-            "Notes",
+            ir.notes,
             <textarea
               style={{ ...inputStyle, minHeight: 64, resize: "vertical" }}
               value={form.notes}
               onChange={set("notes")}
-              placeholder="Any additional notes..."
+              placeholder={ir.notesPlaceholder}
             />
           )}
 
@@ -1068,7 +1076,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
           )}
           {saved && (
             <div style={{ marginBottom: 16, padding: "10px 14px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 6, color: "#16a34a", fontSize: 13 }}>
-              {isApproved ? "Changes saved" : "Draft saved"}
+              {isApproved ? ir.changesSaved : ir.draftSaved}
             </div>
           )}
 
@@ -1086,18 +1094,18 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
                 fontWeight: 500,
               }}
             >
-              {isApproved ? "Save Changes" : "Save Draft"}
+              {saving ? cm.saving : (isApproved ? ir.saveChanges : ir.saveDraft)}
             </button>
             {!isApproved && (
               <button
                 onClick={() => save("approve")}
                 disabled={approveDisabled}
                 title={
-                  hasInputErrors ? "Fix invalid input before approving"
-                    : mismatch ? "Fix amount mismatch before approving"
-                    : headerLineMismatch ? "Header totals must match the sum of invoice lines before approving"
-                    : hasInvalidPage ? "Fix invalid page numbers before approving"
-                    : prepaidLinesInvalid ? "Fix prepaid recognition dates and account assignments before approving"
+                  hasInputErrors ? ir.approveDisabledInvalid
+                    : mismatch ? ir.approveDisabledMismatch
+                    : headerLineMismatch ? ir.approveDisabledLines
+                    : hasInvalidPage ? ir.approveDisabledPages
+                    : prepaidLinesInvalid ? ir.approveDisabledPrepaid
                     : ""
                 }
                 style={{
@@ -1111,7 +1119,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
                   fontWeight: 600,
                 }}
               >
-                Approve Invoice
+                {ir.approveInvoice}
               </button>
             )}
             {!isApproved && (
@@ -1135,21 +1143,21 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
                   opacity: saving || deleting ? 0.6 : 1,
                 }}
               >
-                Delete invoice
+                {ir.deleteInvoice}
               </button>
             )}
           </div>
           {!isApproved && (hasInputErrors || mismatch || headerLineMismatch || hasInvalidPage || prepaidLinesInvalid) && (
             <div style={{ marginTop: 8, fontSize: 12, color: "#d97706" }}>
               {hasInputErrors
-                ? "Approve is disabled until invalid input is corrected."
+                ? ir.approveDisabledInvalid
                 : mismatch
-                ? "Approve is disabled until the amount mismatch is resolved."
+                ? ir.approveDisabledMismatch
                 : headerLineMismatch
-                ? "Approve is disabled: header totals must match the sum of invoice lines."
+                ? ir.approveDisabledLines
                 : hasInvalidPage
-                ? "Save and approve are disabled until invalid page numbers are corrected."
-                : "Approve is disabled until all prepaid lines have valid dates and account assignments."}
+                ? ir.approveDisabledPages
+                : ir.approveDisabledPrepaid}
             </div>
           )}
         </div>
@@ -1171,12 +1179,12 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
           }}
         >
           <div style={{ width: "100%", maxWidth: 460, background: "#fff", borderRadius: 10, padding: 24, boxShadow: "0 20px 50px rgba(15, 23, 42, 0.25)" }}>
-            <h2 id="delete-invoice-title" style={{ margin: 0, fontSize: 18, color: "#991b1b" }}>Delete invoice</h2>
+            <h2 id="delete-invoice-title" style={{ margin: 0, fontSize: 18, color: "#991b1b" }}>{ir.deleteTitle}</h2>
             {form.invoiceNumber && (
-              <div style={{ marginTop: 10, fontSize: 14, color: "#475569" }}>Invoice number: <strong>{form.invoiceNumber}</strong></div>
+              <div style={{ marginTop: 10, fontSize: 14, color: "#475569" }}>{ir.deleteInvoiceNumberLabel} <strong>{form.invoiceNumber}</strong></div>
             )}
             <p style={{ margin: "14px 0 0", color: "#334155", lineHeight: 1.5 }}>
-              Are you sure you want to delete this invoice? This action cannot be undone.
+              {ir.deleteConfirmText}
             </p>
             {deleteError && (
               <div style={{ marginTop: 14, padding: "9px 12px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 6, color: "#b91c1c", fontSize: 13 }}>
@@ -1190,7 +1198,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
                 disabled={deleting}
                 style={{ padding: "9px 14px", border: "1px solid #cbd5e1", borderRadius: 6, background: "#fff", cursor: deleting ? "default" : "pointer" }}
               >
-                Cancel
+                {cm.cancel}
               </button>
               <button
                 type="button"
@@ -1198,7 +1206,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
                 disabled={deleting}
                 style={{ padding: "9px 14px", border: "none", borderRadius: 6, background: deleting ? "#fca5a5" : "#dc2626", color: "#fff", cursor: deleting ? "default" : "pointer", fontWeight: 600 }}
               >
-                {deleting ? "Deleting…" : "Delete invoice"}
+                {deleting ? cm.deleting : ir.confirmDelete}
               </button>
             </div>
           </div>

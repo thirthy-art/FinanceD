@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { useI18n } from "@/src/i18n/context";
 
 interface VendorListActionsProps {
   vendor: {
@@ -15,10 +16,15 @@ interface VendorListActionsProps {
 }
 
 export default function VendorListActions({ vendor, onDeleted, onError }: VendorListActionsProps) {
+  const { t } = useI18n();
+  const va = t.vendorActions;
+  const cm = t.common;
+
   const [deleting, setDeleting] = useState(false);
 
   async function deleteVendor() {
-    if (deleting || !window.confirm(`Permanently delete ${vendor.name}? This action cannot be undone.`)) return;
+    const confirmMsg = va.permanentDeleteLabel.replace("{name}", vendor.name);
+    if (deleting || !window.confirm(confirmMsg)) return;
 
     setDeleting(true);
     onError("");
@@ -46,12 +52,12 @@ export default function VendorListActions({ vendor, onDeleted, onError }: Vendor
           onClick={deleteVendor}
           style={{ ...actionStyle, color: "#fff", background: "#dc2626", borderColor: "#dc2626", opacity: deleting ? 0.6 : 1 }}
         >
-          {deleting ? "Deleting…" : "Delete"}
+          {deleting ? cm.deleting : cm.del}
         </button>
       )}
       {vendor.possibleDuplicate && vendor.invoiceCount > 0 && (
         <Link href={`/settings/vendors/${vendor.id}?action=merge#vendor-actions`} style={{ ...actionStyle, color: "#92400e", background: "#fffbeb", borderColor: "#fbbf24", textDecoration: "none" }}>
-          Merge / resolve duplicate
+          {va.mergeResolve}
         </Link>
       )}
     </>

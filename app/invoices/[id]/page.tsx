@@ -1,3 +1,4 @@
+import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 import { getDb } from "@/src/db";
 import {
@@ -14,6 +15,8 @@ import InvoiceReview from "@/src/components/InvoiceReview";
 import Link from "next/link";
 import { parseInvoiceFields } from "@/src/lib/extract";
 import { stripTrailingZeros } from "@/src/lib/invoice-validation";
+import { resolveLocale, getMessages } from "@/src/i18n/index";
+import { LOCALE_COOKIE } from "@/src/i18n/types";
 
 export default async function InvoicePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -25,6 +28,10 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
     .where(eq(supplierInvoices.id, Number(id)));
 
   if (!invoice) notFound();
+
+  const cookieStore = await cookies();
+  const locale = resolveLocale(cookieStore.get(LOCALE_COOKIE)?.value);
+  const { invoiceDetail: t } = getMessages(locale);
 
   const [docs, lines, vendorList, ccList, acctList, [company]] = await Promise.all([
     db.select().from(supplierInvoiceDocuments).where(eq(supplierInvoiceDocuments.invoiceId, invoice.id)),
@@ -53,7 +60,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
     <div>
       <div style={{ marginBottom: 20, display: "flex", alignItems: "center", gap: 8 }}>
         <Link href="/" style={{ color: "#2563eb", textDecoration: "none", fontSize: 13 }}>
-          All Invoices
+          {t.allInvoices}
         </Link>
         <span style={{ color: "#cbd5e1" }}>/</span>
         <span style={{ fontSize: 13, color: "#64748b" }}>

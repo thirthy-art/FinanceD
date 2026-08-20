@@ -1,9 +1,12 @@
 "use client";
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { useI18n } from "@/src/i18n/context";
 
 export default function NewInvoicePage() {
   const router = useRouter();
+  const { t } = useI18n();
+  const n = t.newInvoice;
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
@@ -19,7 +22,7 @@ export default function NewInvoicePage() {
     if (!allowed.includes(file.type)) {
       pendingUploadRef.current = null;
       setCanRetry(false);
-      setError("Unsupported file type. Upload a PDF, JPEG, PNG, TIFF, or WebP.");
+      setError(n.unsupportedType);
       return;
     }
     pendingUploadRef.current = { file, requestId };
@@ -33,7 +36,7 @@ export default function NewInvoicePage() {
       const res = await fetch("/api/invoices/upload", { method: "POST", body: fd });
       const json = await res.json().catch(() => ({})) as { error?: unknown; invoiceId?: unknown };
       if (!res.ok) throw new Error(typeof json.error === "string" ? json.error : "Upload failed. Please retry.");
-      if (typeof json.invoiceId !== "number") throw new Error("Upload completed without an invoice identifier. Please retry.");
+      if (typeof json.invoiceId !== "number") throw new Error(n.uploadWithoutId);
       pendingUploadRef.current = null;
       setCanRetry(false);
       router.replace(`/invoices/${json.invoiceId}`);
@@ -67,7 +70,7 @@ export default function NewInvoicePage() {
   return (
     <div style={{ maxWidth: 540, margin: "0 auto" }}>
       <h1 style={{ fontSize: 22, fontWeight: 700, color: "#1e3a5f", marginBottom: 24 }}>
-        Upload Supplier Invoice
+        {n.title}
       </h1>
 
       <div
@@ -97,20 +100,20 @@ export default function NewInvoicePage() {
           <div>
             <div style={{ fontSize: 36, marginBottom: 12 }}>⏳</div>
             <div style={{ fontSize: 16, fontWeight: 600, color: "#1e3a5f" }}>
-              Processing…
+              {n.processing}
             </div>
             <div style={{ color: "#64748b", marginTop: 8 }}>
-              Extracting text from your document
+              {n.extractingText}
             </div>
           </div>
         ) : (
           <div>
             <div style={{ fontSize: 48, marginBottom: 12 }}>📂</div>
             <div style={{ fontSize: 16, fontWeight: 600, color: "#1e3a5f", marginBottom: 8 }}>
-              Drop invoice here or click to browse
+              {n.dropHere}
             </div>
             <div style={{ color: "#64748b", fontSize: 13 }}>
-              Supported: PDF, JPEG, PNG, TIFF, WebP
+              {n.supportedFormats}
             </div>
           </div>
         )}
@@ -136,7 +139,7 @@ export default function NewInvoicePage() {
               disabled={uploading}
               style={{ marginTop: 10, padding: "7px 12px", border: "none", borderRadius: 6, background: "#dc2626", color: "#fff", cursor: uploading ? "default" : "pointer", fontWeight: 600 }}
             >
-              Retry upload
+              {n.retryUpload}
             </button>
           )}
         </div>
@@ -144,13 +147,13 @@ export default function NewInvoicePage() {
 
       <div style={{ marginTop: 32, padding: 16, background: "#f0f9ff", borderRadius: 8, border: "1px solid #bae6fd" }}>
         <div style={{ fontWeight: 600, color: "#0c4a6e", marginBottom: 8, fontSize: 13 }}>
-          What happens after upload?
+          {n.whatHappensTitle}
         </div>
         <ul style={{ color: "#0369a1", fontSize: 13, paddingLeft: 20, lineHeight: 1.8 }}>
-          <li>Text PDFs: fields extracted automatically</li>
-          <li>Images (JPEG/PNG): OCR applied to extract text</li>
-          <li>Scanned PDFs: enter fields manually</li>
-          <li>All fields remain editable before saving</li>
+          <li>{n.step1}</li>
+          <li>{n.step2}</li>
+          <li>{n.step3}</li>
+          <li>{n.step4}</li>
         </ul>
       </div>
     </div>

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { flattenAccountHierarchy } from "@/src/lib/coa-hierarchy";
+import { useI18n } from "@/src/i18n/context";
 
 interface Account { id: number; code: string; name: string; type: string; parentId: number | null; isPosting: boolean; isActive: boolean; }
 
@@ -19,6 +20,18 @@ async function fetchAccounts(): Promise<Account[]> {
 }
 
 export default function ChartOfAccountsPage() {
+  const { t } = useI18n();
+  const c = t.coa;
+  const cm = t.common;
+
+  const typeLabels: Record<string, string> = {
+    asset: c.typeAsset,
+    liability: c.typeLiability,
+    equity: c.typeEquity,
+    revenue: c.typeRevenue,
+    expense: c.typeExpense,
+  };
+
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
   const [newCode, setNewCode] = useState("");
@@ -52,7 +65,7 @@ export default function ChartOfAccountsPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ code: newCode, name: newName, type: newType }),
     });
-    if (!res.ok) { setAddError("Could not add account."); return; }
+    if (!res.ok) { setAddError(c.couldNotAdd); return; }
     setNewCode(""); setNewName(""); setNewType("expense");
     load();
   }
@@ -85,18 +98,18 @@ export default function ChartOfAccountsPage() {
     load();
   }
 
-  if (loading) return <div style={{ color: "#94a3b8" }}>Loading…</div>;
+  if (loading) return <div style={{ color: "#94a3b8" }}>{c.loading}</div>;
   const hierarchicalAccounts = flattenAccountHierarchy(accounts);
 
   return (
     <div>
-      <h1 style={{ fontSize: 20, fontWeight: 700, color: "#1e3a5f", marginBottom: 24 }}>Chart of Accounts</h1>
+      <h1 style={{ fontSize: 20, fontWeight: 700, color: "#1e3a5f", marginBottom: 24 }}>{c.title}</h1>
 
       <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden", marginBottom: 32 }}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
-              {["Code", "Name", "Type", "Posting", "Active", ""].map((h) => (
+              {[c.colCode, c.colName, c.colType, c.colPosting, c.colActive, ""].map((h) => (
                 <th key={h} style={{ padding: "10px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, color: "#64748b", textTransform: "uppercase" }}>{h}</th>
               ))}
             </tr>
@@ -114,14 +127,14 @@ export default function ChartOfAccountsPage() {
                     </td>
                     <td style={{ padding: "8px 16px" }}>
                       <select style={inputStyle} value={editData.type ?? a.type} onChange={(e) => setEditData((d) => ({ ...d, type: e.target.value }))}>
-                        {TYPES.map((t) => <option key={t}>{t}</option>)}
+                        {TYPES.map((type) => <option key={type} value={type}>{typeLabels[type] ?? type}</option>)}
                       </select>
                     </td>
-                    <td style={{ padding: "8px 16px" }}>{a.isPosting ? "Posting" : "Header"}</td>
+                    <td style={{ padding: "8px 16px" }}>{a.isPosting ? c.posting : c.header}</td>
                     <td />
                     <td style={{ padding: "8px 16px", display: "flex", gap: 8 }}>
-                      <button onClick={() => saveEdit(a.id)} style={{ ...inputStyle, background: "#2563eb", color: "#fff", border: "none", cursor: "pointer" }}>Save</button>
-                      <button onClick={() => setEditId(null)} style={{ ...inputStyle, cursor: "pointer" }}>Cancel</button>
+                      <button onClick={() => saveEdit(a.id)} style={{ ...inputStyle, background: "#2563eb", color: "#fff", border: "none", cursor: "pointer" }}>{cm.save}</button>
+                      <button onClick={() => setEditId(null)} style={{ ...inputStyle, cursor: "pointer" }}>{cm.cancel}</button>
                     </td>
                   </>
                 ) : (
@@ -129,18 +142,18 @@ export default function ChartOfAccountsPage() {
                     <td style={{ padding: "10px 16px", fontFamily: "monospace", fontWeight: 600 }}>{a.code}</td>
                     <td style={{ padding: "10px 16px" }}>
                       <span style={{ display: "inline-block", paddingLeft: a.depth * 18 }}>{a.name}</span>
-                      {!a.isPosting && <span style={{ marginLeft: 8, padding: "2px 7px", borderRadius: 10, background: "#e2e8f0", color: "#475569", fontSize: 10 }}>Non-posting header</span>}
+                      {!a.isPosting && <span style={{ marginLeft: 8, padding: "2px 7px", borderRadius: 10, background: "#e2e8f0", color: "#475569", fontSize: 10 }}>{c.nonPostingHeader}</span>}
                     </td>
                     <td style={{ padding: "10px 16px" }}>
-                      <span style={{ padding: "2px 8px", borderRadius: 10, fontSize: 11, fontWeight: 600, ...typeColors[a.type] }}>{a.type}</span>
+                      <span style={{ padding: "2px 8px", borderRadius: 10, fontSize: 11, fontWeight: 600, ...typeColors[a.type] }}>{typeLabels[a.type] ?? a.type}</span>
                     </td>
-                    <td style={{ padding: "10px 16px" }}>{a.isPosting ? "Yes" : "No"}</td>
+                    <td style={{ padding: "10px 16px" }}>{a.isPosting ? c.postingYes : c.postingNo}</td>
                     <td style={{ padding: "10px 16px" }}>{a.isActive ? "✓" : "—"}</td>
                     <td style={{ padding: "10px 16px", display: "flex", gap: 8 }}>
-                      <button onClick={() => { setEditId(a.id); setEditData({}); }} style={{ ...inputStyle, cursor: "pointer", fontSize: 12 }}>Edit</button>
+                      <button onClick={() => { setEditId(a.id); setEditData({}); }} style={{ ...inputStyle, cursor: "pointer", fontSize: 12 }}>{cm.edit}</button>
                       {a.isActive
-                        ? <button onClick={() => deactivate(a.id)} style={{ ...inputStyle, cursor: "pointer", fontSize: 12, color: "#dc2626" }}>Deactivate</button>
-                        : <button onClick={() => activate(a.id)} style={{ ...inputStyle, cursor: "pointer", fontSize: 12, color: "#16a34a" }}>Activate</button>
+                        ? <button onClick={() => deactivate(a.id)} style={{ ...inputStyle, cursor: "pointer", fontSize: 12, color: "#dc2626" }}>{cm.deactivate}</button>
+                        : <button onClick={() => activate(a.id)} style={{ ...inputStyle, cursor: "pointer", fontSize: 12, color: "#16a34a" }}>{cm.activate}</button>
                       }
                     </td>
                   </>
@@ -152,24 +165,24 @@ export default function ChartOfAccountsPage() {
       </div>
 
       <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: 20 }}>
-        <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 16, color: "#374151" }}>Add Account</h2>
+        <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 16, color: "#374151" }}>{c.addAccount}</h2>
         <form onSubmit={addAccount} style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
           <div>
-            <label style={{ display: "block", fontSize: 11, color: "#64748b", marginBottom: 3 }}>Code</label>
-            <input style={{ ...inputStyle, width: 80 }} value={newCode} onChange={(e) => setNewCode(e.target.value)} required placeholder="5100" />
+            <label style={{ display: "block", fontSize: 11, color: "#64748b", marginBottom: 3 }}>{c.colCode}</label>
+            <input style={{ ...inputStyle, width: 80 }} value={newCode} onChange={(e) => setNewCode(e.target.value)} required placeholder={c.codePlaceholder} />
           </div>
           <div>
-            <label style={{ display: "block", fontSize: 11, color: "#64748b", marginBottom: 3 }}>Name</label>
-            <input style={{ ...inputStyle, width: 220 }} value={newName} onChange={(e) => setNewName(e.target.value)} required placeholder="Account name" />
+            <label style={{ display: "block", fontSize: 11, color: "#64748b", marginBottom: 3 }}>{c.colName}</label>
+            <input style={{ ...inputStyle, width: 220 }} value={newName} onChange={(e) => setNewName(e.target.value)} required placeholder={c.namePlaceholder} />
           </div>
           <div>
-            <label style={{ display: "block", fontSize: 11, color: "#64748b", marginBottom: 3 }}>Type</label>
+            <label style={{ display: "block", fontSize: 11, color: "#64748b", marginBottom: 3 }}>{c.colType}</label>
             <select style={inputStyle} value={newType} onChange={(e) => setNewType(e.target.value)}>
-              {TYPES.map((t) => <option key={t}>{t}</option>)}
+              {TYPES.map((type) => <option key={type} value={type}>{typeLabels[type] ?? type}</option>)}
             </select>
           </div>
           <button type="submit" style={{ ...inputStyle, background: "#2563eb", color: "#fff", border: "none", cursor: "pointer", fontWeight: 600 }}>
-            Add Account
+            {c.addAccount}
           </button>
         </form>
         {addError && <div style={{ marginTop: 8, color: "#dc2626", fontSize: 13 }}>{addError}</div>}

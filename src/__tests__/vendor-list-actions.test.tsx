@@ -1,6 +1,17 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import VendorListActions from "@/src/components/VendorListActions";
+
+vi.mock("@/src/i18n/context", async () => {
+  const { getMessages } = await import("@/src/i18n/index");
+  return {
+    useI18n: () => ({
+      locale: "en" as const,
+      t: getMessages("en"),
+      setLocale: () => undefined,
+    }),
+  };
+});
 
 const callbacks = { onDeleted: () => undefined, onError: () => undefined };
 

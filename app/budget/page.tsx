@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState, useCallback, useRef } from "react";
+import { useI18n } from "@/src/i18n/context";
 
 const inputStyle: React.CSSProperties = {
   padding: "6px 8px",
@@ -87,6 +88,10 @@ function varColor(v: string): string {
 }
 
 export default function BudgetPage() {
+  const { t } = useI18n();
+  const b = t.budget;
+  const cm = t.common;
+
   const currentYear = new Date().getFullYear();
   const [year, setYear] = useState(currentYear);
   const [tab, setTab] = useState<Tab>("budget");
@@ -157,7 +162,7 @@ export default function BudgetPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: newCatName }),
     });
-    if (!res.ok) { setCatError("Could not create category (name may already exist)."); return; }
+    if (!res.ok) { setCatError(b.couldNotCreate); return; }
     setNewCatName("");
     await loadReport();
   }
@@ -180,7 +185,7 @@ export default function BudgetPage() {
   async function saveRename(catId: number) {
     setRenameError("");
     const name = renameValue.trim();
-    if (!name) { setRenameError("Name cannot be empty."); return; }
+    if (!name) { setRenameError(b.nameCannotBeEmpty); return; }
     const res = await fetch(`/api/budget/categories/${catId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -188,7 +193,7 @@ export default function BudgetPage() {
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      setRenameError(body.error ?? "Could not rename category.");
+      setRenameError(body.error ?? b.couldNotRename);
       return;
     }
     setRenamingCatId(null);
@@ -211,7 +216,7 @@ export default function BudgetPage() {
     e.preventDefault();
     setMappingError("");
     const accountId = parseInt(mappingAccountId, 10);
-    if (isNaN(accountId)) { setMappingError("Select an account."); return; }
+    if (isNaN(accountId)) { setMappingError(b.selectAccount); return; }
     const res = await fetch(`/api/budget/categories/${selectedCatId}/accounts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -219,7 +224,7 @@ export default function BudgetPage() {
     });
     if (!res.ok) {
       const err = await res.json();
-      setMappingError(err.error ?? "Could not add mapping.");
+      setMappingError(err.error ?? b.couldNotMap);
       return;
     }
     await loadCatMappings(selectedCatId!);
@@ -245,8 +250,8 @@ export default function BudgetPage() {
     e.preventDefault();
     setActualError("");
     const catId = parseInt(newActual.budgetCategoryId, 10);
-    if (isNaN(catId)) { setActualError("Select a category."); return; }
-    if (!newActual.month || !newActual.amount) { setActualError("Month and amount are required."); return; }
+    if (isNaN(catId)) { setActualError(b.selectCategoryRequired); return; }
+    if (!newActual.month || !newActual.amount) { setActualError(b.monthAmountRequired); return; }
     const res = await fetch("/api/budget/actuals", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -271,11 +276,17 @@ export default function BudgetPage() {
 
   const allMonths: string[] = report?.months ?? Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, "0")}`);
 
+  const tabs: [Tab, string][] = [
+    ["budget", b.tabBudget],
+    ["categories", b.tabCategories],
+    ["actuals", b.tabActuals],
+  ];
+
   return (
     <div style={{ maxWidth: 1400 }}>
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20, flexWrap: "wrap" }}>
-        <h1 style={{ fontSize: 20, fontWeight: 700, color: "#1e3a5f", margin: 0 }}>Budget</h1>
+        <h1 style={{ fontSize: 20, fontWeight: 700, color: "#1e3a5f", margin: 0 }}>{b.title}</h1>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <button onClick={() => setYear((y) => y - 1)} style={{ ...inputStyle, cursor: "pointer", background: "#f8fafc" }}>‹</button>
           <span style={{ fontSize: 16, fontWeight: 600, color: "#374151", minWidth: 48, textAlign: "center" }}>{year}</span>
@@ -288,25 +299,25 @@ export default function BudgetPage() {
         )}
         {unmapped && unmapped.unmappedCount > 0 && (
           <span style={{ fontSize: 12, color: "#b45309", background: "#fef3c7", padding: "4px 10px", borderRadius: 4 }}>
-            ⚠ {unmapped.unmappedCount} invoice line{unmapped.unmappedCount !== 1 ? "s" : ""} from approved invoices have unmapped accounts
+            ⚠ {b.unmappedWarning.replace("{count}", String(unmapped.unmappedCount)).replace("{s}", unmapped.unmappedCount !== 1 ? "s" : "")}
           </span>
         )}
       </div>
 
       {/* Tabs */}
       <div style={{ display: "flex", gap: 4, marginBottom: 20, borderBottom: "2px solid #e2e8f0" }}>
-        {([["budget", "Budget & Actuals"], ["categories", "Categories & Accounts"], ["actuals", "Manual Entries"]] as [Tab, string][]).map(([t, label]) => (
+        {tabs.map(([tabId, label]) => (
           <button
-            key={t}
-            onClick={() => setTab(t)}
+            key={tabId}
+            onClick={() => setTab(tabId)}
             style={{
               padding: "8px 16px",
               fontSize: 13,
-              fontWeight: tab === t ? 600 : 400,
-              color: tab === t ? "#1e3a5f" : "#64748b",
+              fontWeight: tab === tabId ? 600 : 400,
+              color: tab === tabId ? "#1e3a5f" : "#64748b",
               background: "transparent",
               border: "none",
-              borderBottom: tab === t ? "2px solid #1e3a5f" : "2px solid transparent",
+              borderBottom: tab === tabId ? "2px solid #1e3a5f" : "2px solid transparent",
               cursor: "pointer",
               marginBottom: -2,
             }}
@@ -320,24 +331,24 @@ export default function BudgetPage() {
       {tab === "budget" && (
         <>
           {loading ? (
-            <p style={{ color: "#64748b" }}>Loading…</p>
+            <p style={{ color: "#64748b" }}>{b.loading}</p>
           ) : !report || !report.categories.length ? (
             <div style={{ ...cardStyle, padding: 32, textAlign: "center" }}>
-              <p style={{ color: "#64748b", marginBottom: 16 }}>No budget categories yet.</p>
+              <p style={{ color: "#64748b", marginBottom: 16 }}>{b.noCategories}</p>
               <button
                 onClick={seedCategories}
                 style={{ ...inputStyle, cursor: "pointer", background: "#2563eb", color: "#fff", fontWeight: 600, border: "none" }}
               >
-                Create starter categories
+                {b.createStarter}
               </button>
-              <p style={{ color: "#94a3b8", fontSize: 12, marginTop: 8 }}>Or go to the Categories tab to create your own.</p>
+              <p style={{ color: "#94a3b8", fontSize: 12, marginTop: 8 }}>{b.createStarterHint}</p>
             </div>
           ) : (
             <div style={{ overflowX: "auto" }}>
               <table style={{ borderCollapse: "collapse", minWidth: 900, width: "100%" }}>
                 <thead>
                   <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
-                    <th style={{ textAlign: "left", padding: "8px 12px", fontSize: 12, fontWeight: 600, color: "#64748b", textTransform: "uppercase", minWidth: 160, position: "sticky", left: 0, background: "#f8fafc", zIndex: 1 }}>Category</th>
+                    <th style={{ textAlign: "left", padding: "8px 12px", fontSize: 12, fontWeight: 600, color: "#64748b", textTransform: "uppercase", minWidth: 160, position: "sticky", left: 0, background: "#f8fafc", zIndex: 1 }}>{b.categoryHeader}</th>
                     {allMonths.map((m, i) => (
                       <th key={m} style={{ textAlign: "right", padding: "8px 6px", fontSize: 11, fontWeight: 600, color: "#64748b", textTransform: "uppercase", minWidth: 80 }}>
                         {MONTHS_SHORT[i]}
@@ -357,7 +368,6 @@ export default function BudgetPage() {
                         const budgetVal = data?.budget ?? "0.00";
                         return (
                           <td key={month} style={{ padding: "4px 6px", verticalAlign: "top", minWidth: 80 }}>
-                            {/* Budget row — editable */}
                             {isEditing ? (
                               <input
                                 ref={editRef}
@@ -373,17 +383,15 @@ export default function BudgetPage() {
                             ) : (
                               <div
                                 onClick={() => { setEditingCell({ catId: cat.id, month }); setEditValue(budgetVal === "0.00" ? "" : budgetVal); }}
-                                title="Click to edit budget"
+                                title={b.clickToEdit}
                                 style={{ fontSize: 12, color: "#374151", textAlign: "right", cursor: "pointer", padding: "2px 0", borderRadius: 2 }}
                               >
                                 {fmt(budgetVal)}
                               </div>
                             )}
-                            {/* Actual row */}
                             <div style={{ fontSize: 11, color: "#6b7280", textAlign: "right", marginTop: 1 }}>
                               {fmt(data?.actual)}
                             </div>
-                            {/* Variance row */}
                             <div style={{ fontSize: 11, textAlign: "right", color: varColor(data?.variance ?? "0"), marginTop: 1 }}>
                               {data?.variance && parseFloat(data.variance) !== 0 ? fmt(data.variance) : ""}
                             </div>
@@ -395,7 +403,7 @@ export default function BudgetPage() {
                 </tbody>
               </table>
               <div style={{ marginTop: 10, padding: "4px 12px", fontSize: 11, color: "#94a3b8" }}>
-                Click any budget cell to edit. Row: <strong>Budget</strong> / <span style={{ color: "#6b7280" }}>Actual</span> / <span style={{ color: "#15803d" }}>Variance (B−A)</span>
+                {b.clickToEdit}
               </div>
             </div>
           )}
@@ -407,15 +415,15 @@ export default function BudgetPage() {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
           {/* Left: category list */}
           <div>
-            <h2 style={{ fontSize: 15, fontWeight: 600, color: "#374151", marginBottom: 12 }}>Budget Categories</h2>
+            <h2 style={{ fontSize: 15, fontWeight: 600, color: "#374151", marginBottom: 12 }}>{b.budgetCategoriesTitle}</h2>
             {!categories.length ? (
               <div style={{ ...cardStyle, padding: 20 }}>
-                <p style={{ color: "#64748b", marginBottom: 12 }}>No categories yet.</p>
+                <p style={{ color: "#64748b", marginBottom: 12 }}>{b.noCategoriesYet}</p>
                 <button
                   onClick={seedCategories}
                   style={{ ...inputStyle, cursor: "pointer", background: "#2563eb", color: "#fff", fontWeight: 600, border: "none" }}
                 >
-                  Create starter categories
+                  {b.createStarter}
                 </button>
               </div>
             ) : (
@@ -429,7 +437,6 @@ export default function BudgetPage() {
                     }}
                   >
                     {renamingCatId === cat.id ? (
-                      // Inline rename mode
                       <div style={{ padding: "8px 14px" }}>
                         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                           <input
@@ -446,19 +453,18 @@ export default function BudgetPage() {
                             onClick={() => void saveRename(cat.id)}
                             style={{ fontSize: 12, color: "#fff", background: "#2563eb", border: "none", borderRadius: 4, padding: "5px 10px", cursor: "pointer", fontWeight: 600 }}
                           >
-                            Save
+                            {cm.save}
                           </button>
                           <button
                             onClick={() => setRenamingCatId(null)}
                             style={{ fontSize: 12, color: "#64748b", background: "transparent", border: "none", cursor: "pointer" }}
                           >
-                            Cancel
+                            {cm.cancel}
                           </button>
                         </div>
                         {renameError && <p style={{ color: "#dc2626", fontSize: 12, margin: "4px 0 0" }}>{renameError}</p>}
                       </div>
                     ) : (
-                      // Normal display mode
                       <div
                         onClick={() => loadCatMappings(cat.id)}
                         style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", cursor: "pointer" }}
@@ -471,13 +477,13 @@ export default function BudgetPage() {
                             onClick={(e) => { e.stopPropagation(); startRename(cat); }}
                             style={{ fontSize: 11, color: "#2563eb", background: "transparent", border: "none", cursor: "pointer" }}
                           >
-                            Rename
+                            {cm.rename}
                           </button>
                           <button
                             onClick={(e) => { e.stopPropagation(); toggleCatActive(cat); }}
                             style={{ fontSize: 11, color: cat.isActive ? "#dc2626" : "#15803d", background: "transparent", border: "none", cursor: "pointer" }}
                           >
-                            {cat.isActive ? "Deactivate" : "Activate"}
+                            {cat.isActive ? cm.deactivate : cm.activate}
                           </button>
                         </div>
                       </div>
@@ -489,17 +495,17 @@ export default function BudgetPage() {
 
             {/* Add category form */}
             <form onSubmit={createCategory} style={{ marginTop: 16 }}>
-              <h2 style={{ fontSize: 14, fontWeight: 600, color: "#374151", marginBottom: 8 }}>New Category</h2>
+              <h2 style={{ fontSize: 14, fontWeight: 600, color: "#374151", marginBottom: 8 }}>{b.newCategoryTitle}</h2>
               <div style={{ display: "flex", gap: 8 }}>
                 <input
                   value={newCatName}
                   onChange={(e) => setNewCatName(e.target.value)}
-                  placeholder="Category name"
+                  placeholder={b.categoryNamePlaceholder}
                   style={{ ...inputStyle, flex: 1 }}
                   required
                 />
                 <button type="submit" style={{ ...inputStyle, background: "#2563eb", color: "#fff", fontWeight: 600, border: "none", cursor: "pointer" }}>
-                  Add
+                  {cm.add}
                 </button>
               </div>
               {catError && <p style={{ color: "#dc2626", fontSize: 12, marginTop: 4 }}>{catError}</p>}
@@ -511,11 +517,11 @@ export default function BudgetPage() {
             {selectedCatId !== null && categories.find((c) => c.id === selectedCatId) ? (
               <>
                 <h2 style={{ fontSize: 15, fontWeight: 600, color: "#374151", marginBottom: 12 }}>
-                  Expense Accounts → {categories.find((c) => c.id === selectedCatId)?.name}
+                  {b.expenseAccountsFor.replace("{name}", categories.find((c) => c.id === selectedCatId)?.name ?? "")}
                 </h2>
                 <div style={cardStyle}>
                   {catMappings.length === 0 ? (
-                    <p style={{ padding: "14px", color: "#94a3b8", fontSize: 13 }}>No accounts mapped yet.</p>
+                    <p style={{ padding: "14px", color: "#94a3b8", fontSize: 13 }}>{b.noAccountsMapped}</p>
                   ) : (
                     catMappings.map((m) => (
                       <div key={m.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 14px", borderBottom: "1px solid #f1f5f9" }}>
@@ -528,7 +534,7 @@ export default function BudgetPage() {
                           onClick={() => removeMapping(m.accountId)}
                           style={{ fontSize: 11, color: "#dc2626", background: "transparent", border: "none", cursor: "pointer" }}
                         >
-                          Remove
+                          {cm.remove}
                         </button>
                       </div>
                     ))
@@ -542,7 +548,7 @@ export default function BudgetPage() {
                       onChange={(e) => setMappingAccountId(e.target.value)}
                       style={{ ...inputStyle, flex: 1 }}
                     >
-                      <option value="">— select expense account —</option>
+                      <option value="">{b.selectExpenseAccount}</option>
                       {coaAccounts
                         .filter((a) => !catMappings.some((m) => m.accountId === a.id))
                         .map((a) => (
@@ -552,7 +558,7 @@ export default function BudgetPage() {
                         ))}
                     </select>
                     <button type="submit" style={{ ...inputStyle, background: "#2563eb", color: "#fff", fontWeight: 600, border: "none", cursor: "pointer" }}>
-                      Map
+                      {cm.map}
                     </button>
                   </div>
                   {mappingError && <p style={{ color: "#dc2626", fontSize: 12, marginTop: 4 }}>{mappingError}</p>}
@@ -560,7 +566,7 @@ export default function BudgetPage() {
 
                 {unmapped && unmapped.unmappedCount > 0 && (
                   <div style={{ marginTop: 16, padding: "10px 14px", background: "#fef3c7", borderRadius: 6, fontSize: 12 }}>
-                    <strong style={{ color: "#92400e" }}>Unmapped accounts in approved invoices:</strong>
+                    <strong style={{ color: "#92400e" }}>{b.unmappedAccountsTitle}</strong>
                     {unmapped.accounts.map((a, i) => (
                       <div key={i} style={{ color: "#78350f", marginTop: 4 }}>
                         <span style={{ fontFamily: "monospace" }}>{a.code}</span> – {a.name} ({a.count} line{a.count !== 1 ? "s" : ""})
@@ -571,7 +577,7 @@ export default function BudgetPage() {
               </>
             ) : (
               <div style={{ color: "#94a3b8", fontSize: 13, padding: 20 }}>
-                ← Select a category to manage its account mappings.
+                {b.selectCategoryHint}
               </div>
             )}
           </div>
@@ -581,32 +587,34 @@ export default function BudgetPage() {
       {/* ─── TAB: Manual Entries ──────────────────────────────────────── */}
       {tab === "actuals" && (
         <>
-          <h2 style={{ fontSize: 15, fontWeight: 600, color: "#374151", marginBottom: 12 }}>Manual Actual Entries ({year})</h2>
+          <h2 style={{ fontSize: 15, fontWeight: 600, color: "#374151", marginBottom: 12 }}>
+            {b.manualEntriesTitle.replace("{year}", String(year))}
+          </h2>
           <p style={{ fontSize: 13, color: "#64748b", marginBottom: 16 }}>
-            Add non-invoice actuals such as payroll, depreciation, and journal adjustments.
+            {b.manualEntriesDesc}
           </p>
 
           {/* Add form */}
           <div style={{ ...cardStyle, padding: 20, marginBottom: 20 }}>
-            <h3 style={{ fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 12 }}>Add Entry</h3>
+            <h3 style={{ fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 12 }}>{b.addEntryTitle}</h3>
             <form onSubmit={addManualActual}>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end" }}>
                 <div>
-                  <label style={{ fontSize: 11, color: "#64748b", display: "block", marginBottom: 3 }}>Category</label>
+                  <label style={{ fontSize: 11, color: "#64748b", display: "block", marginBottom: 3 }}>{b.categoryLabel}</label>
                   <select
                     value={newActual.budgetCategoryId}
                     onChange={(e) => setNewActual((p) => ({ ...p, budgetCategoryId: e.target.value }))}
                     style={{ ...inputStyle, minWidth: 180 }}
                     required
                   >
-                    <option value="">— select —</option>
+                    <option value="">{cm.selectNone}</option>
                     {categories.filter((c) => c.isActive).map((c) => (
                       <option key={c.id} value={c.id}>{c.name}</option>
                     ))}
                   </select>
                 </div>
                 <div>
-                  <label style={{ fontSize: 11, color: "#64748b", display: "block", marginBottom: 3 }}>Month</label>
+                  <label style={{ fontSize: 11, color: "#64748b", display: "block", marginBottom: 3 }}>{b.monthLabel}</label>
                   <input
                     type="month"
                     value={newActual.month}
@@ -616,7 +624,9 @@ export default function BudgetPage() {
                   />
                 </div>
                 <div>
-                  <label style={{ fontSize: 11, color: "#64748b", display: "block", marginBottom: 3 }}>Amount ({report?.baseCurrency ?? ""})</label>
+                  <label style={{ fontSize: 11, color: "#64748b", display: "block", marginBottom: 3 }}>
+                    {b.amountLabel.replace("{currency}", report?.baseCurrency ?? "")}
+                  </label>
                   <input
                     type="text"
                     placeholder="0.00"
@@ -627,7 +637,7 @@ export default function BudgetPage() {
                   />
                 </div>
                 <div style={{ flex: 1, minWidth: 160 }}>
-                  <label style={{ fontSize: 11, color: "#64748b", display: "block", marginBottom: 3 }}>Description</label>
+                  <label style={{ fontSize: 11, color: "#64748b", display: "block", marginBottom: 3 }}>{b.descriptionLabel}</label>
                   <input
                     type="text"
                     placeholder="e.g. Payroll Aug 2026"
@@ -637,7 +647,7 @@ export default function BudgetPage() {
                   />
                 </div>
                 <button type="submit" style={{ ...inputStyle, background: "#2563eb", color: "#fff", fontWeight: 600, border: "none", cursor: "pointer" }}>
-                  Add
+                  {cm.add}
                 </button>
               </div>
               {actualError && <p style={{ color: "#dc2626", fontSize: 12, marginTop: 6 }}>{actualError}</p>}
@@ -647,16 +657,18 @@ export default function BudgetPage() {
           {/* Entries list */}
           <div style={cardStyle}>
             {manualActuals.filter((e) => e.month.startsWith(String(year))).length === 0 ? (
-              <p style={{ padding: 20, color: "#94a3b8", fontSize: 13 }}>No manual entries for {year}.</p>
+              <p style={{ padding: 20, color: "#94a3b8", fontSize: 13 }}>
+                {b.noManualEntries.replace("{year}", String(year))}
+              </p>
             ) : (
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
                   <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
-                    <th style={{ textAlign: "left", padding: "8px 12px", fontSize: 12, fontWeight: 600, color: "#64748b", textTransform: "uppercase" }}>Month</th>
-                    <th style={{ textAlign: "left", padding: "8px 12px", fontSize: 12, fontWeight: 600, color: "#64748b", textTransform: "uppercase" }}>Category</th>
-                    <th style={{ textAlign: "left", padding: "8px 12px", fontSize: 12, fontWeight: 600, color: "#64748b", textTransform: "uppercase" }}>Description</th>
-                    <th style={{ textAlign: "left", padding: "8px 12px", fontSize: 12, fontWeight: 600, color: "#64748b", textTransform: "uppercase" }}>Source</th>
-                    <th style={{ textAlign: "right", padding: "8px 12px", fontSize: 12, fontWeight: 600, color: "#64748b", textTransform: "uppercase" }}>Amount</th>
+                    <th style={{ textAlign: "left", padding: "8px 12px", fontSize: 12, fontWeight: 600, color: "#64748b", textTransform: "uppercase" }}>{b.colMonth}</th>
+                    <th style={{ textAlign: "left", padding: "8px 12px", fontSize: 12, fontWeight: 600, color: "#64748b", textTransform: "uppercase" }}>{b.colCategory}</th>
+                    <th style={{ textAlign: "left", padding: "8px 12px", fontSize: 12, fontWeight: 600, color: "#64748b", textTransform: "uppercase" }}>{b.colDescription}</th>
+                    <th style={{ textAlign: "left", padding: "8px 12px", fontSize: 12, fontWeight: 600, color: "#64748b", textTransform: "uppercase" }}>{b.colSource}</th>
+                    <th style={{ textAlign: "right", padding: "8px 12px", fontSize: 12, fontWeight: 600, color: "#64748b", textTransform: "uppercase" }}>{b.colAmount}</th>
                     <th style={{ width: 60 }}></th>
                   </tr>
                 </thead>
@@ -680,7 +692,7 @@ export default function BudgetPage() {
                               onClick={() => deleteManualActual(entry.id)}
                               style={{ fontSize: 11, color: "#dc2626", background: "transparent", border: "none", cursor: "pointer" }}
                             >
-                              Delete
+                              {cm.del}
                             </button>
                           </td>
                         </tr>

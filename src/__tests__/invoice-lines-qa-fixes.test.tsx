@@ -1,5 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
+
+vi.mock("@/src/i18n/context", async () => {
+  const { getMessages } = await import("@/src/i18n/index");
+  return {
+    useI18n: () => ({
+      locale: "en" as const,
+      t: getMessages("en"),
+      setLocale: () => undefined,
+    }),
+  };
+});
 import {
   parsePageInput,
   isCompletelyEmptyLine,
