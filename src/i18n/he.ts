@@ -10,6 +10,17 @@ export const he: Messages = {
     vendors: "ספקים",
     company: "חברה",
   },
+  companySwitcher: {
+    selectCompany: "בחר חברה",
+    createCompany: "צור חברה",
+    companyName: "שם החברה",
+    baseCurrency: "מטבע בסיס",
+    create: "צור",
+    creating: "יוצר…",
+    couldNotLoad: "לא ניתן לטעון חברות",
+    couldNotSwitch: "לא ניתן להחליף חברה",
+    couldNotCreate: "לא ניתן ליצור חברה",
+  },
   common: {
     loading: "טוען…",
     saving: "שומר…",

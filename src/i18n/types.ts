@@ -14,6 +14,17 @@ export interface Messages {
     vendors: string;
     company: string;
   };
+  companySwitcher: {
+    selectCompany: string;
+    createCompany: string;
+    companyName: string;
+    baseCurrency: string;
+    create: string;
+    creating: string;
+    couldNotLoad: string;
+    couldNotSwitch: string;
+    couldNotCreate: string;
+  };
   common: {
     loading: string;
     saving: string;

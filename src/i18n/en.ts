@@ -10,6 +10,17 @@ export const en: Messages = {
     vendors: "Vendors",
     company: "Company",
   },
+  companySwitcher: {
+    selectCompany: "Select company",
+    createCompany: "Create company",
+    companyName: "Company name",
+    baseCurrency: "Base currency",
+    create: "Create",
+    creating: "Creating…",
+    couldNotLoad: "Could not load companies",
+    couldNotSwitch: "Could not switch company",
+    couldNotCreate: "Could not create company",
+  },
   common: {
     loading: "Loading…",
     saving: "Saving…",

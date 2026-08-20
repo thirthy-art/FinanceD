@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import { useI18n } from "@/src/i18n/context";
 import type { Locale } from "@/src/i18n/types";
 import { SUPPORTED_LOCALES } from "@/src/i18n/types";
+import CompanySwitcher from "@/src/components/CompanySwitcher";
 
 const LOCALE_LABELS: Record<Locale, string> = { en: "EN", ru: "RU", he: "HE" };
 
@@ -33,6 +34,7 @@ export default function Nav() {
         >
           FinanceD
         </Link>
+        <CompanySwitcher />
         {links.map((l) => (
           <Link
             key={l.href}

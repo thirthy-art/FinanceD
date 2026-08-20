@@ -10,6 +10,17 @@ export const ru: Messages = {
     vendors: "Поставщики",
     company: "Компания",
   },
+  companySwitcher: {
+    selectCompany: "Выберите компанию",
+    createCompany: "Создать компанию",
+    companyName: "Название компании",
+    baseCurrency: "Базовая валюта",
+    create: "Создать",
+    creating: "Создание…",
+    couldNotLoad: "Не удалось загрузить компании",
+    couldNotSwitch: "Не удалось сменить компанию",
+    couldNotCreate: "Не удалось создать компанию",
+  },
   common: {
     loading: "Загрузка…",
     saving: "Сохранение…",
