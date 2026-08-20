@@ -30,6 +30,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "year required (YYYY)" }, { status: 400 });
 
   const company = await getActiveCompanyFromRequest(req);
+  if (company instanceof Response) return company;
   const db = getDb();
 
   const rows = await db
@@ -57,6 +58,7 @@ export async function PUT(req: NextRequest) {
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
   const company = await getActiveCompanyFromRequest(req);
+  if (company instanceof Response) return company;
   const db = getDb();
 
   const [cat] = await db
@@ -131,6 +133,7 @@ export async function POST(req: NextRequest) {
     if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
     const company = await getActiveCompanyFromRequest(req);
+    if (company instanceof Response) return company;
     const db = getDb();
 
     const catIds = [...new Set(parsed.data.entries.map((e) => e.budgetCategoryId))];
@@ -226,6 +229,7 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
   const company = await getActiveCompanyFromRequest(req);
+  if (company instanceof Response) return company;
   const db = getDb();
   const [cat] = await db
     .select()

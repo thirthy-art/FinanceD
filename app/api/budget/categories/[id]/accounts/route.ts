@@ -14,6 +14,7 @@ export async function GET(
   if (isNaN(categoryId)) return NextResponse.json({ error: "Invalid id" }, { status: 400 });
 
   const company = await getActiveCompanyFromRequest(req);
+  if (company instanceof Response) return company;
   const db = getDb();
 
   // Verify category belongs to company
@@ -57,6 +58,7 @@ export async function POST(
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
   const company = await getActiveCompanyFromRequest(req);
+  if (company instanceof Response) return company;
   const db = getDb();
 
   // Verify category belongs to company
@@ -104,6 +106,7 @@ export async function DELETE(
   if (isNaN(accountId)) return NextResponse.json({ error: "accountId required" }, { status: 400 });
 
   const company = await getActiveCompanyFromRequest(req);
+  if (company instanceof Response) return company;
   const db = getDb();
 
   // Verify category belongs to company

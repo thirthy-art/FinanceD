@@ -58,6 +58,7 @@ const UpdateSchema = z.object({
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const activeCompany = await getActiveCompanyFromRequest(req);
+  if (activeCompany instanceof Response) return activeCompany;
   const db = getDb();
 
   const [invoice] = await db
@@ -101,6 +102,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const db = getDb();
   const data = parsed.data;
   const activeCompany = await getActiveCompanyFromRequest(req);
+  if (activeCompany instanceof Response) return activeCompany;
 
   const [existing] = await db
     .select()
@@ -595,6 +597,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   }
 
   const activeCompany = await getActiveCompanyFromRequest(req);
+  if (activeCompany instanceof Response) return activeCompany;
   const db = getDb();
   const outcome = await (async () => {
     try {

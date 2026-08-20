@@ -19,6 +19,7 @@ const STARTER_CATEGORIES = [
 
 export async function POST(req: Request) {
   const company = await getActiveCompanyFromRequest(req);
+  if (company instanceof Response) return company;
   const db = getDb();
 
   const existing = await db

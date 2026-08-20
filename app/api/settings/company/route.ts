@@ -7,6 +7,7 @@ import { z } from "zod";
 
 export async function GET(req: NextRequest) {
   const company = await getActiveCompanyFromRequest(req);
+  if (company instanceof Response) return company;
   return NextResponse.json(company);
 }
 
@@ -21,6 +22,7 @@ export async function PATCH(req: NextRequest) {
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
   const company = await getActiveCompanyFromRequest(req);
+  if (company instanceof Response) return company;
   const db = getDb();
   const [updated] = await db
     .update(companies)

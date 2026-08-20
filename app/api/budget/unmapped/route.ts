@@ -24,6 +24,7 @@ export async function GET(req: NextRequest) {
   const year = searchParams.get("year");
 
   const company = await getActiveCompanyFromRequest(req);
+  if (company instanceof Response) return company;
   const db = getDb();
 
   // Account IDs mapped to an ACTIVE budget category for this company.
