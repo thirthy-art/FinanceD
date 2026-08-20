@@ -2,18 +2,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/src/db";
 import { budgetCategories, budgetCategoryAccounts, chartOfAccounts } from "@/src/db/schema";
 import { eq, and } from "drizzle-orm";
-import { getOrCreateCompany } from "@/src/lib/db-helpers";
+import { getActiveCompanyFromRequest } from "@/src/lib/active-company";
 import { z } from "zod";
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
   const categoryId = parseInt(id, 10);
   if (isNaN(categoryId)) return NextResponse.json({ error: "Invalid id" }, { status: 400 });
 
-  const company = await getOrCreateCompany();
+  const company = await getActiveCompanyFromRequest(req);
   const db = getDb();
 
   // Verify category belongs to company
@@ -32,7 +32,10 @@ export async function GET(
     })
     .from(budgetCategoryAccounts)
     .innerJoin(chartOfAccounts, eq(budgetCategoryAccounts.accountId, chartOfAccounts.id))
-    .where(eq(budgetCategoryAccounts.budgetCategoryId, categoryId));
+    .where(and(
+      eq(budgetCategoryAccounts.budgetCategoryId, categoryId),
+      eq(chartOfAccounts.companyId, company.id),
+    ));
 
   return NextResponse.json(rows);
 }
@@ -53,7 +56,7 @@ export async function POST(
   const parsed = AddSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
-  const company = await getOrCreateCompany();
+  const company = await getActiveCompanyFromRequest(req);
   const db = getDb();
 
   // Verify category belongs to company
@@ -100,7 +103,7 @@ export async function DELETE(
   const accountId = parseInt(searchParams.get("accountId") ?? "", 10);
   if (isNaN(accountId)) return NextResponse.json({ error: "accountId required" }, { status: 400 });
 
-  const company = await getOrCreateCompany();
+  const company = await getActiveCompanyFromRequest(req);
   const db = getDb();
 
   // Verify category belongs to company

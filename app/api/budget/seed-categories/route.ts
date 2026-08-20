@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/src/db";
 import { budgetCategories } from "@/src/db/schema";
 import { eq } from "drizzle-orm";
-import { getOrCreateCompany } from "@/src/lib/db-helpers";
+import { getActiveCompanyFromRequest } from "@/src/lib/active-company";
 
 const STARTER_CATEGORIES = [
   "HR",
@@ -17,8 +17,8 @@ const STARTER_CATEGORIES = [
   "Other Operating Expenses",
 ];
 
-export async function POST() {
-  const company = await getOrCreateCompany();
+export async function POST(req: Request) {
+  const company = await getActiveCompanyFromRequest(req);
   const db = getDb();
 
   const existing = await db

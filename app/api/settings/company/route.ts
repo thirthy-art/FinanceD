@@ -2,11 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/src/db";
 import { companies } from "@/src/db/schema";
 import { eq } from "drizzle-orm";
-import { getOrCreateCompany } from "@/src/lib/db-helpers";
+import { getActiveCompanyFromRequest } from "@/src/lib/active-company";
 import { z } from "zod";
 
-export async function GET() {
-  const company = await getOrCreateCompany();
+export async function GET(req: NextRequest) {
+  const company = await getActiveCompanyFromRequest(req);
   return NextResponse.json(company);
 }
 
@@ -20,7 +20,7 @@ export async function PATCH(req: NextRequest) {
   const parsed = UpdateSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
-  const company = await getOrCreateCompany();
+  const company = await getActiveCompanyFromRequest(req);
   const db = getDb();
   const [updated] = await db
     .update(companies)

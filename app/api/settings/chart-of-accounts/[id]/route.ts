@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/src/db";
 import { chartOfAccounts } from "@/src/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
+import { getActiveCompanyFromRequest } from "@/src/lib/active-company";
 
 const UpdateSchema = z.object({
   code: z.string().min(1).optional(),
@@ -17,11 +18,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const parsed = UpdateSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
+  const company = await getActiveCompanyFromRequest(req);
   const db = getDb();
   const [row] = await db
     .update(chartOfAccounts)
     .set({ ...parsed.data, updatedAt: new Date() })
-    .where(eq(chartOfAccounts.id, Number(id)))
+    .where(and(
+      eq(chartOfAccounts.id, Number(id)),
+      eq(chartOfAccounts.companyId, company.id),
+    ))
     .returning();
   if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json(row);
@@ -29,10 +34,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const company = await getActiveCompanyFromRequest(req);
   const db = getDb();
-  await db
+  const [row] = await db
     .update(chartOfAccounts)
     .set({ isActive: false, updatedAt: new Date() })
-    .where(eq(chartOfAccounts.id, Number(id)));
+    .where(and(
+      eq(chartOfAccounts.id, Number(id)),
+      eq(chartOfAccounts.companyId, company.id),
+    ))
+    .returning({ id: chartOfAccounts.id });
+  if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return new NextResponse(null, { status: 204 });
 }

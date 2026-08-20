@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { getDb } from "@/src/db";
 import { supplierInvoices, vendors } from "@/src/db/schema";
-import { eq, desc } from "drizzle-orm";
-import { getOrCreateCompany } from "@/src/lib/db-helpers";
+import { and, eq, desc } from "drizzle-orm";
+import { getActiveCompany } from "@/src/lib/active-company";
 import { formatDisplayAmount } from "@/src/lib/invoice-validation";
 
 export const dynamic = "force-dynamic";
@@ -17,7 +17,7 @@ function statusBadge(status: string) {
 
 export default async function Home({ searchParams }: { searchParams: Promise<{ deleted?: string }> }) {
   const { deleted } = await searchParams;
-  await getOrCreateCompany();
+  const company = await getActiveCompany();
   const db = getDb();
   const rows = await db
     .select({
@@ -32,7 +32,11 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ d
       createdAt: supplierInvoices.createdAt,
     })
     .from(supplierInvoices)
-    .leftJoin(vendors, eq(supplierInvoices.vendorId, vendors.id))
+    .leftJoin(vendors, and(
+      eq(supplierInvoices.vendorId, vendors.id),
+      eq(vendors.companyId, company.id),
+    ))
+    .where(eq(supplierInvoices.companyId, company.id))
     .orderBy(desc(supplierInvoices.createdAt));
 
   return (

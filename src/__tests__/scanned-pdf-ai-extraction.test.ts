@@ -5,6 +5,9 @@ import { vi, describe, it, expect, beforeEach } from "vitest";
 
 vi.mock("pdf-parse", () => ({ PDFParse: vi.fn() }));
 vi.mock("@/src/db", () => ({ getDb: vi.fn() }));
+vi.mock("@/src/lib/active-company", () => ({
+  getActiveCompanyFromRequest: vi.fn().mockResolvedValue({ id: 1, baseCurrency: "EUR" }),
+}));
 vi.mock("@/src/lib/ai-provider", () => ({ getAiProviderConfig: vi.fn() }));
 vi.mock("fs/promises", () => ({ readFile: vi.fn(), stat: vi.fn() }));
 
@@ -55,8 +58,10 @@ function makeDbWithDocument(doc: {
   return {
     select: vi.fn().mockReturnValue({
       from: vi.fn().mockReturnValue({
-        where: vi.fn().mockReturnValue({
-          limit: vi.fn().mockResolvedValue([doc]),
+        innerJoin: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue([doc]),
+          }),
         }),
       }),
     }),

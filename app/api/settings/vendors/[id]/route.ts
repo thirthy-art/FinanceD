@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { count, eq } from "drizzle-orm";
+import { and, count, eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "@/src/db";
 import { supplierInvoices, vendors } from "@/src/db/schema";
 import { normalizeVendorTaxId } from "@/src/lib/vendor-identity";
+import { getActiveCompanyFromRequest } from "@/src/lib/active-company";
 
 const UpdateSchema = z.object({
   name: z.string().trim().min(1).max(255).optional(),
@@ -22,8 +23,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json({ error: parsed.success ? "Invalid vendor id." : parsed.error.flatten() }, { status: 400 });
   }
 
+  const company = await getActiveCompanyFromRequest(req);
   const db = getDb();
-  const [current] = await db.select().from(vendors).where(eq(vendors.id, vendorId));
+  const [current] = await db.select().from(vendors).where(and(
+    eq(vendors.id, vendorId),
+    eq(vendors.companyId, company.id),
+  ));
   if (!current) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const taxId = parsed.data.taxId !== undefined ? parsed.data.taxId?.trim() || null : current.taxId;
@@ -44,23 +49,32 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const [row] = await db
     .update(vendors)
     .set({ ...parsed.data, taxId, normalizedTaxId, updatedAt: new Date() })
-    .where(eq(vendors.id, vendorId))
+    .where(and(eq(vendors.id, vendorId), eq(vendors.companyId, company.id)))
     .returning();
   return NextResponse.json(row);
 }
 
-export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const vendorId = Number(id);
   if (!Number.isInteger(vendorId) || vendorId <= 0) {
     return NextResponse.json({ error: "Invalid vendor id." }, { status: 400 });
   }
 
+  const company = await getActiveCompanyFromRequest(req);
   const db = getDb();
+  const [current] = await db.select({ id: vendors.id }).from(vendors).where(and(
+    eq(vendors.id, vendorId),
+    eq(vendors.companyId, company.id),
+  ));
+  if (!current) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const [invoiceReference] = await db
     .select({ invoiceCount: count(supplierInvoices.id) })
     .from(supplierInvoices)
-    .where(eq(supplierInvoices.vendorId, vendorId));
+    .where(and(
+      eq(supplierInvoices.vendorId, vendorId),
+      eq(supplierInvoices.companyId, company.id),
+    ));
   const invoiceCount = invoiceReference?.invoiceCount ?? 0;
   if (invoiceCount > 0) {
     return NextResponse.json(
@@ -70,7 +84,10 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   }
 
   try {
-    const [deleted] = await db.delete(vendors).where(eq(vendors.id, vendorId)).returning({ id: vendors.id });
+    const [deleted] = await db.delete(vendors).where(and(
+      eq(vendors.id, vendorId),
+      eq(vendors.companyId, company.id),
+    )).returning({ id: vendors.id });
     if (!deleted) return NextResponse.json({ error: "Not found" }, { status: 404 });
     return NextResponse.json({ deleted: true });
   } catch {

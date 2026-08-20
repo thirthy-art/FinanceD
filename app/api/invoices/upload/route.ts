@@ -1,12 +1,12 @@
 import { randomUUID } from "crypto";
 import { mkdir, unlink, writeFile } from "fs/promises";
 import path from "path";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/src/db";
 import { supplierInvoices, supplierInvoiceDocuments } from "@/src/db/schema";
 import { extractPdfText, extractImageText, parseInvoiceFields } from "@/src/lib/extract";
-import { getOrCreateCompany } from "@/src/lib/db-helpers";
+import { getActiveCompanyFromRequest } from "@/src/lib/active-company";
 
 const UPLOAD_DIR = process.env.UPLOAD_DIR ?? "./uploads";
 const ALLOWED_TYPES = ["application/pdf", "image/jpeg", "image/png", "image/tiff", "image/webp"];
@@ -50,11 +50,15 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const company = await getActiveCompanyFromRequest(req);
   const db = getDb();
   const [existing] = await db
     .select({ id: supplierInvoices.id })
     .from(supplierInvoices)
-    .where(eq(supplierInvoices.uploadRequestId, requestId));
+    .where(and(
+      eq(supplierInvoices.uploadRequestId, requestId),
+      eq(supplierInvoices.companyId, company.id),
+    ));
   if (existing) return NextResponse.json({ invoiceId: existing.id, reused: true });
 
   const originalFilename = file.name;
@@ -84,7 +88,6 @@ export async function POST(req: NextRequest) {
 
   try {
     const fields = parseInvoiceFields(extracted.text);
-    const company = await getOrCreateCompany();
     const invoiceCurrency = fields.currency ?? company.baseCurrency;
     const isSameCurrency = invoiceCurrency === company.baseCurrency;
 
@@ -106,7 +109,10 @@ export async function POST(req: NextRequest) {
         const [duplicate] = await tx
           .select({ id: supplierInvoices.id })
           .from(supplierInvoices)
-          .where(eq(supplierInvoices.uploadRequestId, requestId));
+          .where(and(
+            eq(supplierInvoices.uploadRequestId, requestId),
+            eq(supplierInvoices.companyId, company.id),
+          ));
         if (!duplicate) throw new Error("Upload request conflict could not be resolved.");
         return { invoiceId: duplicate.id, reused: true };
       }

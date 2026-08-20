@@ -8,7 +8,7 @@ import {
   chartOfAccounts,
 } from "@/src/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
-import { getOrCreateCompany } from "@/src/lib/db-helpers";
+import { getActiveCompanyFromRequest } from "@/src/lib/active-company";
 
 /**
  * Returns invoice lines from approved invoices whose accounting account
@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const year = searchParams.get("year");
 
-  const company = await getOrCreateCompany();
+  const company = await getActiveCompanyFromRequest(req);
   const db = getDb();
 
   // Account IDs mapped to an ACTIVE budget category for this company.

@@ -6,7 +6,7 @@ vi.mock("fs/promises", () => ({
   writeFile: vi.fn(),
 }));
 vi.mock("@/src/db", () => ({ getDb: vi.fn() }));
-vi.mock("@/src/lib/db-helpers", () => ({ getOrCreateCompany: vi.fn() }));
+vi.mock("@/src/lib/active-company", () => ({ getActiveCompanyFromRequest: vi.fn() }));
 vi.mock("@/src/lib/extract", () => ({
   extractPdfText: vi.fn(),
   extractImageText: vi.fn(),
@@ -15,7 +15,7 @@ vi.mock("@/src/lib/extract", () => ({
 
 import { mkdir, writeFile } from "fs/promises";
 import { getDb } from "@/src/db";
-import { getOrCreateCompany } from "@/src/lib/db-helpers";
+import { getActiveCompanyFromRequest } from "@/src/lib/active-company";
 import { extractImageText, extractPdfText, parseInvoiceFields } from "@/src/lib/extract";
 import { POST } from "@/app/api/invoices/upload/route";
 
@@ -23,7 +23,7 @@ const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 const mockMkdir = vi.mocked(mkdir);
 const mockWriteFile = vi.mocked(writeFile);
 const mockGetDb = vi.mocked(getDb);
-const mockGetOrCreateCompany = vi.mocked(getOrCreateCompany);
+const mockGetActiveCompany = vi.mocked(getActiveCompanyFromRequest);
 const mockExtractPdfText = vi.mocked(extractPdfText);
 const mockExtractImageText = vi.mocked(extractImageText);
 const mockParseInvoiceFields = vi.mocked(parseInvoiceFields);
@@ -42,17 +42,16 @@ function uploadRequest(file: {
 }
 
 function successfulDb() {
+  const invoiceValues = vi.fn().mockReturnValue({
+    onConflictDoNothing: vi.fn().mockReturnValue({
+      returning: vi.fn().mockResolvedValue([{ id: 42 }]),
+    }),
+  });
   const insert = vi.fn()
-    .mockReturnValueOnce({
-      values: vi.fn().mockReturnValue({
-        onConflictDoNothing: vi.fn().mockReturnValue({
-          returning: vi.fn().mockResolvedValue([{ id: 42 }]),
-        }),
-      }),
-    })
+    .mockReturnValueOnce({ values: invoiceValues })
     .mockReturnValueOnce({ values: vi.fn().mockResolvedValue(undefined) });
   const tx = { insert };
-  return {
+  const db = {
     select: vi.fn().mockReturnValue({
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue([]),
@@ -60,13 +59,14 @@ function successfulDb() {
     }),
     transaction: vi.fn(async (callback: (transaction: typeof tx) => unknown) => callback(tx)),
   };
+  return { db, invoiceValues };
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
   mockMkdir.mockResolvedValue(undefined);
   mockWriteFile.mockResolvedValue(undefined);
-  mockGetOrCreateCompany.mockResolvedValue({ id: 1, baseCurrency: "EUR" } as never);
+  mockGetActiveCompany.mockResolvedValue({ id: 1, baseCurrency: "EUR" } as never);
   mockExtractPdfText.mockResolvedValue({ text: "Invoice text", ocrPerformed: false });
   mockExtractImageText.mockResolvedValue({ text: "Invoice text", ocrPerformed: true });
   mockParseInvoiceFields.mockReturnValue({});
@@ -75,7 +75,8 @@ beforeEach(() => {
 describe("invoice upload size limit", () => {
   it("allows a file at the 25 MiB limit to follow the normal upload path", async () => {
     const arrayBuffer = vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3]).buffer);
-    mockGetDb.mockReturnValue(successfulDb() as never);
+    const { db } = successfulDb();
+    mockGetDb.mockReturnValue(db as never);
 
     const response = await POST(uploadRequest({
       name: "invoice.pdf",
@@ -88,6 +89,52 @@ describe("invoice upload size limit", () => {
     expect(arrayBuffer).toHaveBeenCalledOnce();
     expect(mockWriteFile).toHaveBeenCalledOnce();
     expect(mockExtractPdfText).toHaveBeenCalledOnce();
+  });
+
+  it("assigns a new invoice to the active company", async () => {
+    const arrayBuffer = vi.fn().mockResolvedValue(new Uint8Array([1]).buffer);
+    mockGetActiveCompany.mockResolvedValue({ id: 22, baseCurrency: "GBP" } as never);
+    const { db, invoiceValues } = successfulDb();
+    mockGetDb.mockReturnValue(db as never);
+
+    const response = await POST(uploadRequest({
+      name: "invoice.pdf",
+      type: "application/pdf",
+      size: 1,
+      arrayBuffer,
+    }) as never);
+
+    expect(response.status).toBe(200);
+    expect(invoiceValues).toHaveBeenCalledWith(expect.objectContaining({ companyId: 22, currency: "GBP" }));
+  });
+
+  it("does not reuse an upload request id owned by another company", async () => {
+    const arrayBuffer = vi.fn().mockResolvedValue(new Uint8Array([1]).buffer);
+    const emptySelect = vi.fn().mockReturnValue({
+      from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }),
+    });
+    const tx = {
+      insert: vi.fn().mockReturnValue({
+        values: vi.fn().mockReturnValue({
+          onConflictDoNothing: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([]) }),
+        }),
+      }),
+      select: emptySelect,
+    };
+    mockGetDb.mockReturnValue({
+      select: emptySelect,
+      transaction: vi.fn(async (callback: (transaction: typeof tx) => unknown) => callback(tx)),
+    } as never);
+
+    const response = await POST(uploadRequest({
+      name: "invoice.pdf",
+      type: "application/pdf",
+      size: 1,
+      arrayBuffer,
+    }) as never);
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ error: "The invoice record could not be created. Please retry safely." });
   });
 
   it("returns 413 before writing or extracting an oversized file", async () => {

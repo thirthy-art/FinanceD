@@ -9,20 +9,25 @@ import {
   chartOfAccounts,
   companies,
 } from "@/src/db/schema";
-import { eq, asc, count } from "drizzle-orm";
+import { and, eq, asc, count } from "drizzle-orm";
 import InvoiceReview from "@/src/components/InvoiceReview";
 import Link from "next/link";
 import { parseInvoiceFields } from "@/src/lib/extract";
 import { stripTrailingZeros } from "@/src/lib/invoice-validation";
+import { getActiveCompany } from "@/src/lib/active-company";
 
 export default async function InvoicePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const activeCompany = await getActiveCompany();
   const db = getDb();
 
   const [invoice] = await db
     .select()
     .from(supplierInvoices)
-    .where(eq(supplierInvoices.id, Number(id)));
+    .where(and(
+      eq(supplierInvoices.id, Number(id)),
+      eq(supplierInvoices.companyId, activeCompany.id),
+    ));
 
   if (!invoice) notFound();
 
@@ -37,7 +42,10 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
       invoiceCount: count(supplierInvoices.id),
     })
       .from(vendors)
-      .leftJoin(supplierInvoices, eq(supplierInvoices.vendorId, vendors.id))
+      .leftJoin(supplierInvoices, and(
+        eq(supplierInvoices.vendorId, vendors.id),
+        eq(supplierInvoices.companyId, activeCompany.id),
+      ))
       .where(eq(vendors.companyId, invoice.companyId))
       .groupBy(vendors.id)
       .orderBy(asc(vendors.name)),
