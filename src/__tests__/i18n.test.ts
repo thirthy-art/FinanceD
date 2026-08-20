@@ -142,6 +142,12 @@ describe("no {s} placeholder in translated strings", () => {
     }
   });
 
+  it("Russian unmappedWarning is count-neutral and still contains {count}", () => {
+    const ruMsg = getMessages("ru");
+    expect(ruMsg.budget.unmappedWarning).toContain("{count}");
+    expect(ruMsg.budget.unmappedWarning).toBe("Строк счетов-фактур с несвязанными счетами: {count}");
+  });
+
   it("recognitionScheduleTitle has no {s} in any locale", () => {
     for (const locale of locales) {
       const msg = getMessages(locale);

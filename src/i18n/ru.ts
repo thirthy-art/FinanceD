@@ -307,7 +307,7 @@ export const ru: Messages = {
     couldNotMap: "Не удалось добавить связь.",
     monthAmountRequired: "Месяц и сумма обязательны.",
     selectCategoryRequired: "Выберите категорию.",
-    unmappedWarning: "{count} строк счёта-фактуры из утверждённых счетов имеют несвязанные счета",
+    unmappedWarning: "Строк счетов-фактур с несвязанными счетами: {count}",
     unmappedWarning1: "1 строка счёта-фактуры из утверждённого счёта имеет несвязанный счёт",
     accountLineCount: "{count} стр.",
     accountLineCount1: "1 стр.",
