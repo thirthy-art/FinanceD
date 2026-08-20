@@ -10,7 +10,7 @@ import {
   chartOfAccounts,
 } from "@/src/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
-import { getOrCreateCompany } from "@/src/lib/db-helpers";
+import { getActiveCompanyFromRequest } from "@/src/lib/active-company";
 import {
   computeInvoiceActuals,
   resolveLineCategory,
@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
   if (!year || !/^\d{4}$/.test(year))
     return NextResponse.json({ error: "year required (YYYY)" }, { status: 400 });
 
-  const company = await getOrCreateCompany();
+  const company = await getActiveCompanyFromRequest(req);
   const db = getDb();
 
   // 1. All active categories for company

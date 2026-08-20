@@ -1,9 +1,11 @@
-import { asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 import { getDb } from "@/src/db";
 import { supplierInvoiceLines, supplierInvoices, vendors } from "@/src/db/schema";
 import { invoiceExportToXlsx } from "@/src/lib/invoice-xlsx";
+import { getActiveCompanyFromRequest } from "@/src/lib/active-company";
 
-export async function GET() {
+export async function GET(request: Request) {
+  const company = await getActiveCompanyFromRequest(request);
   const db = getDb();
   const [invoices, lines] = await Promise.all([
     db.select({
@@ -26,7 +28,11 @@ export async function GET() {
       paymentStatus: supplierInvoices.paymentStatus,
       paidDate: supplierInvoices.paidDate,
     }).from(supplierInvoices)
-      .leftJoin(vendors, eq(supplierInvoices.vendorId, vendors.id))
+      .leftJoin(vendors, and(
+        eq(supplierInvoices.vendorId, vendors.id),
+        eq(vendors.companyId, company.id),
+      ))
+      .where(eq(supplierInvoices.companyId, company.id))
       .orderBy(desc(supplierInvoices.createdAt)),
     db.select({
       invoiceId: supplierInvoices.id,
@@ -55,7 +61,11 @@ export async function GET() {
       prepaidAccountNumber: supplierInvoiceLines.prepaidAccountNumber,
     }).from(supplierInvoiceLines)
       .innerJoin(supplierInvoices, eq(supplierInvoiceLines.invoiceId, supplierInvoices.id))
-      .leftJoin(vendors, eq(supplierInvoices.vendorId, vendors.id))
+      .leftJoin(vendors, and(
+        eq(supplierInvoices.vendorId, vendors.id),
+        eq(vendors.companyId, company.id),
+      ))
+      .where(eq(supplierInvoices.companyId, company.id))
       .orderBy(desc(supplierInvoices.createdAt), asc(supplierInvoiceLines.position)),
   ]);
 

@@ -1,9 +1,10 @@
 import { readFile, stat } from "fs/promises";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { PDFParse } from "pdf-parse";
 import { getDb } from "@/src/db";
-import { supplierInvoiceDocuments } from "@/src/db/schema";
+import { supplierInvoiceDocuments, supplierInvoices } from "@/src/db/schema";
+import { getActiveCompanyFromRequest } from "@/src/lib/active-company";
 import {
   AI_EXTRACTION_PROMPT,
   AiInvoiceExtractionSchema,
@@ -31,16 +32,14 @@ function errorResponse(error: string, status: number) {
   return Response.json({ error }, { status });
 }
 
-export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const invoiceId = Number(id);
   if (!Number.isInteger(invoiceId) || invoiceId <= 0) {
     return errorResponse("Invalid invoice id.", 400);
   }
 
-  const config = getAiProviderConfig();
-  if (!config.ok) return errorResponse(config.error, 503);
-
+  const company = await getActiveCompanyFromRequest(request);
   const db = getDb();
   const [document] = await db
     .select({
@@ -49,10 +48,17 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       extractedText: supplierInvoiceDocuments.extractedText,
     })
     .from(supplierInvoiceDocuments)
-    .where(eq(supplierInvoiceDocuments.invoiceId, invoiceId))
+    .innerJoin(supplierInvoices, eq(supplierInvoiceDocuments.invoiceId, supplierInvoices.id))
+    .where(and(
+      eq(supplierInvoiceDocuments.invoiceId, invoiceId),
+      eq(supplierInvoices.companyId, company.id),
+    ))
     .limit(1);
 
   if (!document) return errorResponse("This invoice has no document to extract.", 404);
+
+  const config = getAiProviderConfig();
+  if (!config.ok) return errorResponse(config.error, 503);
 
   let userContent: string | Array<Record<string, unknown>>;
 

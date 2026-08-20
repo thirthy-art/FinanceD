@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/src/db";
 import { budgetEntries, budgetCategories, costCentres } from "@/src/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
-import { getOrCreateCompany } from "@/src/lib/db-helpers";
+import { getActiveCompanyFromRequest } from "@/src/lib/active-company";
 import { z } from "zod";
 import { isValidBudgetAmount, isValidMonth } from "@/src/lib/budget-actuals";
 
@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
   if (!year || !/^\d{4}$/.test(year))
     return NextResponse.json({ error: "year required (YYYY)" }, { status: 400 });
 
-  const company = await getOrCreateCompany();
+  const company = await getActiveCompanyFromRequest(req);
   const db = getDb();
 
   const rows = await db
@@ -56,7 +56,7 @@ export async function PUT(req: NextRequest) {
   const parsed = UpsertSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
-  const company = await getOrCreateCompany();
+  const company = await getActiveCompanyFromRequest(req);
   const db = getDb();
 
   const [cat] = await db
@@ -97,7 +97,10 @@ export async function PUT(req: NextRequest) {
     const [updated] = await db
       .update(budgetEntries)
       .set({ amount, note: note ?? null, updatedAt: now })
-      .where(eq(budgetEntries.id, matchingEntry.id))
+      .where(and(
+        eq(budgetEntries.id, matchingEntry.id),
+        eq(budgetEntries.companyId, company.id),
+      ))
       .returning();
     return NextResponse.json(updated);
   } else {
@@ -127,7 +130,7 @@ export async function POST(req: NextRequest) {
     const parsed = BulkUpsertSchema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
-    const company = await getOrCreateCompany();
+    const company = await getActiveCompanyFromRequest(req);
     const db = getDb();
 
     const catIds = [...new Set(parsed.data.entries.map((e) => e.budgetCategoryId))];
@@ -192,7 +195,10 @@ export async function POST(req: NextRequest) {
           const [updated] = await tx
             .update(budgetEntries)
             .set({ amount, note: note ?? null, updatedAt: now })
-            .where(eq(budgetEntries.id, matchingEntry.id))
+            .where(and(
+              eq(budgetEntries.id, matchingEntry.id),
+              eq(budgetEntries.companyId, company.id),
+            ))
             .returning();
           rows.push(updated);
         } else {
@@ -219,7 +225,7 @@ export async function POST(req: NextRequest) {
   const parsed = UpsertSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
-  const company = await getOrCreateCompany();
+  const company = await getActiveCompanyFromRequest(req);
   const db = getDb();
   const [cat] = await db
     .select()
@@ -257,7 +263,10 @@ export async function POST(req: NextRequest) {
     const [updated] = await db
       .update(budgetEntries)
       .set({ amount, note: note ?? null, updatedAt: now })
-      .where(eq(budgetEntries.id, matchingEntry.id))
+      .where(and(
+        eq(budgetEntries.id, matchingEntry.id),
+        eq(budgetEntries.companyId, company.id),
+      ))
       .returning();
     return NextResponse.json(updated);
   } else {

@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/src/db";
 import { supplierInvoices, vendors } from "@/src/db/schema";
-import { eq, desc } from "drizzle-orm";
+import { and, eq, desc } from "drizzle-orm";
+import { getActiveCompanyFromRequest } from "@/src/lib/active-company";
 
-export async function GET() {
+export async function GET(request: Request) {
+  const company = await getActiveCompanyFromRequest(request);
   const db = getDb();
   const rows = await db
     .select({
@@ -19,7 +21,11 @@ export async function GET() {
       createdAt: supplierInvoices.createdAt,
     })
     .from(supplierInvoices)
-    .leftJoin(vendors, eq(supplierInvoices.vendorId, vendors.id))
+    .leftJoin(vendors, and(
+      eq(supplierInvoices.vendorId, vendors.id),
+      eq(vendors.companyId, company.id),
+    ))
+    .where(eq(supplierInvoices.companyId, company.id))
     .orderBy(desc(supplierInvoices.createdAt));
 
   return NextResponse.json(rows);

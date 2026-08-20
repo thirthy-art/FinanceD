@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
-import { asc, count, eq } from "drizzle-orm";
+import { and, asc, count, eq } from "drizzle-orm";
 import { getDb } from "@/src/db";
 import { companies, supplierInvoices, vendors } from "@/src/db/schema";
 import VendorActions from "@/src/components/VendorActions";
@@ -9,6 +9,7 @@ import { Decimal } from "@/src/lib/decimal";
 import { calculateVendorInvoiceTotals } from "@/src/lib/vendor-totals";
 import { resolveLocale, getMessages } from "@/src/i18n/index";
 import { LOCALE_COOKIE } from "@/src/i18n/types";
+import { getActiveCompany } from "@/src/lib/active-company";
 
 function displayAmount(value: string | null) {
   if (!value) return "—";
@@ -25,8 +26,12 @@ export default async function VendorDetailPage({
   const [{ id }, query] = await Promise.all([params, searchParams]);
   const vendorId = Number(id);
   if (!Number.isInteger(vendorId) || vendorId <= 0) notFound();
+  const activeCompany = await getActiveCompany();
   const db = getDb();
-  const [vendor] = await db.select().from(vendors).where(eq(vendors.id, vendorId));
+  const [vendor] = await db.select().from(vendors).where(and(
+    eq(vendors.id, vendorId),
+    eq(vendors.companyId, activeCompany.id),
+  ));
   if (!vendor) notFound();
 
   const cookieStore = await cookies();
@@ -42,14 +47,20 @@ export default async function VendorDetailPage({
       currency: supplierInvoices.currency,
       grossAmount: supplierInvoices.grossAmount,
       baseGrossAmount: supplierInvoices.baseGrossAmount,
-    }).from(supplierInvoices).where(eq(supplierInvoices.vendorId, vendor.id)).orderBy(asc(supplierInvoices.invoiceDate), asc(supplierInvoices.id)),
+    }).from(supplierInvoices).where(and(
+      eq(supplierInvoices.vendorId, vendor.id),
+      eq(supplierInvoices.companyId, activeCompany.id),
+    )).orderBy(asc(supplierInvoices.invoiceDate), asc(supplierInvoices.id)),
     db.select({
       id: vendors.id,
       name: vendors.name,
       taxId: vendors.taxId,
       invoiceCount: count(supplierInvoices.id),
     }).from(vendors)
-      .leftJoin(supplierInvoices, eq(supplierInvoices.vendorId, vendors.id))
+      .leftJoin(supplierInvoices, and(
+        eq(supplierInvoices.vendorId, vendors.id),
+        eq(supplierInvoices.companyId, activeCompany.id),
+      ))
       .where(eq(vendors.companyId, vendor.companyId))
       .groupBy(vendors.id)
       .orderBy(asc(vendors.name)),

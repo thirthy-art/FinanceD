@@ -2,8 +2,8 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import { getDb } from "@/src/db";
 import { supplierInvoices, vendors } from "@/src/db/schema";
-import { eq, desc } from "drizzle-orm";
-import { getOrCreateCompany } from "@/src/lib/db-helpers";
+import { and, eq, desc } from "drizzle-orm";
+import { getActiveCompany } from "@/src/lib/active-company";
 import { formatDisplayAmount } from "@/src/lib/invoice-validation";
 import { resolveLocale, getMessages } from "@/src/i18n/index";
 import { LOCALE_COOKIE } from "@/src/i18n/types";
@@ -21,7 +21,7 @@ function statusBadge(status: string, t: { statusApproved: string; statusDraft: s
 
 export default async function Home({ searchParams }: { searchParams: Promise<{ deleted?: string }> }) {
   const { deleted } = await searchParams;
-  await getOrCreateCompany();
+  const company = await getActiveCompany();
   const cookieStore = await cookies();
   const locale = resolveLocale(cookieStore.get(LOCALE_COOKIE)?.value);
   const { invoiceList: t, common } = getMessages(locale);
@@ -40,7 +40,11 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ d
       createdAt: supplierInvoices.createdAt,
     })
     .from(supplierInvoices)
-    .leftJoin(vendors, eq(supplierInvoices.vendorId, vendors.id))
+    .leftJoin(vendors, and(
+      eq(supplierInvoices.vendorId, vendors.id),
+      eq(vendors.companyId, company.id),
+    ))
+    .where(eq(supplierInvoices.companyId, company.id))
     .orderBy(desc(supplierInvoices.createdAt));
 
   return (

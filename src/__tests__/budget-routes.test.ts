@@ -1,15 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/src/db", () => ({ getDb: vi.fn() }));
-vi.mock("@/src/lib/db-helpers", () => ({ getOrCreateCompany: vi.fn() }));
+vi.mock("@/src/lib/active-company", () => ({ getActiveCompanyFromRequest: vi.fn() }));
 
 import { getDb } from "@/src/db";
-import { getOrCreateCompany } from "@/src/lib/db-helpers";
+import { getActiveCompanyFromRequest } from "@/src/lib/active-company";
 import { POST as postBudgetEntries } from "@/app/api/budget/entries/route";
 import { POST as postBudgetActual } from "@/app/api/budget/actuals/route";
 
 const mockGetDb = vi.mocked(getDb);
-const mockGetOrCreateCompany = vi.mocked(getOrCreateCompany);
+const mockGetActiveCompany = vi.mocked(getActiveCompanyFromRequest);
 
 function jsonRequest(url: string, body: unknown) {
   return new Request(url, {
@@ -65,7 +65,7 @@ function atomicFailureDb() {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockGetOrCreateCompany.mockResolvedValue({ id: 1 } as never);
+  mockGetActiveCompany.mockResolvedValue({ id: 1 } as never);
 });
 
 describe("Budget route amount validation", () => {
@@ -77,7 +77,7 @@ describe("Budget route amount validation", () => {
     }) as never);
 
     expect(response.status).toBe(400);
-    expect(mockGetOrCreateCompany).not.toHaveBeenCalled();
+    expect(mockGetActiveCompany).not.toHaveBeenCalled();
     expect(mockGetDb).not.toHaveBeenCalled();
   });
 
@@ -89,7 +89,7 @@ describe("Budget route amount validation", () => {
     }) as never);
 
     expect(response.status).toBe(400);
-    expect(mockGetOrCreateCompany).not.toHaveBeenCalled();
+    expect(mockGetActiveCompany).not.toHaveBeenCalled();
     expect(mockGetDb).not.toHaveBeenCalled();
   });
 });

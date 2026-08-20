@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { getDb } from "@/src/db";
-import { supplierInvoices, vendors, companies } from "@/src/db/schema";
-import { eq, desc } from "drizzle-orm";
+import { supplierInvoices, vendors } from "@/src/db/schema";
+import { and, eq, desc } from "drizzle-orm";
 import {
   classifyBucket,
   isFundingThroughMonthEnd,
@@ -19,6 +19,7 @@ import CashFlowView, {
 } from "@/src/components/CashFlowView";
 import { resolveLocale, getMessages } from "@/src/i18n/index";
 import { LOCALE_COOKIE } from "@/src/i18n/types";
+import { getActiveCompany } from "@/src/lib/active-company";
 
 export const dynamic = "force-dynamic";
 
@@ -107,14 +108,14 @@ function CurrencyTotals({ totals }: { totals: { currency: string; total: string 
 
 export default async function CashFlowPage() {
   const today = todayString();
+  const company = await getActiveCompany();
   const db = getDb();
 
   const cookieStore = await cookies();
   const locale = resolveLocale(cookieStore.get(LOCALE_COOKIE)?.value);
   const { cashFlow: t } = getMessages(locale);
 
-  const [company] = await db.select({ baseCurrency: companies.baseCurrency }).from(companies).limit(1);
-  const baseCurrency = company?.baseCurrency ?? "EUR";
+  const baseCurrency = company.baseCurrency;
 
   const rows = await db
     .select({
@@ -131,8 +132,14 @@ export default async function CashFlowPage() {
       paymentStatus: supplierInvoices.paymentStatus,
     })
     .from(supplierInvoices)
-    .leftJoin(vendors, eq(supplierInvoices.vendorId, vendors.id))
-    .where(eq(supplierInvoices.paymentStatus, "Unpaid"))
+    .leftJoin(vendors, and(
+      eq(supplierInvoices.vendorId, vendors.id),
+      eq(vendors.companyId, company.id),
+    ))
+    .where(and(
+      eq(supplierInvoices.companyId, company.id),
+      eq(supplierInvoices.paymentStatus, "Unpaid"),
+    ))
     .orderBy(desc(supplierInvoices.createdAt));
 
   type Row = typeof rows[number];

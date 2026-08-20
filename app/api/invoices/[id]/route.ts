@@ -29,6 +29,7 @@ import {
 } from "@/src/lib/invoice-lines";
 import { resolveSafeUploadPath } from "@/src/lib/safe-upload-path";
 import { findVendorIdentityMatches, normalizeVendorTaxId } from "@/src/lib/vendor-identity";
+import { getActiveCompanyFromRequest } from "@/src/lib/active-company";
 
 const UPLOAD_DIR = process.env.UPLOAD_DIR ?? "./uploads";
 
@@ -56,12 +57,16 @@ const UpdateSchema = z.object({
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const activeCompany = await getActiveCompanyFromRequest(req);
   const db = getDb();
 
   const [invoice] = await db
     .select()
     .from(supplierInvoices)
-    .where(eq(supplierInvoices.id, Number(id)));
+    .where(and(
+      eq(supplierInvoices.id, Number(id)),
+      eq(supplierInvoices.companyId, activeCompany.id),
+    ));
 
   if (!invoice) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
@@ -95,11 +100,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const db = getDb();
   const data = parsed.data;
+  const activeCompany = await getActiveCompanyFromRequest(req);
 
   const [existing] = await db
     .select()
     .from(supplierInvoices)
-    .where(eq(supplierInvoices.id, Number(id)));
+    .where(and(
+      eq(supplierInvoices.id, Number(id)),
+      eq(supplierInvoices.companyId, activeCompany.id),
+    ));
 
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
@@ -481,7 +490,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       const [updated] = await tx
         .update(supplierInvoices)
         .set(updateValues)
-        .where(eq(supplierInvoices.id, Number(id)))
+        .where(and(
+          eq(supplierInvoices.id, Number(id)),
+          eq(supplierInvoices.companyId, activeCompany.id),
+        ))
         .returning();
 
       if (!updated) return { kind: "not-found" as const };
@@ -575,13 +587,14 @@ function buildUpdateValues(
   return updateValues;
 }
 
-export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const invoiceId = Number(id);
   if (!Number.isInteger(invoiceId) || invoiceId <= 0) {
     return NextResponse.json({ error: "Invalid invoice id." }, { status: 400 });
   }
 
+  const activeCompany = await getActiveCompanyFromRequest(req);
   const db = getDb();
   const outcome = await (async () => {
     try {
@@ -589,7 +602,10 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
         const [invoice] = await tx
           .select({ id: supplierInvoices.id, status: supplierInvoices.status })
           .from(supplierInvoices)
-          .where(eq(supplierInvoices.id, invoiceId));
+          .where(and(
+            eq(supplierInvoices.id, invoiceId),
+            eq(supplierInvoices.companyId, activeCompany.id),
+          ));
 
         if (!invoice) return { kind: "not-found" as const, paths: [] as string[] };
         if (invoice.status !== "draft") return { kind: "approved" as const, paths: [] as string[] };
@@ -603,7 +619,11 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
         await tx.delete(supplierInvoiceDocuments).where(eq(supplierInvoiceDocuments.invoiceId, invoiceId));
         const [deleted] = await tx
           .delete(supplierInvoices)
-          .where(and(eq(supplierInvoices.id, invoiceId), eq(supplierInvoices.status, "draft")))
+          .where(and(
+            eq(supplierInvoices.id, invoiceId),
+            eq(supplierInvoices.companyId, activeCompany.id),
+            eq(supplierInvoices.status, "draft"),
+          ))
           .returning({ id: supplierInvoices.id });
         if (!deleted) throw new Error("Invoice status changed before deletion.");
 

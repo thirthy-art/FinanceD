@@ -1,10 +1,11 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getDb } from "@/src/db";
 import { supplierInvoices, vendors } from "@/src/db/schema";
 import { classifyBucket, BUCKET_LABELS } from "@/src/lib/cash-flow-buckets";
 import { setDecimalAmountCell } from "@/src/lib/cash-flow-xlsx";
 import { excelDateFromString } from "@/src/lib/xlsx-helpers";
 import ExcelJS from "exceljs";
+import { getActiveCompanyFromRequest } from "@/src/lib/active-company";
 
 function todayString(): string {
   return new Date().toISOString().slice(0, 10);
@@ -15,8 +16,9 @@ function setDateCell(cell: ExcelJS.Cell, value: string | null) {
   cell.numFmt = "yyyy-mm-dd";
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   const today = todayString();
+  const company = await getActiveCompanyFromRequest(request);
   const db = getDb();
 
   const rows = await db
@@ -36,8 +38,14 @@ export async function GET() {
       paymentStatus: supplierInvoices.paymentStatus,
     })
     .from(supplierInvoices)
-    .leftJoin(vendors, eq(supplierInvoices.vendorId, vendors.id))
-    .where(eq(supplierInvoices.paymentStatus, "Unpaid"));
+    .leftJoin(vendors, and(
+      eq(supplierInvoices.vendorId, vendors.id),
+      eq(vendors.companyId, company.id),
+    ))
+    .where(and(
+      eq(supplierInvoices.companyId, company.id),
+      eq(supplierInvoices.paymentStatus, "Unpaid"),
+    ));
 
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "FinanceD";

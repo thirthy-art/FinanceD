@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/src/db";
 import { budgetActualEntries, budgetCategories, costCentres } from "@/src/db/schema";
 import { eq, and } from "drizzle-orm";
-import { getOrCreateCompany } from "@/src/lib/db-helpers";
+import { getActiveCompanyFromRequest } from "@/src/lib/active-company";
 import { z } from "zod";
 import { isValidBudgetAmount, isValidMonth } from "@/src/lib/budget-actuals";
 
@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
   if (!year || !/^\d{4}$/.test(year))
     return NextResponse.json({ error: "year required (YYYY)" }, { status: 400 });
 
-  const company = await getOrCreateCompany();
+  const company = await getActiveCompanyFromRequest(req);
   const db = getDb();
   const rows = await db
     .select()
@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
   const parsed = CreateSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
-  const company = await getOrCreateCompany();
+  const company = await getActiveCompanyFromRequest(req);
   const db = getDb();
 
   const [cat] = await db
@@ -89,7 +89,7 @@ export async function DELETE(req: NextRequest) {
   const entryId = parseInt(idParam ?? "", 10);
   if (isNaN(entryId)) return NextResponse.json({ error: "id required" }, { status: 400 });
 
-  const company = await getOrCreateCompany();
+  const company = await getActiveCompanyFromRequest(req);
   const db = getDb();
 
   await db

@@ -1,17 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { asc, count, eq } from "drizzle-orm";
+import { and, asc, count, eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "@/src/db";
 import { supplierInvoices, vendors } from "@/src/db/schema";
-import { getOrCreateCompany } from "@/src/lib/db-helpers";
+import { getActiveCompanyFromRequest } from "@/src/lib/active-company";
 import {
   findVendorIdentityMatches,
   hasPossibleVendorDuplicate,
   normalizeVendorTaxId,
 } from "@/src/lib/vendor-identity";
 
-export async function GET() {
-  const company = await getOrCreateCompany();
+export async function GET(req: NextRequest) {
+  const company = await getActiveCompanyFromRequest(req);
   const db = getDb();
   const rows = await db
     .select({
@@ -26,7 +26,10 @@ export async function GET() {
       invoiceCount: count(supplierInvoices.id),
     })
     .from(vendors)
-    .leftJoin(supplierInvoices, eq(supplierInvoices.vendorId, vendors.id))
+    .leftJoin(supplierInvoices, and(
+      eq(supplierInvoices.vendorId, vendors.id),
+      eq(supplierInvoices.companyId, company.id),
+    ))
     .where(eq(vendors.companyId, company.id))
     .groupBy(vendors.id)
     .orderBy(asc(vendors.name));
@@ -49,7 +52,7 @@ export async function POST(req: NextRequest) {
   const parsed = CreateSchema.safeParse(await req.json());
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
-  const company = await getOrCreateCompany();
+  const company = await getActiveCompanyFromRequest(req);
   const db = getDb();
   const existing = await db
     .select({ id: vendors.id, name: vendors.name, taxId: vendors.taxId, normalizedTaxId: vendors.normalizedTaxId })
