@@ -13,6 +13,8 @@ export interface Messages {
     chartOfAccounts: string;
     vendors: string;
     company: string;
+    language: string;
+    menu: string;
   };
   companySwitcher: {
     selectCompany: string;

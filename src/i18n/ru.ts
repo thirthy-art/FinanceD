@@ -9,6 +9,8 @@ export const ru: Messages = {
     chartOfAccounts: "План счетов",
     vendors: "Поставщики",
     company: "Компания",
+    language: "Язык",
+    menu: "Меню навигации",
   },
   companySwitcher: {
     selectCompany: "Выберите компанию",

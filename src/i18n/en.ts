@@ -9,6 +9,8 @@ export const en: Messages = {
     chartOfAccounts: "Chart of Accounts",
     vendors: "Vendors",
     company: "Company",
+    language: "Language",
+    menu: "Navigation menu",
   },
   companySwitcher: {
     selectCompany: "Select company",

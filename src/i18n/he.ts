@@ -9,6 +9,8 @@ export const he: Messages = {
     chartOfAccounts: "תרשים חשבונות",
     vendors: "ספקים",
     company: "חברה",
+    language: "שפה",
+    menu: "תפריט ניווט",
   },
   companySwitcher: {
     selectCompany: "בחר חברה",
