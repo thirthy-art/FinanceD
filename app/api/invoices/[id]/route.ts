@@ -23,6 +23,7 @@ import {
 import {
   InvoiceLineInputSchema,
   normalizeInvoiceLineInput,
+  fillMissingLineNumbers,
   validateLineRecognitionForApproval,
   validateLineAccountsForApproval,
   checkLineTotalsForApproval,
@@ -176,7 +177,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   let normalizedLines: ReturnType<typeof normalizeInvoiceLineInput>[] | undefined;
   if (data.lines !== undefined) {
     try {
-      normalizedLines = data.lines.map(normalizeInvoiceLineInput);
+      normalizedLines = fillMissingLineNumbers(data.lines.map(normalizeInvoiceLineInput));
     } catch (error) {
       return NextResponse.json(
         { error: error instanceof Error ? error.message : "Invalid invoice line." },

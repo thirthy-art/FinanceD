@@ -1,6 +1,6 @@
 import type { AiInvoiceExtraction } from "./ai-extraction";
 import { normalizeDateForInput } from "./date";
-import type { EditableInvoiceLine } from "./invoice-lines";
+import { fillMissingLineNumbers, type EditableInvoiceLine } from "./invoice-lines";
 import { findVendorIdentityMatches, type VendorIdentityCandidate } from "./vendor-identity";
 
 export interface ExtractionDraftFields {
@@ -91,7 +91,7 @@ export function applyExtractionToDraft<T extends ExtractionDraftFields>(
 }
 
 export function extractionLinesToEditable(extraction: AiInvoiceExtraction): EditableInvoiceLine[] {
-  return extraction.lines.map((line) => ({
+  return fillMissingLineNumbers(extraction.lines.map((line) => ({
     lineNumber: line.lineNumber ?? "",
     descriptionOriginal: line.descriptionOriginal ?? "",
     description: line.description ?? "",
@@ -108,7 +108,7 @@ export function extractionLinesToEditable(extraction: AiInvoiceExtraction): Edit
     recognitionEndDate: "",
     accountingAccountNumber: "",
     prepaidAccountNumber: "",
-  }));
+  })));
 }
 
 export function invoiceLinesSignature(lines: EditableInvoiceLine[]): string {

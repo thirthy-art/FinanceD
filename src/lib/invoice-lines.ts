@@ -66,6 +66,14 @@ export interface EditableInvoiceLine {
   prepaidAccountNumber: string;
 }
 
+export function fillMissingLineNumbers<T extends { lineNumber: string | null }>(
+  lines: readonly T[],
+): T[] {
+  return lines.map((line, index) => line.lineNumber?.trim()
+    ? line
+    : { ...line, lineNumber: String(index + 1) });
+}
+
 const DECIMAL_FIELDS = [
   "quantity",
   "unitPrice",
@@ -144,7 +152,6 @@ export function parsePageInput(raw: string): { value: number | null; error: stri
  */
 export function isCompletelyEmptyLine(line: EditableInvoiceLine): boolean {
   return (
-    !line.lineNumber.trim() &&
     !line.descriptionOriginal.trim() &&
     !line.description.trim() &&
     !line.quantity.trim() &&

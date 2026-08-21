@@ -5,7 +5,7 @@ import { safeIsAmountMismatch, safeCalculateBaseAmount, safeParseDecimal, format
 import type { AiInvoiceExtraction } from "@/src/lib/ai-extraction";
 import type { AiInvoiceReconciliationInfo } from "@/src/lib/ai-invoice-reconciliation";
 import type { EditableInvoiceLine } from "@/src/lib/invoice-lines";
-import { editableLineToInput, applyAutoCalcToLine, isCompletelyEmptyLine, parsePageInput, checkLineTotalsForApproval } from "@/src/lib/invoice-lines";
+import { editableLineToInput, applyAutoCalcToLine, isCompletelyEmptyLine, parsePageInput, checkLineTotalsForApproval, fillMissingLineNumbers } from "@/src/lib/invoice-lines";
 import { buildTextExtractionFallbackLine } from "@/src/lib/local-invoice-parser";
 import { applyExtractionLines, applyExtractionToDraft, extractionLinesToEditable } from "@/src/lib/apply-ai-extraction";
 import InvoiceLinesEditor from "@/src/components/InvoiceLinesEditor";
@@ -301,7 +301,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
       invoice.grossAmount,
       extractedFields,
     );
-    return fallback ? [fallback] : lines;
+    return fillMissingLineNumbers(fallback ? [fallback] : lines);
   });
   const [lastAppliedLineSignature, setLastAppliedLineSignature] = useState<string | null>(null);
   const [applyNotice, setApplyNotice] = useState<{ applied: string[]; skipped: string[]; warnings: string[] } | null>(null);

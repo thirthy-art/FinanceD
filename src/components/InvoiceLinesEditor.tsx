@@ -1,7 +1,7 @@
 "use client";
 
 import type { EditableInvoiceLine } from "@/src/lib/invoice-lines";
-import { emptyEditableInvoiceLine, sumInvoiceLineAmounts, applyAutoCalcToLine, parsePageInput } from "@/src/lib/invoice-lines";
+import { emptyEditableInvoiceLine, sumInvoiceLineAmounts, applyAutoCalcToLine, parsePageInput, fillMissingLineNumbers } from "@/src/lib/invoice-lines";
 import { safeParseDecimal, amountsWithinTolerance, FIAT_TOLERANCE, stripTrailingZeros, formatDisplayAmount } from "@/src/lib/invoice-validation";
 import { Decimal } from "@/src/lib/decimal";
 import { deriveRecognitionSchedule } from "@/src/lib/recognition";
@@ -289,7 +289,7 @@ export default function InvoiceLinesEditor({
         </div>
         <button
           type="button"
-          onClick={() => onChange([...lines, emptyEditableInvoiceLine()])}
+          onClick={() => onChange(fillMissingLineNumbers([...lines, emptyEditableInvoiceLine()]))}
           style={{ padding: "6px 10px", border: "1px solid #cbd5e1", borderRadius: 6, background: "#fff", cursor: "pointer", fontSize: 12 }}
         >
           {il.addLine}
