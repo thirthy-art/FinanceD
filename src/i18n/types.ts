@@ -93,6 +93,7 @@ export interface Messages {
     aiSectionTitle: string;
     aiSectionDesc: string;
     tryAiExtraction: string;
+    tryImageAi: string;
     runningAiExtraction: string;
     applyAiExtraction: string;
     attachFirst: string;

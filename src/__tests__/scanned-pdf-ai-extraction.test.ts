@@ -62,7 +62,7 @@ function makeDbWithDocument(doc: {
       from: vi.fn().mockReturnValue({
         innerJoin: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
-            limit: vi.fn().mockResolvedValue([doc]),
+            limit: vi.fn().mockResolvedValue([{ ...doc, currencyType: "fiat" }]),
           }),
         }),
       }),
@@ -88,8 +88,8 @@ function imageIncapableConfig() {
   };
 }
 
-function makeRequest(invoiceId: number) {
-  return new Request(`http://localhost/api/invoices/${invoiceId}/extract`, {
+function makeRequest(invoiceId: number, mode?: "image") {
+  return new Request(`http://localhost/api/invoices/${invoiceId}/extract${mode ? `?mode=${mode}` : ""}`, {
     method: "POST",
   });
 }
@@ -180,7 +180,121 @@ describe("digital PDF with extracted text", () => {
   });
 });
 
-// ── 2. Scanned PDF with blank extracted text ──────────────────────────────────
+// ── 2. Forced image mode for a digital PDF ───────────────────────────────────
+
+describe("digital PDF with forced image mode", () => {
+  it("ignores extracted text and sends rendered pages in document order", async () => {
+    mockGetAiProviderConfig.mockReturnValue(imageCapableConfig());
+    mockGetDb.mockReturnValue(
+      makeDbWithDocument({
+        mimeType: "application/pdf",
+        storagePath: "object:companies/1/invoice-documents/digital.pdf",
+        extractedText: "This text must not be sent",
+      }),
+    );
+    mockReadDocument.mockResolvedValue(Buffer.from("PDF bytes"));
+    installPDFParseMock(
+      vi.fn().mockResolvedValue(
+        makeScreenshotResult([
+          { dataUrl: "data:image/png;base64,PAGE1", pageNumber: 1 },
+          { dataUrl: "data:image/png;base64,PAGE2", pageNumber: 2 },
+        ]),
+      ),
+      vi.fn().mockResolvedValue(undefined),
+    );
+    fetchSpy.mockImplementation(aiOkResponse);
+
+    const res = await POST(makeRequest(1, "image"), params(1));
+
+    expect(res.status).toBe(200);
+    expect(mockReadDocument).toHaveBeenCalledWith("object:companies/1/invoice-documents/digital.pdf");
+    expect(MockPDFParse).toHaveBeenCalledOnce();
+
+    const fetchBody = JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string);
+    const userContent = fetchBody.messages.find((m: { role: string }) => m.role === "user").content as Array<{
+      type: string;
+      image_url?: { url: string };
+    }>;
+    expect(userContent.filter((item) => item.type === "image_url").map((item) => item.image_url?.url)).toEqual([
+      "data:image/png;base64,PAGE1",
+      "data:image/png;base64,PAGE2",
+    ]);
+    expect(JSON.stringify(userContent)).not.toContain("This text must not be sent");
+  });
+
+  it("keeps the image-model guard and does not call the provider", async () => {
+    mockGetAiProviderConfig.mockReturnValue(imageIncapableConfig());
+    mockGetDb.mockReturnValue(
+      makeDbWithDocument({
+        mimeType: "application/pdf",
+        storagePath: "/uploads/digital.pdf",
+        extractedText: "Usable embedded text",
+      }),
+    );
+
+    const res = await POST(makeRequest(1, "image"), params(1));
+
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({
+      error: "The configured AI model does not support image input. Choose an image-capable model for scanned PDF invoices.",
+    });
+    expect(mockReadDocument).not.toHaveBeenCalled();
+    expect(MockPDFParse).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("returns the reconciled extraction and reconciliation metadata", async () => {
+    mockGetAiProviderConfig.mockReturnValue(imageCapableConfig());
+    mockGetDb.mockReturnValue(
+      makeDbWithDocument({
+        mimeType: "application/pdf",
+        storagePath: "/uploads/digital.pdf",
+        extractedText: "Usable embedded text",
+      }),
+    );
+    mockReadDocument.mockResolvedValue(Buffer.from("PDF bytes"));
+    installPDFParseMock(
+      vi.fn().mockResolvedValue(
+        makeScreenshotResult([{ dataUrl: "data:image/png;base64,PAGE1", pageNumber: 1 }]),
+      ),
+      vi.fn().mockResolvedValue(undefined),
+    );
+    const extractionForReconciliation = {
+      ...JSON.parse(VALID_AI_EXTRACTION),
+      netAmount: "100.00",
+      vatAmount: "20.00",
+      grossAmount: "120.00",
+      lines: [
+        {
+          lineNumber: "1", descriptionOriginal: "A", description: "A", quantity: null, unit: null,
+          unitPrice: null, netAmount: "60.00", vatRate: null, vatAmount: null, grossAmount: null, sourcePage: 1,
+        },
+        {
+          lineNumber: "2", descriptionOriginal: "B", description: "B", quantity: null, unit: null,
+          unitPrice: null, netAmount: "40.00", vatRate: null, vatAmount: null, grossAmount: null, sourcePage: 1,
+        },
+      ],
+    };
+    fetchSpy.mockResolvedValue(
+      new Response(
+        JSON.stringify({ choices: [{ message: { content: JSON.stringify(extractionForReconciliation) } }] }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    const res = await POST(makeRequest(1, "image"), params(1));
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.reconciliation).toEqual({ kind: "vat-prorated" });
+    expect(body.extraction.lines).toEqual([
+      expect.objectContaining({ netAmount: "60.00", vatAmount: "12.00", grossAmount: "72.00" }),
+      expect.objectContaining({ netAmount: "40.00", vatAmount: "8.00", grossAmount: "48.00" }),
+    ]);
+  });
+});
+
+// ── 3. Scanned PDF with blank extracted text ──────────────────────────────────
 
 describe("scanned PDF with blank extracted text", () => {
   it("renders PDF pages and sends them as image inputs", async () => {
@@ -286,7 +400,7 @@ describe("scanned PDF with blank extracted text", () => {
   });
 });
 
-// ── 3. Multiple rendered PDF pages ────────────────────────────────────────────
+// ── 4. Multiple rendered PDF pages ────────────────────────────────────────────
 
 describe("multiple rendered PDF pages", () => {
   it("sends all pages as image inputs in document order", async () => {
@@ -328,7 +442,7 @@ describe("multiple rendered PDF pages", () => {
   });
 });
 
-// ── 4. Image-incompatible configured model ───────────────────────────────────
+// ── 5. Image-incompatible configured model ───────────────────────────────────
 
 describe("image-incompatible configured model (mimo-v2.5-pro)", () => {
   it("returns 422 for scanned PDF without reading or rendering", async () => {
@@ -370,7 +484,7 @@ describe("image-incompatible configured model (mimo-v2.5-pro)", () => {
   });
 });
 
-// ── 5. PDF read / render failure ─────────────────────────────────────────────
+// ── 6. PDF read / render failure ─────────────────────────────────────────────
 
 describe("PDF read/render failures", () => {
   it("returns 404 when PDF file cannot be read", async () => {
@@ -441,7 +555,7 @@ describe("PDF read/render failures", () => {
   });
 });
 
-// ── 6. Existing JPEG/PNG/WebP path regression ─────────────────────────────────
+// ── 7. Existing JPEG/PNG/WebP path regression ─────────────────────────────────
 
 describe("existing JPEG/PNG/WebP AI path", () => {
   it("sends image bytes to AI as image_url without using PDFParse", async () => {

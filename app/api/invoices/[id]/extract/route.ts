@@ -42,6 +42,7 @@ function documentReadError(error: unknown) {
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const invoiceId = Number(id);
+  const forceImage = new URL(request.url).searchParams.get("mode") === "image";
   if (!Number.isInteger(invoiceId) || invoiceId <= 0) {
     return errorResponse("Invalid invoice id.", 400);
   }
@@ -97,7 +98,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     }
   } else if (document.mimeType === "application/pdf") {
     const extractedText = document.extractedText?.trim();
-    if (extractedText) {
+    if (extractedText && !forceImage) {
       userContent = `${AI_EXTRACTION_PROMPT}\n\nINVOICE TEXT START\n${extractedText}\nINVOICE TEXT END`;
     } else {
       // Scanned PDF fallback: render pages locally and send as images to AI

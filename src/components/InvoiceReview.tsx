@@ -309,6 +309,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
   const [paymentError, setPaymentError] = useState("");
 
   const doc = documents[0];
+  const isPdfDocument = doc?.mimeType === "application/pdf";
 
   const currentIsSameCurrency = form.currency === baseCurrency;
 
@@ -435,7 +436,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
     }
   }
 
-  async function tryAiExtraction() {
+  async function tryAiExtraction(forceImage = false) {
     setExtracting(true);
     setExtractionError("");
     setAiExtraction(null);
@@ -443,7 +444,8 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
     setApplyNotice(null);
     setVendorCandidates([]);
     try {
-      const response = await fetch(`/api/invoices/${invoice.id}/extract`, { method: "POST" });
+      const endpoint = `/api/invoices/${invoice.id}/extract${forceImage ? "?mode=image" : ""}`;
+      const response = await fetch(endpoint, { method: "POST" });
       let json: { error?: unknown; extraction?: AiInvoiceExtraction; reconciliation?: AiInvoiceReconciliationInfo };
       try {
         json = await response.json();
@@ -709,7 +711,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <button
               type="button"
-              onClick={tryAiExtraction}
+              onClick={() => tryAiExtraction()}
               disabled={!doc || extracting}
               style={{
                 padding: "9px 14px",
@@ -724,6 +726,25 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
             >
               {extracting ? ir.runningAiExtraction : ir.tryAiExtraction}
             </button>
+            {isPdfDocument && (
+              <button
+                type="button"
+                onClick={() => tryAiExtraction(true)}
+                disabled={extracting}
+                style={{
+                  padding: "9px 14px",
+                  border: "1px solid #2563eb",
+                  borderRadius: 6,
+                  background: extracting ? "#f1f5f9" : "#fff",
+                  color: extracting ? "#94a3b8" : "#2563eb",
+                  cursor: extracting ? "default" : "pointer",
+                  fontSize: 13,
+                  fontWeight: 600,
+                }}
+              >
+                {ir.tryImageAi}
+              </button>
+            )}
             {aiExtraction && (
               <button
                 type="button"

@@ -89,6 +89,7 @@ export const en: Messages = {
     aiSectionTitle: "AI extraction preview",
     aiSectionDesc: "Before sending: this invoice document will be processed by the configured AI extraction service. AI extraction produces a preview only. Clicking Apply replaces current invoice-header fields where AI returned a value; null AI values leave current values unchanged. Applying the preview does not save or approve the invoice automatically.",
     tryAiExtraction: "Try AI extraction",
+    tryImageAi: "Try image AI",
     runningAiExtraction: "Running AI extraction…",
     applyAiExtraction: "Apply AI extraction",
     attachFirst: "Attach a document before trying AI extraction.",
