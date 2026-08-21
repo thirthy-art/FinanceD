@@ -8,6 +8,7 @@ import CompanySelectionRequired from "@/src/components/CompanySelectionRequired"
 import { formatDisplayAmount } from "@/src/lib/invoice-validation";
 import { resolveLocale, getMessages } from "@/src/i18n/index";
 import { LOCALE_COOKIE } from "@/src/i18n/types";
+import NewInvoiceUploadButton from "@/src/components/NewInvoiceUploadButton";
 
 export const dynamic = "force-dynamic";
 
@@ -62,20 +63,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ d
               {t.exportInvoices}
             </button>
           </form>
-          <Link
-            href="/invoices/new"
-            style={{
-              background: "#2563eb",
-              color: "#fff",
-              padding: "8px 14px",
-              borderRadius: 6,
-              textDecoration: "none",
-              fontSize: 14,
-              fontWeight: 600,
-            }}
-          >
-            {t.newInvoice}
-          </Link>
+          <NewInvoiceUploadButton label={t.newInvoice} />
         </div>
       </div>
 
@@ -98,19 +86,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ d
         >
           <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>{t.noInvoicesTitle}</div>
           <div style={{ marginBottom: 20 }}>{t.noInvoicesDesc}</div>
-          <Link
-            href="/invoices/new"
-            style={{
-              background: "#2563eb",
-              color: "#fff",
-              padding: "10px 20px",
-              borderRadius: 6,
-              textDecoration: "none",
-              fontWeight: 600,
-            }}
-          >
-            {t.uploadInvoice}
-          </Link>
+          <NewInvoiceUploadButton label={t.uploadInvoice} />
         </div>
       ) : (
         <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden" }}>

@@ -19,6 +19,7 @@ import { resolveLocale, getMessages } from "@/src/i18n/index";
 import { LOCALE_COOKIE } from "@/src/i18n/types";
 import { getActiveCompanyForPage } from "@/src/lib/active-company-page";
 import CompanySelectionRequired from "@/src/components/CompanySelectionRequired";
+import NewInvoiceUploadButton from "@/src/components/NewInvoiceUploadButton";
 
 export default async function InvoicePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -79,12 +80,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
             {invoice.invoiceNumber ? ` · ${invoice.invoiceNumber}` : ""}
           </span>
         </div>
-        <Link
-          href="/invoices/new"
-          style={{ background: "#2563eb", color: "#fff", padding: "7px 14px", borderRadius: 6, textDecoration: "none", fontSize: 13, fontWeight: 600 }}
-        >
-          {invoiceList.newInvoice}
-        </Link>
+        <NewInvoiceUploadButton label={invoiceList.newInvoice} />
       </div>
       <InvoiceReview
         invoice={invoice}
