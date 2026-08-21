@@ -100,41 +100,18 @@ describe("active company resolution", () => {
     });
   });
 
-  it("creates the initial company under a PostgreSQL transaction advisory lock", async () => {
-    const initial = { id: 1, name: "My Company", baseCurrency: "USD" };
-    const outside = selectResult([]);
-    const inside = selectResult([]);
-    const execute = vi.fn().mockResolvedValue(undefined);
-    const returning = vi.fn().mockResolvedValue([initial]);
-    const insert = vi.fn().mockReturnValue({
-      values: vi.fn().mockReturnValue({ returning }),
-    });
-    const tx = { select: vi.fn().mockReturnValue(inside), execute, insert };
+  it("requires selection without creating a company when none exist", async () => {
+    const insert = vi.fn();
+    const transaction = vi.fn();
     const db = {
-      select: vi.fn().mockReturnValue(outside),
-      transaction: vi.fn(async (callback: (transaction: typeof tx) => unknown) => callback(tx)),
+      select: vi.fn().mockReturnValue(selectResult([])),
+      insert,
+      transaction,
     };
     mockGetDb.mockReturnValue(db as never);
 
-    await expect(resolveActiveCompany()).resolves.toEqual(initial);
-    expect(execute).toHaveBeenCalledOnce();
-    expect(inside.chain.orderBy).toHaveBeenCalledOnce();
-    expect(insert).toHaveBeenCalledOnce();
-  });
-
-  it("rechecks after acquiring the bootstrap lock before inserting", async () => {
-    const winner = { id: 1, name: "Concurrent winner", baseCurrency: "EUR" };
-    const outside = selectResult([]);
-    const inside = selectResult([winner]);
-    const tx = { select: vi.fn().mockReturnValue(inside), execute: vi.fn(), insert: vi.fn() };
-    const db = {
-      select: vi.fn().mockReturnValue(outside),
-      transaction: vi.fn(async (callback: (transaction: typeof tx) => unknown) => callback(tx)),
-    };
-    mockGetDb.mockReturnValue(db as never);
-
-    await expect(resolveActiveCompany()).resolves.toEqual(winner);
-    expect(tx.execute).toHaveBeenCalledOnce();
-    expect(tx.insert).not.toHaveBeenCalled();
+    await expect(resolveActiveCompany()).rejects.toBeInstanceOf(ActiveCompanySelectionRequiredError);
+    expect(insert).not.toHaveBeenCalled();
+    expect(transaction).not.toHaveBeenCalled();
   });
 });

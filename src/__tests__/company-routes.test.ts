@@ -55,19 +55,34 @@ describe("company management API", () => {
     expect(await response.json()).toEqual({ companies: rows, activeCompanyId: null });
   });
 
+  it("returns an empty list without creating a company when none exist", async () => {
+    const insert = vi.fn();
+    mockGetDb.mockReturnValue({
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({ orderBy: vi.fn().mockResolvedValue([]) }),
+      }),
+      insert,
+    } as never);
+
+    const response = await GET(request("http://localhost/api/companies"));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ companies: [], activeCompanyId: null });
+    expect(insert).not.toHaveBeenCalled();
+  });
+
   it("creates a normalized company and makes it active", async () => {
-    const created = { id: 3, name: "Real Company", baseCurrency: "USD" };
+    const created = { id: 3, name: "Test Cyprus Ltd", baseCurrency: "EUR" };
     const returning = vi.fn().mockResolvedValue([created]);
     const values = vi.fn().mockReturnValue({ returning });
     mockGetDb.mockReturnValue({ insert: vi.fn().mockReturnValue({ values }) } as never);
 
     const response = await createCompany(request("http://localhost/api/companies", {
-      name: "  Real Company  ",
-      baseCurrency: "usd",
+      name: "  Test Cyprus Ltd  ",
+      baseCurrency: "eur",
     }));
     expect(response.status).toBe(201);
     expect(await response.json()).toEqual(created);
-    expect(values).toHaveBeenCalledWith({ name: "Real Company", baseCurrency: "USD" });
+    expect(values).toHaveBeenCalledWith({ name: "Test Cyprus Ltd", baseCurrency: "EUR" });
     expect(response.headers.get("set-cookie")).toContain("financed_company_id=3");
     expect(response.headers.get("set-cookie")).toContain("HttpOnly");
     expect(response.headers.get("set-cookie")).toContain("SameSite=lax");

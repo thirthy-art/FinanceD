@@ -5,7 +5,6 @@ import { getDb } from "@/src/db";
 import { companies } from "@/src/db/schema";
 import {
   activeCompanyIdFromRequest,
-  resolveActiveCompany,
   setActiveCompanyCookie,
 } from "@/src/lib/active-company";
 
@@ -15,14 +14,10 @@ const CreateCompanySchema = z.object({
 });
 
 export async function GET(request: Request) {
-  let rows = await getDb()
+  const rows = await getDb()
     .select({ id: companies.id, name: companies.name, baseCurrency: companies.baseCurrency })
     .from(companies)
     .orderBy(asc(companies.id));
-  if (rows.length === 0) {
-    const company = await resolveActiveCompany();
-    rows = [{ id: company.id, name: company.name, baseCurrency: company.baseCurrency }];
-  }
 
   const requestedId = activeCompanyIdFromRequest(request);
   const selected = requestedId === null ? undefined : rows.find((company) => company.id === requestedId);

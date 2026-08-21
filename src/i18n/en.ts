@@ -22,7 +22,7 @@ export const en: Messages = {
     couldNotLoad: "Could not load companies",
     couldNotSwitch: "Could not switch company",
     couldNotCreate: "Could not create company",
-    selectAbove: "Select a company above to continue.",
+    selectAbove: "Select or create a company above to continue.",
   },
   common: {
     loading: "Loading…",

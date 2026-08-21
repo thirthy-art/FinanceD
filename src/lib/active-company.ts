@@ -1,4 +1,4 @@
-import { asc, eq, sql } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { getDb } from "@/src/db";
@@ -13,10 +13,6 @@ export const ACTIVE_COMPANY_COOKIE_OPTIONS = {
   maxAge: 60 * 60 * 24 * 365,
   secure: process.env.NODE_ENV === "production",
 };
-
-// A deployment-wide transaction lock used only while bootstrapping an empty
-// companies table. It does not serialize normal company resolution or creation.
-const INITIAL_COMPANY_LOCK_KEY = 1_179_868_371;
 
 export class ActiveCompanySelectionRequiredError extends Error {
   readonly code = "ACTIVE_COMPANY_REQUIRED";
@@ -72,25 +68,7 @@ export async function resolveActiveCompany(activeCompanyCookie?: string) {
     .orderBy(asc(companies.id))
     .limit(2);
   if (existing.length === 1) return existing[0];
-  if (existing.length > 1) throw new ActiveCompanySelectionRequiredError();
-
-  return db.transaction(async (tx) => {
-    await tx.execute(sql`select pg_advisory_xact_lock(${INITIAL_COMPANY_LOCK_KEY})`);
-
-    const afterLock = await tx
-      .select()
-      .from(companies)
-      .orderBy(asc(companies.id))
-      .limit(2);
-    if (afterLock.length === 1) return afterLock[0];
-    if (afterLock.length > 1) throw new ActiveCompanySelectionRequiredError();
-
-    const [created] = await tx
-      .insert(companies)
-      .values({ name: "My Company", baseCurrency: "USD" })
-      .returning();
-    return created;
-  });
+  throw new ActiveCompanySelectionRequiredError();
 }
 
 export async function getActiveCompany() {

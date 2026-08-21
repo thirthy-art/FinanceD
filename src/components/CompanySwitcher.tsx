@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { useI18n } from "@/src/i18n/context";
+import { SUPPORTED_BASE_CURRENCIES } from "@/src/lib/supported-base-currencies";
 
 export interface CompanySummary {
   id: number;
@@ -85,7 +86,7 @@ export default function CompanySwitcher({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<ActionError | null>(initialActionError ?? null);
   const [name, setName] = useState("");
-  const [baseCurrency, setBaseCurrency] = useState("");
+  const [baseCurrency, setBaseCurrency] = useState("EUR");
 
   useEffect(() => {
     if (initialData || initialLoadError) return;
@@ -216,17 +217,17 @@ export default function CompanySwitcher({
                   </label>
                   <label>
                     <span>{c.baseCurrency}</span>
-                    <input
+                    <select
                       value={baseCurrency}
                       onChange={(event) => setBaseCurrency(event.target.value)}
                       required
-                      minLength={3}
-                      maxLength={3}
-                      pattern="[A-Za-z]{3}"
-                      autoCapitalize="characters"
                       className="company-switcher-currency-input"
                       disabled={pending}
-                    />
+                    >
+                      {SUPPORTED_BASE_CURRENCIES.map((currency) => (
+                        <option key={currency} value={currency}>{currency}</option>
+                      ))}
+                    </select>
                   </label>
                   <div className="company-switcher-form-actions">
                     <button type="submit" disabled={pending}>{pending ? c.creating : c.create}</button>

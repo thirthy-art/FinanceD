@@ -22,7 +22,7 @@ export const he: Messages = {
     couldNotLoad: "לא ניתן לטעון חברות",
     couldNotSwitch: "לא ניתן להחליף חברה",
     couldNotCreate: "לא ניתן ליצור חברה",
-    selectAbove: "בחרו חברה למעלה כדי להמשיך.",
+    selectAbove: "בחרו או צרו חברה למעלה כדי להמשיך.",
   },
   common: {
     loading: "טוען…",

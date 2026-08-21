@@ -1,13 +1,12 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useI18n } from "@/src/i18n/context";
+import { SUPPORTED_BASE_CURRENCIES } from "@/src/lib/supported-base-currencies";
 
 const inputStyle: React.CSSProperties = {
   width: "100%", padding: "8px 10px", border: "1px solid #e2e8f0",
   borderRadius: 6, fontSize: 14, background: "#fff",
 };
-
-const CURRENCIES = ["USD", "EUR", "GBP", "CHF", "CAD", "AUD", "JPY", "SEK", "NOK", "DKK", "RON"];
 
 export default function CompanyPage() {
   const { t } = useI18n();
@@ -55,7 +54,7 @@ export default function CompanyPage() {
           <div style={{ marginBottom: 24 }}>
             <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#64748b", marginBottom: 4 }}>{c.currencyLabel}</label>
             <select style={inputStyle} value={currency} onChange={(e) => { setCurrency(e.target.value); setSaved(false); }}>
-              {CURRENCIES.map((cur) => <option key={cur}>{cur}</option>)}
+              {SUPPORTED_BASE_CURRENCIES.map((cur) => <option key={cur}>{cur}</option>)}
             </select>
           </div>
           {error && <div style={{ marginBottom: 12, padding: 10, background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 6, color: "#dc2626", fontSize: 13 }}>{error}</div>}
