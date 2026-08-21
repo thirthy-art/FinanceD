@@ -178,6 +178,10 @@ export const he: Messages = {
     currencyTypeHint: "משפיע על סבילות אימות ועיצוב תצוגה",
     mismatchFiat: " (ההפרש חורג מהסבילות 0.01). אנא אמת.",
     mismatchCrypto: " (סכומי קריפטו חייבים להתאים בדיוק). אנא אמת.",
+    aiReconciliationVatProrated: "מע\"מ היה זמין רק ברמת החשבונית והוקצה באופן יחסי בין השורות המחולצות.",
+    aiReconciliationGrossReclassified: "סכומי שורות תאמו לסך החשבונית כולל מע\"מ ולא נטו. FinanceD התייחס אליהם כסכומים כולל מע\"מ וחישב מחדש נטו ומע\"מ.",
+    aiReconciliationMinorDiff: "סכומי השורות נבדלים מסכומי החשבונית בסכום קטן. הערכים הושארו ללא שינוי.",
+    aiReconciliationReviewRequired: "סכומי שורות ה-AI אינם מתאימים לסכומי החשבונית. בדוק את השורות לפני החלה.",
   },
   invoiceLines: {
     titleWithCount: "שורות חשבונית ({count})",

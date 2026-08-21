@@ -8,6 +8,7 @@ import {
   AI_EXTRACTION_PROMPT,
   AiInvoiceExtractionSchema,
 } from "@/src/lib/ai-extraction";
+import { reconcileAiInvoiceExtraction } from "@/src/lib/ai-invoice-reconciliation";
 import { getAiProviderConfig } from "@/src/lib/ai-provider";
 import { DocumentNotFoundError, readDocument } from "@/src/lib/document-storage";
 
@@ -53,6 +54,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       mimeType: supplierInvoiceDocuments.mimeType,
       storagePath: supplierInvoiceDocuments.storagePath,
       extractedText: supplierInvoiceDocuments.extractedText,
+      currencyType: supplierInvoices.currencyType,
     })
     .from(supplierInvoiceDocuments)
     .innerJoin(supplierInvoices, eq(supplierInvoiceDocuments.invoiceId, supplierInvoices.id))
@@ -215,5 +217,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     return errorResponse("AI extraction returned invoice data that did not match the required structure.", 502);
   }
 
-  return Response.json({ extraction: extraction.data });
+  const { extraction: reconciledExtraction, reconciliation } =
+    reconcileAiInvoiceExtraction(extraction.data, document.currencyType);
+
+  return Response.json({ extraction: reconciledExtraction, reconciliation });
 }

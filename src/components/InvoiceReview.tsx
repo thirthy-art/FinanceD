@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { safeIsAmountMismatch, safeCalculateBaseAmount, safeParseDecimal, formatDisplayAmount, toDecimal, stripTrailingZeros } from "@/src/lib/invoice-validation";
 import type { AiInvoiceExtraction } from "@/src/lib/ai-extraction";
+import type { AiInvoiceReconciliationInfo } from "@/src/lib/ai-invoice-reconciliation";
 import type { EditableInvoiceLine } from "@/src/lib/invoice-lines";
 import { editableLineToInput, applyAutoCalcToLine, isCompletelyEmptyLine, parsePageInput, checkLineTotalsForApproval } from "@/src/lib/invoice-lines";
 import { buildTextExtractionFallbackLine } from "@/src/lib/local-invoice-parser";
@@ -116,7 +117,52 @@ function extractionValue(value: string | number | null) {
   return value === null ? <span style={{ color: "#94a3b8" }}>—</span> : String(value);
 }
 
-function AiExtractionPreview({ extraction }: { extraction: AiInvoiceExtraction }) {
+function AiReconciliationBanner({ reconciliation }: { reconciliation: AiInvoiceReconciliationInfo }) {
+  const { t } = useI18n();
+  const ir = t.invoiceReview;
+  const { kind } = reconciliation;
+
+  if (kind === "matched" || kind === "not-applicable") return null;
+
+  const isWarning = kind === "minor-difference" || kind === "review-required";
+  const bannerStyle: React.CSSProperties = {
+    padding: "10px 14px",
+    borderRadius: 6,
+    fontSize: 13,
+    marginBottom: 12,
+    background: isWarning ? "#fffbeb" : "#eff6ff",
+    border: `1px solid ${isWarning ? "#fde68a" : "#bfdbfe"}`,
+    color: isWarning ? "#92400e" : "#1e3a5f",
+  };
+
+  let message = "";
+  if (kind === "vat-prorated") message = ir.aiReconciliationVatProrated;
+  else if (kind === "gross-reclassified") message = ir.aiReconciliationGrossReclassified;
+  else if (kind === "minor-difference") message = ir.aiReconciliationMinorDiff;
+  else if (kind === "review-required") message = ir.aiReconciliationReviewRequired;
+
+  const diffs: string[] = [];
+  if (reconciliation.netDifference != null) diffs.push(`Net: ${reconciliation.netDifference}`);
+  if (reconciliation.vatDifference != null) diffs.push(`VAT: ${reconciliation.vatDifference}`);
+  if (reconciliation.grossDifference != null) diffs.push(`Gross: ${reconciliation.grossDifference}`);
+
+  return (
+    <div style={bannerStyle}>
+      <div>{message}</div>
+      {diffs.length > 0 && (
+        <div style={{ marginTop: 4, fontSize: 12, opacity: 0.85 }}>{diffs.join(" · ")}</div>
+      )}
+    </div>
+  );
+}
+
+function AiExtractionPreview({
+  extraction,
+  reconciliation,
+}: {
+  extraction: AiInvoiceExtraction;
+  reconciliation: AiInvoiceReconciliationInfo | null;
+}) {
   const { t } = useI18n();
   const ir = t.invoiceReview;
 
@@ -148,6 +194,7 @@ function AiExtractionPreview({ extraction }: { extraction: AiInvoiceExtraction }
       </div>
 
       <div style={{ padding: 16 }}>
+        {reconciliation && <AiReconciliationBanner reconciliation={reconciliation} />}
         <div style={{ fontSize: 12, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 10 }}>
           {ir.aiPreviewHeader}
         </div>
@@ -239,6 +286,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
   const [extracting, setExtracting] = useState(false);
   const [extractionError, setExtractionError] = useState("");
   const [aiExtraction, setAiExtraction] = useState<AiInvoiceExtraction | null>(null);
+  const [aiReconciliation, setAiReconciliation] = useState<AiInvoiceReconciliationInfo | null>(null);
   const [editableLines, setEditableLines] = useState<EditableInvoiceLine[]>(() => {
     const fallback = buildTextExtractionFallbackLine(
       lines.length,
@@ -391,11 +439,12 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
     setExtracting(true);
     setExtractionError("");
     setAiExtraction(null);
+    setAiReconciliation(null);
     setApplyNotice(null);
     setVendorCandidates([]);
     try {
       const response = await fetch(`/api/invoices/${invoice.id}/extract`, { method: "POST" });
-      let json: { error?: unknown; extraction?: AiInvoiceExtraction };
+      let json: { error?: unknown; extraction?: AiInvoiceExtraction; reconciliation?: AiInvoiceReconciliationInfo };
       try {
         json = await response.json();
       } catch {
@@ -406,6 +455,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
       }
       if (!json.extraction) throw new Error("AI extraction returned no preview data.");
       setAiExtraction(json.extraction);
+      setAiReconciliation(json.reconciliation ?? null);
     } catch (error: unknown) {
       setExtractionError(error instanceof Error ? error.message : "AI extraction failed.");
     } finally {
@@ -731,7 +781,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
           )}
         </div>
 
-        {aiExtraction && <AiExtractionPreview extraction={aiExtraction} />}
+        {aiExtraction && <AiExtractionPreview extraction={aiExtraction} reconciliation={aiReconciliation} />}
 
         <div
           className="invoice-details-card"

@@ -182,6 +182,10 @@ export interface Messages {
     currencyTypeHint: string;
     mismatchFiat: string;
     mismatchCrypto: string;
+    aiReconciliationVatProrated: string;
+    aiReconciliationGrossReclassified: string;
+    aiReconciliationMinorDiff: string;
+    aiReconciliationReviewRequired: string;
   };
   invoiceLines: {
     titleWithCount: string;

@@ -178,6 +178,10 @@ export const en: Messages = {
     currencyTypeHint: "Affects validation tolerance and display formatting",
     mismatchFiat: " (difference exceeds 0.01 tolerance). Please verify.",
     mismatchCrypto: " (crypto amounts must match exactly). Please verify.",
+    aiReconciliationVatProrated: "VAT was available only at invoice level and was allocated proportionally across the extracted lines.",
+    aiReconciliationGrossReclassified: "Extracted line amounts matched the invoice gross total rather than net. FinanceD treated them as VAT-inclusive and recalculated net and VAT.",
+    aiReconciliationMinorDiff: "Line totals differ from the invoice total. Values were left unchanged.",
+    aiReconciliationReviewRequired: "AI line totals do not reconcile with the invoice totals. Review the lines before applying.",
   },
   invoiceLines: {
     titleWithCount: "Invoice lines ({count})",
