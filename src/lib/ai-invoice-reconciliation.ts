@@ -114,6 +114,7 @@ export function reconcileAiInvoiceExtraction(
   const allNets = lines.every((l) => isUsable(l.netAmount));
   const allVats = lines.every((l) => isUsable(l.vatAmount));
   const allGrosses = lines.every((l) => isUsable(l.grossAmount));
+  const allVatsNullOrZero = lines.every((l) => isNullOrZero(l.vatAmount));
 
   // "Absent" means every line has null or zero for both vat AND gross.
   // When absent, Cases 2/3 are candidates; when NOT absent, Case 1 is a candidate.
@@ -205,26 +206,40 @@ export function reconcileAiInvoiceExtraction(
   }
 
   // ── Case 3: Extracted "net" amounts are actually VAT-inclusive gross ────────
-  // Eligibility (all must hold):
-  //   1. valid header (above)          2. all lines have usable net
-  //   3. Σ line net ≠ header net       4. Σ line net ≈ header gross
-  //   5. header gross ≠ 0             6. all line gross null/zero
-  //   7. all line vat null/zero       8. no conflicting per-line VAT rates
-  if (
+  // Accept either representation of the VAT-inclusive line amount:
+  //   A. net is populated while VAT/gross are absent (existing behavior), or
+  //   B. net and gross are both populated with approximately equal values.
+  // The duplicated representation additionally requires non-zero header VAT,
+  // complete gross data, and both column sums to reconcile to header gross.
+  const duplicatedGrossAmounts =
+    !headerVat.isZero() &&
+    allNets &&
+    allGrosses &&
+    sumGrosses !== null &&
+    lines.every((l) =>
+      withinFiatTolerance(new Decimal(l.netAmount!), new Decimal(l.grossAmount!)),
+    ) &&
+    withinFiatTolerance(sumGrosses, headerGross);
+
+  const grossReclassificationEligible =
     allNets &&
     sumNets !== null &&
     !withinFiatTolerance(sumNets, headerNet) &&
     withinFiatTolerance(sumNets, headerGross) &&
     !headerGross.isZero() &&
-    allVatGrossAbsent &&
-    !hasConflictingVatRates(lines)
-  ) {
+    allVatsNullOrZero &&
+    (allVatGrossAbsent || duplicatedGrossAmounts) &&
+    !hasConflictingVatRates(lines);
+
+  if (grossReclassificationEligible) {
     const newLines = lines.map((l) => ({ ...l }));
+    const lineGrosses = lines.map((l) =>
+      new Decimal(duplicatedGrossAmounts ? l.grossAmount! : l.netAmount!),
+    );
     let allocatedNetSum = new Decimal(0);
 
     for (let i = 0; i < newLines.length - 1; i++) {
-      // The AI-extracted "netAmount" is actually the line's gross.
-      const lineGross = new Decimal(newLines[i].netAmount!);
+      const lineGross = lineGrosses[i];
       const lineNet = lineGross
         .times(headerNet)
         .div(headerGross)
@@ -241,7 +256,7 @@ export function reconcileAiInvoiceExtraction(
 
     // Final line: net is the residual so Σ net = header net exactly.
     const lastIdx = newLines.length - 1;
-    const lastGross = new Decimal(newLines[lastIdx].netAmount!);
+    const lastGross = lineGrosses[lastIdx];
     const lastNet = headerNet.minus(allocatedNetSum);
     const lastVat = lastGross.minus(lastNet);
     newLines[lastIdx] = {

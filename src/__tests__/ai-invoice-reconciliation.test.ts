@@ -186,6 +186,68 @@ describe("Test 4 — mixed explicit VAT rates", () => {
 
 // ── Test 5: Gross mistakenly stored as net (gross-reclassified) ────────────────
 describe("Test 5 — gross-as-net reinterpretation", () => {
+  it("reclassifies duplicated VAT-inclusive net and gross amounts", () => {
+    const extraction = makeExtraction({
+      netAmount: "882.37",
+      vatAmount: "167.63",
+      grossAmount: "1050.00",
+      lines: [
+        makeLine({ netAmount: "600.00", vatAmount: "0", grossAmount: "600.00", vatRate: "19" }),
+        makeLine({ netAmount: "450.00", vatAmount: null, grossAmount: "450.00", vatRate: "19" }),
+      ],
+    });
+
+    const { extraction: out, reconciliation } = reconcileAiInvoiceExtraction(extraction, "fiat");
+
+    expect(reconciliation.kind).toBe("gross-reclassified");
+    expect(out.lines).toEqual([
+      expect.objectContaining({
+        netAmount: "504.21",
+        vatAmount: "95.79",
+        grossAmount: "600.00",
+      }),
+      expect.objectContaining({
+        netAmount: "378.16",
+        vatAmount: "71.84",
+        grossAmount: "450.00",
+      }),
+    ]);
+  });
+
+  it("does not reclassify duplicated columns when a line net and gross differ materially", () => {
+    const extraction = makeExtraction({
+      netAmount: "882.37",
+      vatAmount: "167.63",
+      grossAmount: "1050.00",
+      lines: [
+        makeLine({ netAmount: "600.00", vatAmount: "0", grossAmount: "599.00", vatRate: "19" }),
+        makeLine({ netAmount: "450.00", vatAmount: "0", grossAmount: "451.00", vatRate: "19" }),
+      ],
+    });
+
+    const { extraction: out, reconciliation } = reconcileAiInvoiceExtraction(extraction, "fiat");
+
+    expect(reconciliation.kind).toBe("review-required");
+    expect(out).toBe(extraction);
+  });
+
+  it("does not reclassify duplicated columns when their sums miss header gross", () => {
+    const extraction = makeExtraction({
+      netAmount: "882.37",
+      vatAmount: "167.63",
+      grossAmount: "1050.00",
+      lines: [
+        makeLine({ netAmount: "600.00", vatAmount: "0", grossAmount: "600.00", vatRate: "19" }),
+        makeLine({ netAmount: "449.00", vatAmount: "0", grossAmount: "449.00", vatRate: "19" }),
+      ],
+    });
+
+    const { extraction: out, reconciliation } = reconcileAiInvoiceExtraction(extraction, "fiat");
+
+    expect(reconciliation.kind).toBe("review-required");
+    expect(out).toBe(extraction);
+  });
+
   it("detects and corrects HiTech-CarFix-style extraction", () => {
     // Header: net=5000, vat=950, gross=5950
     // AI lines: A netAmount=4760, B netAmount=1190 (those are actually gross values)
