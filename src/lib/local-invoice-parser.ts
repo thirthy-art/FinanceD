@@ -315,7 +315,9 @@ function isDistinctLabelBlock(labels: Array<AmountField | null>, start: number, 
  * Conservative heuristic: returns a plausible line description when the
  * extracted text has a standalone item/service heading ("Description",
  * "Service", "Services", "Item", or "Details") followed by a non-label,
- * non-amount line. Returns undefined when no safe candidate is found.
+ * non-amount line, OR a multi-column table header containing "Item" or
+ * "Description" alongside column keywords (Qty, Rate, Amount, etc.) followed
+ * by a data row whose leading non-numeric tokens form the description.
  *
  * Preferred over leaving blank only for clearly plausible text.
  * A blank description is always preferable to a confidently wrong one.
@@ -333,6 +335,10 @@ function parseLineDescription(lines: string[]): string | undefined {
   // Lines that are purely a numeric amount (possibly with currency symbol/code)
   const AMOUNT_ONLY = /^\s*(?:[€£$]\s*)?[\d,.]+\s*(?:EUR|USD|GBP|CHF|CAD|AUD|RON|JPY|SEK|NOK|DKK|ILS|€|£|\$)?\s*$/i;
 
+  // Multi-column table header: contains "Item" or "Description" AND at least
+  // one common column keyword; the heading itself is not a standalone line.
+  const TABLE_HEADING = /\b(?:item|description)\b.*\b(?:qty|quantity|rate|unit(?:\s+price)?|amount|price)\b/i;
+
   for (let i = 0; i < lines.length; i++) {
     if (!ITEM_HEADING.test(lines[i])) continue;
     // Inspect up to 3 lines after the heading for a plausible description.
@@ -345,6 +351,27 @@ function parseLineDescription(lines: string[]): string | undefined {
       return candidate;
     }
   }
+
+  // Second pass: multi-column table headers
+  for (let i = 0; i < lines.length; i++) {
+    if (!TABLE_HEADING.test(lines[i])) continue;
+    // The row immediately following the header is the first data row.
+    const dataRow = lines[i + 1];
+    if (!dataRow) continue;
+    const tokens = dataRow.trim().split(/\s+/);
+    // Collect leading tokens that are not numeric or currency-prefixed.
+    const textTokens: string[] = [];
+    for (const token of tokens) {
+      if (/^[€£$\d]/.test(token)) break;
+      textTokens.push(token);
+    }
+    const candidate = textTokens.join(" ").trim();
+    if (!candidate || candidate.length < 3) continue;
+    if (LABEL_REJECTION.test(candidate)) continue;
+    if (AMOUNT_ONLY.test(candidate)) continue;
+    return candidate;
+  }
+
   return undefined;
 }
 

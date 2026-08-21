@@ -208,3 +208,43 @@ describe("Description heuristic — parseLineDescription via parseInvoiceFields"
     expect(result!.descriptionOriginal).toBe("");
   });
 });
+
+// ── Table-header description heuristic ───────────────────────────────────────
+
+describe("Description heuristic — table header multi-column", () => {
+  it('extracts leading text "Test" from "Item Quantity Rate Amount" + "Test 1 200 200"', () => {
+    const fields = parseInvoiceFields(
+      "Invoice No: 1\nNet: 200\nVAT: 0\nTotal: 200\nItem Quantity Rate Amount\nTest 1 200 200",
+    );
+    expect(fields.lineDescription).toBe("Test");
+  });
+
+  it('extracts multi-word leading text from "Item Qty Amount" + "Consulting service 2 100 200"', () => {
+    const fields = parseInvoiceFields(
+      "Invoice No: 1\nNet: 200\nVAT: 0\nTotal: 200\nItem Qty Amount\nConsulting service 2 100 200",
+    );
+    expect(fields.lineDescription).toBe("Consulting service");
+  });
+
+  it('extracts leading text when header uses "Description" and "Price" columns', () => {
+    const fields = parseInvoiceFields(
+      "Subtotal: 500\nVAT: 0\nTotal: 500\nDescription Unit Price Amount\nAnnual support 1 500 500",
+    );
+    expect(fields.lineDescription).toBe("Annual support");
+  });
+
+  it("returns undefined when data row starts with a numeric token (no text prefix)", () => {
+    const fields = parseInvoiceFields(
+      "Net: 200\nVAT: 0\nTotal: 200\nItem Quantity Rate Amount\n1 200 200",
+    );
+    expect(fields.lineDescription).toBeUndefined();
+  });
+
+  it("returns undefined when table header has no recognised column keyword", () => {
+    const fields = parseInvoiceFields(
+      "Net: 200\nVAT: 0\nTotal: 200\nItem Code Reference\nTest 1 200",
+    );
+    // "Code" and "Reference" are not in the column keyword list
+    expect(fields.lineDescription).toBeUndefined();
+  });
+});
