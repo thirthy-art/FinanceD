@@ -65,6 +65,9 @@ export const en: Messages = {
     colAmount: "Amount",
     colStatus: "Status",
     review: "Review",
+    paymentFilterLabel: "Payment",
+    paymentFilterAll: "All",
+    noFilterResults: "No invoices match this filter.",
   },
   newInvoice: {
     title: "Upload Supplier Invoice",

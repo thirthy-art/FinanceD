@@ -65,6 +65,9 @@ export const he: Messages = {
     colAmount: "סכום",
     colStatus: "סטטוס",
     review: "סקירה",
+    paymentFilterLabel: "תשלום",
+    paymentFilterAll: "הכול",
+    noFilterResults: "אין חשבוניות התואמות למסנן זה.",
   },
   newInvoice: {
     title: "העלאת חשבונית ספק",

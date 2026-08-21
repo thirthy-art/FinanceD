@@ -65,6 +65,9 @@ export const ru: Messages = {
     colAmount: "Сумма",
     colStatus: "Статус",
     review: "Просмотр",
+    paymentFilterLabel: "Оплата",
+    paymentFilterAll: "Все",
+    noFilterResults: "Нет счетов, соответствующих выбранному фильтру.",
   },
   newInvoice: {
     title: "Загрузить счёт поставщика",

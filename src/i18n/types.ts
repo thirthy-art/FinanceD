@@ -69,6 +69,9 @@ export interface Messages {
     colAmount: string;
     colStatus: string;
     review: string;
+    paymentFilterLabel: string;
+    paymentFilterAll: string;
+    noFilterResults: string;
   };
   newInvoice: {
     title: string;

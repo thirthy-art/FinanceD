@@ -9,6 +9,7 @@ import { formatDisplayAmount } from "@/src/lib/invoice-validation";
 import { resolveLocale, getMessages } from "@/src/i18n/index";
 import { LOCALE_COOKIE } from "@/src/i18n/types";
 import NewInvoiceUploadButton from "@/src/components/NewInvoiceUploadButton";
+import InvoicePaymentFilter from "@/src/components/InvoicePaymentFilter";
 
 export const dynamic = "force-dynamic";
 
@@ -16,13 +17,29 @@ function statusBadge(status: string, t: { statusApproved: string; statusDraft: s
   const label = status === "approved" ? t.statusApproved : t.statusDraft;
   const style: React.CSSProperties =
     status === "approved"
-      ? { background: "#dcfce7", color: "#166534", padding: "2px 10px", borderRadius: 12, fontSize: 12, fontWeight: 600 }
-      : { background: "#fef9c3", color: "#713f12", padding: "2px 10px", borderRadius: 12, fontSize: 12, fontWeight: 600 };
+      ? { background: "#dcfce7", color: "#166534", padding: "2px 10px", borderRadius: 12, fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }
+      : { background: "#fef9c3", color: "#713f12", padding: "2px 10px", borderRadius: 12, fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" };
   return <span style={style}>{label}</span>;
 }
 
-export default async function Home({ searchParams }: { searchParams: Promise<{ deleted?: string }> }) {
-  const { deleted } = await searchParams;
+function paymentStatusBadge(status: "Paid" | "Unpaid", t: { statusPaid: string; statusUnpaid: string }) {
+  const paid = status === "Paid";
+  const style: React.CSSProperties = paid
+    ? { background: "#dcfce7", color: "#166534", padding: "2px 10px", borderRadius: 12, fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }
+    : { background: "#fee2e2", color: "#991b1b", padding: "2px 10px", borderRadius: 12, fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" };
+  return <span style={style}>{paid ? t.statusPaid : t.statusUnpaid}</span>;
+}
+
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<{ deleted?: string | string[]; payment?: string | string[] }>;
+}) {
+  const query = await searchParams;
+  const deleted = Array.isArray(query.deleted) ? query.deleted[0] : query.deleted;
+  const paymentParam = Array.isArray(query.payment) ? query.payment[0] : query.payment;
+  const paymentFilter = paymentParam === "paid" || paymentParam === "unpaid" ? paymentParam : "all";
+  const selectedPaymentStatus = paymentFilter === "paid" ? "Paid" : paymentFilter === "unpaid" ? "Unpaid" : undefined;
   const cookieStore = await cookies();
   const locale = resolveLocale(cookieStore.get(LOCALE_COOKIE)?.value);
   const company = await getActiveCompanyForPage();
@@ -39,6 +56,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ d
       currencyType: supplierInvoices.currencyType,
       grossAmount: supplierInvoices.grossAmount,
       status: supplierInvoices.status,
+      paymentStatus: supplierInvoices.paymentStatus,
       vendorName: vendors.name,
       createdAt: supplierInvoices.createdAt,
     })
@@ -47,8 +65,21 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ d
       eq(supplierInvoices.vendorId, vendors.id),
       eq(vendors.companyId, company.id),
     ))
-    .where(eq(supplierInvoices.companyId, company.id))
+    .where(and(
+      eq(supplierInvoices.companyId, company.id),
+      selectedPaymentStatus ? eq(supplierInvoices.paymentStatus, selectedPaymentStatus) : undefined,
+    ))
     .orderBy(desc(supplierInvoices.createdAt));
+
+  let hasAnyInvoices = rows.length > 0;
+  if (!hasAnyInvoices) {
+    const [existingInvoice] = await db
+      .select({ id: supplierInvoices.id })
+      .from(supplierInvoices)
+      .where(eq(supplierInvoices.companyId, company.id))
+      .limit(1);
+    hasAnyInvoices = Boolean(existingInvoice);
+  }
 
   return (
     <div>
@@ -67,13 +98,23 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ d
         </div>
       </div>
 
+      <div className="invoice-payment-filter-row">
+        <InvoicePaymentFilter
+          label={t.paymentFilterLabel}
+          allLabel={t.paymentFilterAll}
+          unpaidLabel={common.statusUnpaid}
+          paidLabel={common.statusPaid}
+          value={paymentFilter}
+        />
+      </div>
+
       {deleted === "1" && (
         <div style={{ marginBottom: 16, padding: "10px 14px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 6, color: "#166534", fontSize: 14 }}>
           {t.deleted}
         </div>
       )}
 
-      {rows.length === 0 ? (
+      {!hasAnyInvoices ? (
         <div
           style={{
             background: "#fff",
@@ -88,6 +129,8 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ d
           <div style={{ marginBottom: 20 }}>{t.noInvoicesDesc}</div>
           <NewInvoiceUploadButton label={t.uploadInvoice} />
         </div>
+      ) : rows.length === 0 ? (
+        <div className="invoice-list-filter-empty">{t.noFilterResults}</div>
       ) : (
         <>
           <div className="invoice-list-desktop" style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden" }}>
@@ -127,7 +170,12 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ d
                       ? `${inv.currency} ${formatDisplayAmount(inv.grossAmount, inv.currencyType)}`
                       : common.none}
                   </td>
-                  <td style={{ padding: "12px 16px" }}>{statusBadge(inv.status, common)}</td>
+                  <td style={{ padding: "12px 16px" }}>
+                    <div className="invoice-list-status-badges">
+                      {statusBadge(inv.status, common)}
+                      {paymentStatusBadge(inv.paymentStatus, common)}
+                    </div>
+                  </td>
                   <td style={{ padding: "12px 16px" }}>
                     <Link
                       href={`/invoices/${inv.id}`}
@@ -148,7 +196,10 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ d
                   <div className="invoice-list-card-vendor">
                     {inv.vendorName ?? <span className="invoice-list-card-none">{common.none}</span>}
                   </div>
-                  <div className="invoice-list-card-status">{statusBadge(inv.status, common)}</div>
+                  <div className="invoice-list-status-badges invoice-list-card-status">
+                    {statusBadge(inv.status, common)}
+                    {paymentStatusBadge(inv.paymentStatus, common)}
+                  </div>
                 </div>
                 <div className="invoice-list-card-details">
                   <span className="invoice-list-card-invoice-number">
