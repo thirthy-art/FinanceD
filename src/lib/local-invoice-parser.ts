@@ -1,4 +1,6 @@
 import { Decimal } from "./decimal";
+import { emptyEditableInvoiceLine } from "./invoice-lines";
+import type { EditableInvoiceLine } from "./invoice-lines";
 
 export interface InvoiceFields {
   vendorName?: string;
@@ -9,6 +11,7 @@ export interface InvoiceFields {
   netAmount?: string;
   vatAmount?: string;
   grossAmount?: string;
+  lineDescription?: string;
 }
 
 type AmountField = "netAmount" | "vatAmount" | "grossAmount";
@@ -57,6 +60,7 @@ export function parseInvoiceFields(text: string): InvoiceFields {
   Object.assign(fields, parseDates(lines));
   fields.currency = parseCurrency(text);
   Object.assign(fields, parseAmounts(lines));
+  fields.lineDescription = parseLineDescription(lines);
 
   // Preserve the pre-existing vendor-name heuristic unchanged.
   const invoiceIdx = lines.findIndex((line) => /\binvoice\b/i.test(line));
@@ -69,6 +73,44 @@ export function parseInvoiceFields(text: string): InvoiceFields {
   }
 
   return removeUndefined(fields);
+}
+
+/**
+ * Returns a first invoice line seeded from text-extracted header totals, or
+ * null when the eligibility conditions are not met.
+ *
+ * Eligible only when ALL of the following hold:
+ *   1. No persisted invoice lines exist.
+ *   2. All three persisted header amounts are absent (null) — indicating the
+ *      header has never been saved, so the guard against regenerating a
+ *      deliberately deleted line is in effect.
+ *   3. Text extraction has produced all three amounts (net, VAT, gross).
+ *      Numeric zero ("0", "0.00") counts as a valid populated amount.
+ */
+export function buildTextExtractionFallbackLine(
+  persistedLineCount: number,
+  persistedNet: string | null,
+  persistedVat: string | null,
+  persistedGross: string | null,
+  extractedFields: Record<string, string>,
+): EditableInvoiceLine | null {
+  if (persistedLineCount > 0) return null;
+  if (persistedNet !== null || persistedVat !== null || persistedGross !== null) return null;
+  if (
+    !("netAmount" in extractedFields) ||
+    !("vatAmount" in extractedFields) ||
+    !("grossAmount" in extractedFields)
+  ) return null;
+
+  const line = emptyEditableInvoiceLine();
+  line.netAmount = extractedFields.netAmount;
+  line.vatAmount = extractedFields.vatAmount;
+  line.grossAmount = extractedFields.grossAmount;
+  // Store source text in descriptionOriginal; leave description (translation) blank.
+  if ("lineDescription" in extractedFields) {
+    line.descriptionOriginal = extractedFields.lineDescription;
+  }
+  return line;
 }
 
 function parseInvoiceNumber(lines: string[]): string | undefined {
@@ -267,6 +309,43 @@ function applyAmountLabelBlocks(
 function isDistinctLabelBlock(labels: Array<AmountField | null>, start: number, length: number): boolean {
   const block = labels.slice(start, start + length);
   return block.length === length && block.every(Boolean) && new Set(block).size === length;
+}
+
+/**
+ * Conservative heuristic: returns a plausible line description when the
+ * extracted text has a standalone item/service heading ("Description",
+ * "Service", "Services", "Item", or "Details") followed by a non-label,
+ * non-amount line. Returns undefined when no safe candidate is found.
+ *
+ * Preferred over leaving blank only for clearly plausible text.
+ * A blank description is always preferable to a confidently wrong one.
+ */
+function parseLineDescription(lines: string[]): string | undefined {
+  // A line that is just one of these headings (with optional colon/whitespace)
+  const ITEM_HEADING = /^\s*(?:description|service|services|item|details)\s*:?\s*$/i;
+
+  // Lines that are clearly invoice labels/totals rather than descriptions.
+  // Matches when the line STARTS with a known label keyword and is followed
+  // only by optional whitespace, a colon/hash separator, and a value.
+  // This lets "Tax consulting" pass but rejects "Tax: 0" or "Invoice Number: 123".
+  const LABEL_REJECTION = /^\s*(?:invoice(?:\s+(?:no\.?|number|#|date))?|date|due\s+date|payment(?:\s+due)?|subtotal|sub-total|total(?:\s+amount)?|amount\s+(?:due|payable)|balance(?:\s+due)?|gst|vat(?:\s+amount)?|tax(?:\s+amount)?|net(?:\s+amount)?|gross(?:\s+amount)?|bill\s+to|customer|vendor|supplier|payment\s+terms|reference(?:\s+no)?|quantity|qty|unit(?:\s+price)?|rate|po\s+number)\s*(?:[:#]\s*.*)?$/i;
+
+  // Lines that are purely a numeric amount (possibly with currency symbol/code)
+  const AMOUNT_ONLY = /^\s*(?:[€£$]\s*)?[\d,.]+\s*(?:EUR|USD|GBP|CHF|CAD|AUD|RON|JPY|SEK|NOK|DKK|ILS|€|£|\$)?\s*$/i;
+
+  for (let i = 0; i < lines.length; i++) {
+    if (!ITEM_HEADING.test(lines[i])) continue;
+    // Inspect up to 3 lines after the heading for a plausible description.
+    for (let j = i + 1; j < lines.length && j <= i + 3; j++) {
+      const candidate = lines[j].trim();
+      if (!candidate) continue;
+      if (LABEL_REJECTION.test(candidate)) break;
+      if (AMOUNT_ONLY.test(candidate)) break;
+      if (candidate.length < 3) continue;
+      return candidate;
+    }
+  }
+  return undefined;
 }
 
 function removeUndefined(fields: InvoiceFields): InvoiceFields {

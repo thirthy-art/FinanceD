@@ -1,4 +1,4 @@
-export { parseInvoiceFields } from "./local-invoice-parser";
+export { parseInvoiceFields, buildTextExtractionFallbackLine } from "./local-invoice-parser";
 export type { InvoiceFields } from "./local-invoice-parser";
 
 // ─── PDF text extraction (embedded text only) ─────────────────────────────────

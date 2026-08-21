@@ -5,6 +5,7 @@ import { safeIsAmountMismatch, safeCalculateBaseAmount, safeParseDecimal, format
 import type { AiInvoiceExtraction } from "@/src/lib/ai-extraction";
 import type { EditableInvoiceLine } from "@/src/lib/invoice-lines";
 import { editableLineToInput, applyAutoCalcToLine, isCompletelyEmptyLine, parsePageInput, checkLineTotalsForApproval } from "@/src/lib/invoice-lines";
+import { buildTextExtractionFallbackLine } from "@/src/lib/local-invoice-parser";
 import { applyExtractionLines, applyExtractionToDraft, extractionLinesToEditable } from "@/src/lib/apply-ai-extraction";
 import InvoiceLinesEditor from "@/src/components/InvoiceLinesEditor";
 import { selectableExpenseAccounts, selectablePrepaidAssetAccounts } from "@/src/lib/coa-hierarchy";
@@ -238,7 +239,16 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
   const [extracting, setExtracting] = useState(false);
   const [extractionError, setExtractionError] = useState("");
   const [aiExtraction, setAiExtraction] = useState<AiInvoiceExtraction | null>(null);
-  const [editableLines, setEditableLines] = useState<EditableInvoiceLine[]>(lines);
+  const [editableLines, setEditableLines] = useState<EditableInvoiceLine[]>(() => {
+    const fallback = buildTextExtractionFallbackLine(
+      lines.length,
+      invoice.netAmount,
+      invoice.vatAmount,
+      invoice.grossAmount,
+      extractedFields,
+    );
+    return fallback ? [fallback] : lines;
+  });
   const [lastAppliedLineSignature, setLastAppliedLineSignature] = useState<string | null>(null);
   const [applyNotice, setApplyNotice] = useState<{ applied: string[]; skipped: string[]; warnings: string[] } | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
