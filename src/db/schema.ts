@@ -126,6 +126,7 @@ export const supplierInvoices = pgTable("supplier_invoices", {
   currencyType: currencyTypeEnum("currency_type").notNull().default("fiat"),
   fxRateToBase: numeric("fx_rate_to_base", { precision: 38, scale: 18 }),
   netAmount: numeric("net_amount", { precision: 38, scale: 18 }),
+  lineNetAdjustment: numeric("line_net_adjustment", { precision: 38, scale: 18 }).notNull().default("0"),
   vatAmount: numeric("vat_amount", { precision: 38, scale: 18 }),
   grossAmount: numeric("gross_amount", { precision: 38, scale: 18 }),
   baseNetAmount: numeric("base_net_amount", { precision: 18, scale: 4 }),

@@ -2,7 +2,7 @@
 
 import type { EditableInvoiceLine } from "@/src/lib/invoice-lines";
 import { emptyEditableInvoiceLine, sumInvoiceLineAmounts, applyAutoCalcToLine, parsePageInput } from "@/src/lib/invoice-lines";
-import { safeParseDecimal, amountsWithinTolerance, FIAT_TOLERANCE, stripTrailingZeros } from "@/src/lib/invoice-validation";
+import { safeParseDecimal, amountsWithinTolerance, FIAT_TOLERANCE, stripTrailingZeros, formatDisplayAmount } from "@/src/lib/invoice-validation";
 import { Decimal } from "@/src/lib/decimal";
 import { deriveRecognitionSchedule } from "@/src/lib/recognition";
 import { useI18n } from "@/src/i18n/context";
@@ -12,11 +12,13 @@ interface Props {
   postingAccounts: Array<{ code: string; name: string }>;
   prepaidAccounts?: Array<{ code: string; name: string }>;
   invoiceNetAmount: string;
+  lineNetAdjustment?: string;
   invoiceDate?: string;
   invoiceFxRate?: string;
   invoiceCurrency?: string;
   baseCurrency?: string;
   currencyType?: "fiat" | "crypto";
+  onLineNetAdjustmentChange?: (value: string) => void;
   onChange: (lines: EditableInvoiceLine[]) => void;
 }
 
@@ -237,11 +239,13 @@ export default function InvoiceLinesEditor({
   postingAccounts,
   prepaidAccounts = [],
   invoiceNetAmount,
+  lineNetAdjustment = "",
   invoiceDate,
   invoiceFxRate,
   invoiceCurrency,
   baseCurrency,
   currencyType = "fiat",
+  onLineNetAdjustmentChange,
   onChange,
 }: Props) {
   const { t } = useI18n();
@@ -251,11 +255,19 @@ export default function InvoiceLinesEditor({
   const displayLines = lines.map(applyAutoCalcToLine);
   const lineAmountSummary = sumInvoiceLineAmounts(displayLines);
   const parsedInvoiceNet = safeParseDecimal(invoiceNetAmount);
+  const parsedAdjustment = safeParseDecimal(lineNetAdjustment);
   const comparableInvoiceNet = parsedInvoiceNet.error ? null : parsedInvoiceNet.value;
+  const adjustedLineNet = parsedAdjustment.error
+    ? null
+    : new Decimal(lineAmountSummary.sum).plus(parsedAdjustment.value ?? "0").toFixed();
   const amountsMismatch = lines.length > 0
     && lineAmountSummary.invalidLineNumbers.length === 0
     && comparableInvoiceNet !== null
-    && !amountsWithinTolerance(lineAmountSummary.sum, comparableInvoiceNet, currencyType);
+    && adjustedLineNet !== null
+    && !amountsWithinTolerance(adjustedLineNet, comparableInvoiceNet, currencyType);
+  const displayAmount = (value: string | null) => value === null
+    ? cm.none
+    : formatDisplayAmount(value, currencyType);
 
   function update(index: number, field: keyof EditableInvoiceLine, value: string) {
     onChange(lines.map((line, lineIndex) => lineIndex === index ? { ...line, [field]: value } : line));
@@ -544,12 +556,46 @@ export default function InvoiceLinesEditor({
       <div style={{ marginTop: 12, padding: 12, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 6, fontSize: 13 }}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 16 }}>
           <span style={{ color: "#475569" }}>{il.sumOfLines}</span>
-          <strong style={{ color: "#1e293b" }}>{lineAmountSummary.sum}</strong>
+          <strong style={{ color: "#1e293b" }}>{displayAmount(lineAmountSummary.sum)}</strong>
         </div>
+        {lines.length > 0 && (
+          <>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, marginTop: 5 }}>
+              <label htmlFor="line-net-adjustment" style={{ color: "#475569" }}>{il.adjustment}</label>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <input
+                  id="line-net-adjustment"
+                  inputMode="decimal"
+                  aria-label={il.adjustment}
+                  value={lineNetAdjustment}
+                  onChange={(event) => onLineNetAdjustmentChange?.(event.target.value)}
+                  placeholder="0"
+                  style={{
+                    ...inputStyle,
+                    width: 120,
+                    textAlign: "right",
+                    borderColor: parsedAdjustment.error ? "#ef4444" : inputStyle.borderColor,
+                    background: parsedAdjustment.error ? "#fef2f2" : inputStyle.background,
+                  }}
+                />
+                {invoiceCurrency && <span style={{ color: "#64748b", minWidth: 32 }}>{invoiceCurrency}</span>}
+              </div>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 16, marginTop: 5 }}>
+              <span style={{ color: "#475569" }}>{il.adjustedLineNet}</span>
+              <strong style={{ color: "#1e293b" }}>{displayAmount(adjustedLineNet)}</strong>
+            </div>
+          </>
+        )}
         <div style={{ display: "flex", justifyContent: "space-between", gap: 16, marginTop: 5 }}>
           <span style={{ color: "#475569" }}>{il.invoiceNet}</span>
-          <strong style={{ color: "#1e293b" }}>{(comparableInvoiceNet ?? invoiceNetAmount) || cm.none}</strong>
+          <strong style={{ color: "#1e293b" }}>{displayAmount(comparableInvoiceNet)}</strong>
         </div>
+        {parsedAdjustment.error && (
+          <div style={{ marginTop: 9, padding: "8px 10px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 5, color: "#b91c1c" }}>
+            {parsedAdjustment.error}
+          </div>
+        )}
         {lineAmountSummary.invalidLineNumbers.length > 0 && (
           <div style={{ marginTop: 9, padding: "8px 10px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 5, color: "#b91c1c" }}>
             {(lineAmountSummary.invalidLineNumbers.length === 1 ? il.enterValidLine1 : il.enterValidLine)

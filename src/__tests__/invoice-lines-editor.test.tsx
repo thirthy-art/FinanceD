@@ -16,6 +16,27 @@ vi.mock("@/src/i18n/context", async () => {
 import { emptyEditableInvoiceLine } from "@/src/lib/invoice-lines";
 
 describe("InvoiceLinesEditor", () => {
+  it("shows the explicit adjustment and adjusted line net total without changing the line", () => {
+    const line = { ...emptyEditableInvoiceLine(), netAmount: "17094.00" };
+    const html = renderToStaticMarkup(
+      <InvoiceLinesEditor
+        lines={[line]}
+        postingAccounts={[]}
+        invoiceNetAmount="17094.02"
+        lineNetAdjustment="0.02"
+        invoiceCurrency="EUR"
+        onLineNetAdjustmentChange={() => undefined}
+        onChange={() => undefined}
+      />,
+    );
+
+    expect(html).toContain("Adjustment");
+    expect(html).toContain("Adjusted line net total");
+    expect(html).toContain('value="0.02"');
+    expect(html).toContain("17094.02");
+    expect(line.netAmount).toBe("17094.00");
+  });
+
   it("renders posting-account labels while persisting account numbers as option values", () => {
     const html = renderToStaticMarkup(
       <InvoiceLinesEditor

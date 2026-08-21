@@ -1,0 +1,1 @@
+ALTER TABLE "supplier_invoices" ADD COLUMN "line_net_adjustment" numeric(38, 18) DEFAULT '0' NOT NULL;

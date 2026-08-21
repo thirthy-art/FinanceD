@@ -16,7 +16,7 @@ function makeInvoice(overrides: Partial<InvoiceExportRow> = {}): InvoiceExportRo
     id: 1, vendorName: "Vendor", vendorTaxId: null, vendorExternalNumber: null,
     invoiceNumber: "INV-1", invoiceDate: "2026-01-15", dueDate: null,
     currency: "EUR", currencyType: "fiat",
-    netAmount: "100", vatAmount: "0", grossAmount: "100",
+    netAmount: "100", lineNetAdjustment: "0", vatAmount: "0", grossAmount: "100",
     baseNetAmount: "100", baseVatAmount: "0", baseGrossAmount: "100",
     status: "approved", paymentStatus: "Unpaid", paidDate: null,
     ...overrides,

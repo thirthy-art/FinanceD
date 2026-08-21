@@ -213,6 +213,8 @@ export const he: Messages = {
     prepaidAccount: "חשבון נכסים ששולמו מראש",
     del: "מחק",
     sumOfLines: "סכום שורות החשבונית",
+    adjustment: "התאמה",
+    adjustedLineNet: "סך נטו שורות לאחר התאמה",
     invoiceNet: "סכום נטו של חשבונית",
     vatOutOfRange: "שיעור מע\"מ חייב להיות בין 0 ל-100 (בנקודות אחוז, לדוגמה 17 עבור 17%).",
     qtyNetMismatch: "אזהרה: כמות × מחיר ליחידה אינו תואם לסכום נטו. הערכים לא שונו אוטומטית.",

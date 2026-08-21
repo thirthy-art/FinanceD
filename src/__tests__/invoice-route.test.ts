@@ -319,6 +319,72 @@ describe("PATCH /api/invoices/[id] — route-level", () => {
     expect(json.netAmount).toBe("1234.560000000000000000");
   });
 
+  it.skipIf(!HAS_DB)("accepts and persists a signed line net adjustment", async () => {
+    const inv = await createTestInvoice();
+
+    const res = await PATCH(
+      patchRequest(inv.id, { lineNetAdjustment: "-0.02" }),
+      params(inv.id),
+    );
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.lineNetAdjustment).toBe("-0.020000000000000000");
+    expect(json.netAmount).toBe("1000.000000000000000000");
+    expect(json.vatAmount).toBe("200.000000000000000000");
+    expect(json.grossAmount).toBe("1200.000000000000000000");
+  });
+
+  it.skipIf(!HAS_DB)("uses the final incoming adjustment when approving", async () => {
+    const vendorId = await createTestVendor();
+    const inv = await createTestInvoice({
+      vendorId,
+      netAmount: "17094.02",
+      vatAmount: "3247.86",
+      grossAmount: "20341.88",
+    });
+    await attachDocument(inv.id);
+    await db.insert(schema.supplierInvoiceLines).values({
+      invoiceId: inv.id,
+      position: 0,
+      netAmount: "17094.00",
+      vatAmount: "3247.86",
+      grossAmount: "20341.88",
+    });
+
+    const res = await PATCH(
+      patchRequest(inv.id, { status: "approved", lineNetAdjustment: "0.02" }),
+      params(inv.id),
+    );
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).lineNetAdjustment).toBe("0.020000000000000000");
+  });
+
+  it.skipIf(!HAS_DB)("uses the persisted adjustment when approval omits the field", async () => {
+    const vendorId = await createTestVendor();
+    const inv = await createTestInvoice({
+      vendorId,
+      netAmount: "100.00",
+      lineNetAdjustment: "-0.02",
+      vatAmount: "19.00",
+      grossAmount: "119.00",
+    });
+    await attachDocument(inv.id);
+    await db.insert(schema.supplierInvoiceLines).values({
+      invoiceId: inv.id,
+      position: 0,
+      netAmount: "100.02",
+      vatAmount: "19.00",
+      grossAmount: "119.00",
+    });
+
+    const res = await PATCH(patchRequest(inv.id, { status: "approved" }), params(inv.id));
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).lineNetAdjustment).toBe("-0.020000000000000000");
+  });
+
   it.skipIf(!HAS_DB)("empty invoice cannot be approved", async () => {
     const companyId = await getCompanyId();
     const [inv] = await db

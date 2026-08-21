@@ -311,6 +311,24 @@ export function validateAmount(raw: string, fieldName: string): string {
 }
 
 /**
+ * Validate a signed decimal suitable for numeric(38,18).
+ * Blank or absent input is the persisted zero value.
+ */
+export function validateSignedAmount(
+  raw: string | null | undefined,
+  fieldName: string,
+): string {
+  const canonical = parseDecimalInput(raw) ?? "0";
+  const parts = canonical.replace("-", "").split(".");
+  const intDigits = parts[0].replace(/^0+/, "").length || 1;
+  const fracDigits = parts[1]?.length ?? 0;
+  if (intDigits > AMOUNT_MAX_INT_DIGITS || fracDigits > AMOUNT_MAX_FRAC_DIGITS) {
+    throw new Error(`${fieldName} exceeds the supported scale (max 18 decimal places)`);
+  }
+  return canonical;
+}
+
+/**
  * Check whether a VAT rate string is valid (0–100 inclusive, or blank).
  * Returns true for blank/null (blank is allowed on drafts).
  */

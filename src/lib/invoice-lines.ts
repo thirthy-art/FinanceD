@@ -316,7 +316,8 @@ export function validateLineAccountsForApproval(
 export function checkLineTotalsForApproval(
   lines: Array<{ netAmount?: string | null; vatAmount?: string | null; grossAmount?: string | null }>,
   header: { net?: string | null; vat?: string | null; gross?: string | null },
-  currencyType: "fiat" | "crypto" = "fiat"
+  currencyType: "fiat" | "crypto" = "fiat",
+  lineNetAdjustment: string | null | undefined = "0",
 ): "ok" | "net-mismatch" | "vat-mismatch" | "gross-mismatch" {
   if (lines.length === 0) return "ok";
 
@@ -340,7 +341,8 @@ export function checkLineTotalsForApproval(
     if (anyLineGross && !gp.error && gp.value !== null) lineGross = lineGross.plus(toDecimal(gp.value));
   }
 
-  if (!amountsWithinTolerance(lineNet.toFixed(), header.net ?? null, currencyType)) return "net-mismatch";
+  const adjustedLineNet = lineNet.plus(toDecimal(lineNetAdjustment));
+  if (!amountsWithinTolerance(adjustedLineNet.toFixed(), header.net ?? null, currencyType)) return "net-mismatch";
   if (anyLineVat && !amountsWithinTolerance(lineVat.toFixed(), header.vat ?? null, currencyType)) return "vat-mismatch";
   if (anyLineGross && !amountsWithinTolerance(lineGross.toFixed(), header.gross ?? null, currencyType)) return "gross-mismatch";
 

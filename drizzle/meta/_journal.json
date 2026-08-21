@@ -71,6 +71,13 @@
       "when": 1787072248724,
       "tag": "0009_budget_v1",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1787316912282,
+      "tag": "0010_petite_fat_cobra",
+      "breakpoints": true
     }
   ]
 }

@@ -26,6 +26,7 @@ interface Invoice {
   currencyType: "fiat" | "crypto";
   fxRateToBase: string | null;
   netAmount: string | null;
+  lineNetAdjustment: string;
   vatAmount: string | null;
   grossAmount: string | null;
   baseNetAmount: string | null;
@@ -92,11 +93,15 @@ const errorInputStyle: React.CSSProperties = {
   background: "#fef2f2",
 };
 
-function validateMonetaryFields(form: { netAmount: string; vatAmount: string; grossAmount: string; fxRateToBase: string }): string[] {
+function validateMonetaryFields(form: { netAmount: string; lineNetAdjustment: string; vatAmount: string; grossAmount: string; fxRateToBase: string }): string[] {
   const fieldErrors: string[] = [];
   if (form.netAmount) {
     const r = safeParseDecimal(form.netAmount);
     if (r.error) fieldErrors.push(`Net: ${r.error}`);
+  }
+  if (form.lineNetAdjustment) {
+    const r = safeParseDecimal(form.lineNetAdjustment);
+    if (r.error) fieldErrors.push(`Adjustment: ${r.error}`);
   }
   if (form.vatAmount) {
     const r = safeParseDecimal(form.vatAmount);
@@ -271,6 +276,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
     currencyType: invoice.currencyType ?? "fiat" as "fiat" | "crypto",
     fxRateToBase: stripTrailingZeros(invoice.fxRateToBase) || (isSameCurrency ? "1" : ""),
     netAmount: stripTrailingZeros(invoice.netAmount) || extractedFields.netAmount || "",
+    lineNetAdjustment: stripTrailingZeros(invoice.lineNetAdjustment),
     vatAmount: stripTrailingZeros(invoice.vatAmount) || extractedFields.vatAmount || "",
     grossAmount: stripTrailingZeros(invoice.grossAmount) || extractedFields.grossAmount || "",
     costCentreId: invoice.costCentreId ? String(invoice.costCentreId) : "",
@@ -384,6 +390,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
         currencyType: form.currencyType,
         fxRateToBase: form.fxRateToBase || null,
         netAmount: form.netAmount || null,
+        lineNetAdjustment: form.lineNetAdjustment || "0",
         vatAmount: form.vatAmount || null,
         grossAmount: form.grossAmount || null,
         costCentreId: form.costCentreId ? Number(form.costCentreId) : null,
@@ -603,7 +610,8 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
       const result = checkLineTotalsForApproval(
         calcedLines,
         { net: form.netAmount || null, vat: form.vatAmount || null, gross: form.grossAmount || null },
-        form.currencyType
+        form.currencyType,
+        form.lineNetAdjustment || "0",
       );
       if (result !== "ok") headerLineMismatch = true;
     } catch {
@@ -1079,11 +1087,16 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
             postingAccounts={expenseAccounts}
             prepaidAccounts={prepaidAssetAccounts}
             invoiceNetAmount={form.netAmount}
+            lineNetAdjustment={form.lineNetAdjustment}
             invoiceDate={form.invoiceDate}
             invoiceFxRate={form.fxRateToBase || undefined}
             invoiceCurrency={form.currency}
             baseCurrency={baseCurrency}
             currencyType={form.currencyType}
+            onLineNetAdjustmentChange={(lineNetAdjustment) => {
+              setForm((current) => ({ ...current, lineNetAdjustment }));
+              setSaved(false);
+            }}
             onChange={(nextLines) => {
               setEditableLines(nextLines);
               setSaved(false);

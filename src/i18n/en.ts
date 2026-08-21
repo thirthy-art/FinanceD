@@ -213,6 +213,8 @@ export const en: Messages = {
     prepaidAccount: "Prepaid asset account",
     del: "Delete",
     sumOfLines: "Sum of invoice lines",
+    adjustment: "Adjustment",
+    adjustedLineNet: "Adjusted line net total",
     invoiceNet: "Invoice net amount",
     vatOutOfRange: "VAT rate must be between 0 and 100 (as percentage points, e.g. 19 for 19%).",
     qtyNetMismatch: "Warning: Qty × Unit Price does not match Net Amount. Values were not changed automatically.",

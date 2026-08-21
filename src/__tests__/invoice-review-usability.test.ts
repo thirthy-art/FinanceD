@@ -49,6 +49,35 @@ describe("stripTrailingZeros", () => {
 // ── checkLineTotalsForApproval ────────────────────────────────────────────────
 
 describe("checkLineTotalsForApproval", () => {
+  const roundingLines = [
+    { netAmount: "17094.00", vatAmount: "3247.86", grossAmount: "20341.88" },
+  ];
+  const roundingHeader = { net: "17094.02", vat: "3247.86", gross: "20341.88" };
+
+  it("reconciles the real positive rounding case with an explicit adjustment", () => {
+    expect(checkLineTotalsForApproval(roundingLines, roundingHeader, "fiat", "0.02")).toBe("ok");
+  });
+
+  it("keeps the same real rounding case as a net mismatch without an adjustment", () => {
+    expect(checkLineTotalsForApproval(roundingLines, roundingHeader, "fiat")).toBe("net-mismatch");
+  });
+
+  it("allows a negative adjustment to reconcile line net down to header net", () => {
+    const lines = [{ netAmount: "100.02", vatAmount: "19.00", grossAmount: "119.00" }];
+    const header = { net: "100.00", vat: "19.00", gross: "119.00" };
+    expect(checkLineTotalsForApproval(lines, header, "fiat", "-0.02")).toBe("ok");
+  });
+
+  it("does not allow a net adjustment to mask a VAT mismatch", () => {
+    const header = { ...roundingHeader, vat: "3247.88" };
+    expect(checkLineTotalsForApproval(roundingLines, header, "fiat", "0.02")).toBe("vat-mismatch");
+  });
+
+  it("does not allow a net adjustment to mask a gross mismatch", () => {
+    const header = { ...roundingHeader, gross: "20341.90" };
+    expect(checkLineTotalsForApproval(roundingLines, header, "fiat", "0.02")).toBe("gross-mismatch");
+  });
+
   // Case A: all line VAT and gross are blank — only net is checked
   it("allows approval when line net sums match header and all line VAT/gross are blank", () => {
     const lines = [

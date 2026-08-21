@@ -14,7 +14,8 @@ describe("invoice XLSX export", () => {
       id: 8, vendorName: "Crypto Vendor", vendorTaxId: null, vendorExternalNumber: null,
       invoiceNumber: "INV-8", invoiceDate: "2026-08-15", dueDate: null,
       currency: "BTC", currencyType: "crypto", netAmount: highPrecision,
-      vatAmount: excelBoundary, grossAmount: highPrecision, baseNetAmount: "1234.56",
+      lineNetAdjustment: "-0.000000000000000001", vatAmount: excelBoundary,
+      grossAmount: highPrecision, baseNetAmount: "1234.56",
       baseVatAmount: "0", baseGrossAmount: "1234.56", status: "approved",
       paymentStatus: "Unpaid", paidDate: null,
     };
@@ -36,6 +37,7 @@ describe("invoice XLSX export", () => {
       currency: "EUR",
       currencyType: "fiat",
       netAmount: "1234.56",
+      lineNetAdjustment: "0.02",
       grossAmount: "1234.56",
     };
 
@@ -47,10 +49,14 @@ describe("invoice XLSX export", () => {
 
     expect(invoiceSheet.getCell("I2").value).toBe(highPrecision);
     expect(invoiceSheet.getCell("I2").type).not.toBe(ExcelJS.ValueType.Formula);
-    expect(invoiceSheet.getCell("J2").value).toBe(excelBoundary);
-    expect(invoiceSheet.getCell("J2").type).not.toBe(ExcelJS.ValueType.Formula);
-    expect(invoiceSheet.getCell("L2").value).toBe(1234.56);
+    expect(invoiceSheet.getCell("J2").value).toBe(-0.000000000000000001);
+    expect(invoiceSheet.getCell("J2").numFmt).toBe("0.##################");
+    expect(invoiceSheet.getCell("K2").value).toBe(excelBoundary);
+    expect(invoiceSheet.getCell("K2").type).not.toBe(ExcelJS.ValueType.Formula);
+    expect(invoiceSheet.getCell("M2").value).toBe(1234.56);
     expect(invoiceSheet.getCell("I3").value).toBe(1234.56);
+    expect(invoiceSheet.getCell("J3").value).toBe(0.02);
+    expect(invoiceSheet.getCell("J3").numFmt).toBe("0.00");
     expect(lineSheet.getCell("K2").value).toBe(highPrecision);
     expect(lineSheet.getCell("N2").value).toBe(highPrecision);
     expect(lineSheet.getCell("N2").type).not.toBe(ExcelJS.ValueType.Formula);
@@ -64,7 +70,7 @@ describe("invoice XLSX export", () => {
       id: 7, vendorName: "ACME", vendorTaxId: "CY123", vendorExternalNumber: null,
       invoiceNumber: "INV-7", invoiceDate: "2026-08-15", dueDate: null,
       currency: "EUR", currencyType: "fiat" as const,
-      netAmount: "52.000000000000000000", vatAmount: "9.88", grossAmount: "61.88",
+      netAmount: "52.000000000000000000", lineNetAdjustment: "0.02", vatAmount: "9.88", grossAmount: "61.88",
       baseNetAmount: "52", baseVatAmount: "9.88", baseGrossAmount: "61.88", status: "approved" as const,
       paymentStatus: "Unpaid" as const, paidDate: null,
     };
@@ -86,6 +92,9 @@ describe("invoice XLSX export", () => {
     expect(workbook.getWorksheet("Invoice Lines")?.rowCount).toBe(7);
     // Column I is "Net Amount" (shifted by 1 due to "Vendor External No." in column D)
     expect(workbook.getWorksheet("Invoices")?.getCell("I2").numFmt).toBe("0.00");
+    expect(workbook.getWorksheet("Invoices")?.getCell("J1").value).toBe("Line Net Adjustment");
+    expect(workbook.getWorksheet("Invoices")?.getCell("J2").value).toBe(0.02);
+    expect(workbook.getWorksheet("Invoices")?.getCell("J2").numFmt).toBe("0.00");
     expect(workbook.getWorksheet("Invoice Lines")?.getCell("I2").value).toBe("Original 1");
     expect(workbook.getWorksheet("Invoice Lines")?.getCell("J2").value).toBe("Line 1");
 

@@ -20,6 +20,7 @@ export async function GET(request: Request) {
       currency: supplierInvoices.currency,
       currencyType: supplierInvoices.currencyType,
       netAmount: supplierInvoices.netAmount,
+      lineNetAdjustment: supplierInvoices.lineNetAdjustment,
       vatAmount: supplierInvoices.vatAmount,
       grossAmount: supplierInvoices.grossAmount,
       baseNetAmount: supplierInvoices.baseNetAmount,

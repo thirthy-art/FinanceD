@@ -16,6 +16,7 @@ import {
   calculateBaseAmount,
   validatePositiveRate,
   validateAmount,
+  validateSignedAmount,
   validateBaseAmount,
   isVatRateValid,
 } from "@/src/lib/invoice-validation";
@@ -44,6 +45,7 @@ const UpdateSchema = z.object({
   currencyType: z.enum(["fiat", "crypto"]).optional(),
   fxRateToBase: z.string().nullable().optional(),
   netAmount: z.string().nullable().optional(),
+  lineNetAdjustment: z.string().nullable().optional(),
   vatAmount: z.string().nullable().optional(),
   grossAmount: z.string().nullable().optional(),
   costCentreId: z.number().nullable().optional(),
@@ -125,6 +127,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const errors: string[] = [];
 
   let normalizedNet: string | null | undefined;
+  let normalizedLineNetAdjustment: string | undefined;
   let normalizedVat: string | null | undefined;
   let normalizedGross: string | null | undefined;
   let normalizedRate: string | null | undefined;
@@ -136,6 +139,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       try { normalizedNet = validateAmount(data.netAmount, "Net amount"); }
       catch (e) { errors.push((e as Error).message); }
     }
+  }
+  if (data.lineNetAdjustment !== undefined) {
+    try { normalizedLineNetAdjustment = validateSignedAmount(data.lineNetAdjustment, "Line net adjustment"); }
+    catch (e) { errors.push((e as Error).message); }
   }
   if (data.vatAmount !== undefined) {
     if (data.vatAmount === null) {
@@ -231,6 +238,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   // ── Resolve final values ───────────────────────────────────────────────────
   const finalNet = normalizedNet !== undefined ? normalizedNet : existing.netAmount;
+  const finalLineNetAdjustment = normalizedLineNetAdjustment ?? existing.lineNetAdjustment;
   const finalVat = normalizedVat !== undefined ? normalizedVat : existing.vatAmount;
   const finalGross = normalizedGross !== undefined ? normalizedGross : existing.grossAmount;
   const finalCurrencyType = data.currencyType ?? existing.currencyType;
@@ -375,7 +383,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       const totalsResult = checkLineTotalsForApproval(
         linesToValidate,
         { net: finalNet, vat: finalVat, gross: finalGross },
-        finalCurrencyType
+        finalCurrencyType,
+        finalLineNetAdjustment,
       );
       if (totalsResult !== "ok") {
         return NextResponse.json(
@@ -484,7 +493,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       }
 
       const updateValues = buildUpdateValues(
-        data, normalizedNet, normalizedVat, normalizedGross,
+        data, normalizedNet, normalizedLineNetAdjustment, normalizedVat, normalizedGross,
         effectiveRate, finalNet, finalVat, finalGross, finalStatus, vendorId,
         currencyChanged
       );
@@ -527,6 +536,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 function buildUpdateValues(
   data: z.infer<typeof UpdateSchema>,
   normalizedNet: string | null | undefined,
+  normalizedLineNetAdjustment: string | undefined,
   normalizedVat: string | null | undefined,
   normalizedGross: string | null | undefined,
   effectiveRate: string | null | undefined,
@@ -548,6 +558,7 @@ function buildUpdateValues(
   if (data.currency !== undefined) updateValues.currency = data.currency;
   if (data.currencyType !== undefined) updateValues.currencyType = data.currencyType;
   if (normalizedNet !== undefined) updateValues.netAmount = normalizedNet;
+  if (normalizedLineNetAdjustment !== undefined) updateValues.lineNetAdjustment = normalizedLineNetAdjustment;
   if (normalizedVat !== undefined) updateValues.vatAmount = normalizedVat;
   if (normalizedGross !== undefined) updateValues.grossAmount = normalizedGross;
 

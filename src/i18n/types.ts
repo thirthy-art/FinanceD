@@ -217,6 +217,8 @@ export interface Messages {
     prepaidAccount: string;
     del: string;
     sumOfLines: string;
+    adjustment: string;
+    adjustedLineNet: string;
     invoiceNet: string;
     vatOutOfRange: string;
     qtyNetMismatch: string;

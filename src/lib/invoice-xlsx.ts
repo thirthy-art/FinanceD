@@ -12,6 +12,7 @@ export interface InvoiceExportRow {
   currency: string;
   currencyType: "fiat" | "crypto";
   netAmount: string | null;
+  lineNetAdjustment: string;
   vatAmount: string | null;
   grossAmount: string | null;
   baseNetAmount: string | null;
@@ -92,6 +93,7 @@ export function createInvoiceExportWorkbook(invoices: InvoiceExportRow[], lines:
     { header: "Due Date", key: "dueDate", width: 14 },
     { header: "Currency", key: "currency", width: 12 },
     { header: "Net Amount", key: "netAmount", width: 18 },
+    { header: "Line Net Adjustment", key: "lineNetAdjustment", width: 21 },
     { header: "VAT Amount", key: "vatAmount", width: 18 },
     { header: "Gross Amount", key: "grossAmount", width: 18 },
     { header: "Base Net Amount", key: "baseNetAmount", width: 18 },
@@ -118,6 +120,7 @@ export function createInvoiceExportWorkbook(invoices: InvoiceExportRow[], lines:
     setDateCell(row.getCell("paidDate"), invoice.paidDate);
     const invoiceFormat = invoice.currencyType === "crypto" ? precisionFormat : fiatFormat;
     setDecimalCell(row.getCell("netAmount"), invoice.netAmount, invoiceFormat);
+    setDecimalCell(row.getCell("lineNetAdjustment"), invoice.lineNetAdjustment, invoiceFormat);
     setDecimalCell(row.getCell("vatAmount"), invoice.vatAmount, invoiceFormat);
     setDecimalCell(row.getCell("grossAmount"), invoice.grossAmount, invoiceFormat);
     setDecimalCell(row.getCell("baseNetAmount"), invoice.baseNetAmount, fiatFormat);

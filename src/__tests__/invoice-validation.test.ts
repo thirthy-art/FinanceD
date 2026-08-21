@@ -9,6 +9,7 @@ import {
   parseDecimalInput,
   validatePositiveRate,
   validateAmount,
+  validateSignedAmount,
   validateBaseAmount,
   safeParseDecimal,
   safeIsAmountMismatch,
@@ -251,6 +252,20 @@ describe("validateAmount", () => {
 
   it("accepts 18 decimal places", () => {
     expect(validateAmount("0.000000000000000001", "Net")).toBe("0.000000000000000001");
+  });
+});
+
+describe("validateSignedAmount", () => {
+  it("accepts positive, zero, and negative values and normalizes blank to zero", () => {
+    expect(validateSignedAmount("0.02", "Adjustment")).toBe("0.02");
+    expect(validateSignedAmount("0", "Adjustment")).toBe("0");
+    expect(validateSignedAmount("-0.02", "Adjustment")).toBe("-0.02");
+    expect(validateSignedAmount(null, "Adjustment")).toBe("0");
+  });
+
+  it("enforces numeric(38,18) capacity", () => {
+    expect(() => validateSignedAmount("1." + "9".repeat(19), "Adjustment")).toThrow(/exceeds/);
+    expect(() => validateSignedAmount("1".repeat(21), "Adjustment")).toThrow(/exceeds/);
   });
 });
 
