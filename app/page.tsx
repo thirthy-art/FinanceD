@@ -89,8 +89,9 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ d
           <NewInvoiceUploadButton label={t.uploadInvoice} />
         </div>
       ) : (
-        <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <>
+          <div className="invoice-list-desktop" style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
                 {[t.colNum, t.colVendor, t.colInvoiceNo, t.colDate, t.colAmount, t.colStatus, ""].map((h, idx) => (
@@ -138,8 +139,39 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ d
                 </tr>
               ))}
             </tbody>
-          </table>
-        </div>
+            </table>
+          </div>
+          <div className="invoice-list-mobile">
+            {rows.map((inv) => (
+              <article className="invoice-list-card" key={inv.id}>
+                <div className="invoice-list-card-header">
+                  <div className="invoice-list-card-vendor">
+                    {inv.vendorName ?? <span className="invoice-list-card-none">{common.none}</span>}
+                  </div>
+                  <div className="invoice-list-card-status">{statusBadge(inv.status, common)}</div>
+                </div>
+                <div className="invoice-list-card-details">
+                  <span className="invoice-list-card-invoice-number">
+                    {inv.invoiceNumber ?? <span className="invoice-list-card-none">{common.none}</span>}
+                  </span>
+                  <span aria-hidden="true">·</span>
+                  <span>{inv.invoiceDate ?? common.none}</span>
+                </div>
+                <div className="invoice-list-card-summary">
+                  <div className="invoice-list-card-amount">
+                    {inv.grossAmount
+                      ? `${inv.currency} ${formatDisplayAmount(inv.grossAmount, inv.currencyType)}`
+                      : common.none}
+                  </div>
+                  <Link className="invoice-list-card-review" href={`/invoices/${inv.id}`}>
+                    {t.review}
+                  </Link>
+                </div>
+                <div className="invoice-list-card-id">#{inv.id}</div>
+              </article>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );
