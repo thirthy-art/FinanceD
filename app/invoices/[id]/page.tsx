@@ -38,7 +38,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
 
   if (!invoice) notFound();
 
-  const { invoiceDetail: t } = getMessages(locale);
+  const { invoiceDetail: t, invoiceList } = getMessages(locale);
 
   const [docs, lines, vendorList, ccList, acctList, [company]] = await Promise.all([
     db.select().from(supplierInvoiceDocuments).where(eq(supplierInvoiceDocuments.invoiceId, invoice.id)),
@@ -68,15 +68,23 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
 
   return (
     <div>
-      <div style={{ marginBottom: 20, display: "flex", alignItems: "center", gap: 8 }}>
-        <Link href="/" style={{ color: "#2563eb", textDecoration: "none", fontSize: 13 }}>
-          {t.allInvoices}
+      <div style={{ marginBottom: 20, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+          <Link href="/" style={{ color: "#2563eb", textDecoration: "none", fontSize: 13 }}>
+            {t.allInvoices}
+          </Link>
+          <span style={{ color: "#cbd5e1" }}>/</span>
+          <span style={{ fontSize: 13, color: "#64748b" }}>
+            Invoice #{invoice.id}
+            {invoice.invoiceNumber ? ` · ${invoice.invoiceNumber}` : ""}
+          </span>
+        </div>
+        <Link
+          href="/invoices/new"
+          style={{ background: "#2563eb", color: "#fff", padding: "7px 14px", borderRadius: 6, textDecoration: "none", fontSize: 13, fontWeight: 600 }}
+        >
+          {invoiceList.newInvoice}
         </Link>
-        <span style={{ color: "#cbd5e1" }}>/</span>
-        <span style={{ fontSize: 13, color: "#64748b" }}>
-          Invoice #{invoice.id}
-          {invoice.invoiceNumber ? ` · ${invoice.invoiceNumber}` : ""}
-        </span>
       </div>
       <InvoiceReview
         invoice={invoice}

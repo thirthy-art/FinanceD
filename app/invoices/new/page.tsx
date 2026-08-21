@@ -144,18 +144,6 @@ export default function NewInvoicePage() {
           )}
         </div>
       )}
-
-      <div style={{ marginTop: 32, padding: 16, background: "#f0f9ff", borderRadius: 8, border: "1px solid #bae6fd" }}>
-        <div style={{ fontWeight: 600, color: "#0c4a6e", marginBottom: 8, fontSize: 13 }}>
-          {n.whatHappensTitle}
-        </div>
-        <ul style={{ color: "#0369a1", fontSize: 13, paddingLeft: 20, lineHeight: 1.8 }}>
-          <li>{n.step1}</li>
-          <li>{n.step2}</li>
-          <li>{n.step3}</li>
-          <li>{n.step4}</li>
-        </ul>
-      </div>
     </div>
   );
 }

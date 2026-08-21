@@ -51,9 +51,9 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ d
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <h1 style={{ fontSize: 22, fontWeight: 700, color: "#1e3a5f" }}>{t.title}</h1>
-        <div style={{ display: "flex", gap: 10 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
           <form action="/api/invoices/export" method="get">
             <button
               type="submit"
@@ -67,7 +67,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ d
             style={{
               background: "#2563eb",
               color: "#fff",
-              padding: "8px 18px",
+              padding: "8px 14px",
               borderRadius: 6,
               textDecoration: "none",
               fontSize: 14,

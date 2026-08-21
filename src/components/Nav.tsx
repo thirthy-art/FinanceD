@@ -14,7 +14,6 @@ export default function Nav() {
 
   const links = [
     { href: "/", label: t.nav.invoices },
-    { href: "/invoices/new", label: t.nav.newInvoice },
     { href: "/cash-flow", label: t.nav.cashForecast },
     { href: "/budget", label: t.nav.budget },
     { href: "/settings/chart-of-accounts", label: t.nav.chartOfAccounts },
