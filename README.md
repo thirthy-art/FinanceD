@@ -1,82 +1,53 @@
 # FinanceD
 
-Modular pre-accounting and cash-visibility software for SMEs.
+FinanceD is modular pre-accounting and cash-visibility software for SMEs. The current MVP covers company-scoped supplier invoices, vendors, chart of accounts, cost centres, Cash Forecast / payables, and Budget v1. It is not a general ledger or full ERP.
 
-## Prerequisites
+## Supplier invoice workflow
 
-- Node.js 22 (see `.nvmrc`)
-- PostgreSQL 15+
+1. Create or select a company and its configurable base currency.
+2. Upload a supplier invoice as PDF, JPEG, PNG, TIFF, or WebP. The immutable original is stored through the document-storage abstraction.
+3. FinanceD extracts embedded PDF text or runs local image OCR and proposes initial fields. Optional AI extraction uses PDF text first for born-digital PDFs and vision for images or scanned PDFs; **Try image AI** explicitly renders a PDF for vision processing.
+4. Review the preview, explicitly apply desired AI suggestions, and edit the invoice header and lines. Blank line numbers receive 1-based positional numbers; an invoice-level signed line-net adjustment can reconcile line net totals without changing header or line amounts.
+5. Save a draft or approve after server validation. Track the invoice as paid or unpaid, view the original, and export invoice or payable data.
 
-## Setup
+AI results are suggestions only: extraction does not persist invoice changes until the user applies them and saves.
+
+## Stack
+
+- Next.js 16 App Router, React 19, and TypeScript
+- PostgreSQL with Drizzle ORM and versioned migrations
+- Tailwind CSS
+- `decimal.js` for monetary arithmetic
+- Local or S3-compatible document storage (the deployed target supports Cloudflare R2)
+- Optional OpenAI-compatible AI extraction provider
+
+## Local setup
+
+Prerequisites: Node.js 22 (see `.nvmrc`) and PostgreSQL.
 
 ```bash
-# 1. Use correct Node version
 nvm use
-
-# 2. Install dependencies
 npm install
-
-# 3. Copy and configure environment
 cp .env.example .env
-# Edit .env with your DATABASE_URL
-
-# 4. Apply versioned migrations
+# Set DATABASE_URL and any optional storage/AI configuration.
 npm run db:migrate
-
-# 5. Seed demo data (idempotent — safe to run multiple times)
-npm run db:seed
-
-# 6. Run development server
+npm run db:seed # optional, idempotent demo data
 npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000).
 
-## What it does
+Production needs a PostgreSQL `DATABASE_URL`, a durable document-storage configuration, and—only if AI extraction is enabled—an AI provider key, endpoint, and model. See [Operations](docs/OPERATIONS.md) for the exact repository-supported variables and migration procedure.
 
-1. Upload a supplier invoice as PDF or image (JPEG/PNG/TIFF/WebP)
-2. Text is extracted automatically (embedded text for PDFs; OCR via tesseract.js for images)
-3. Extracted fields are pre-filled in the review form
-4. Edit any field, fix discrepancies, assign a vendor and expense account
-5. Save as draft or approve the invoice
+## Data and storage policies
 
-## Environment variables
+- PostgreSQL is the source of truth for business records. Original document metadata is stored in PostgreSQL; binary files are stored through `src/lib/document-storage.ts` using local disk or an S3-compatible backend.
+- Original-currency amounts and FX rates use decimal strings with up to 18 decimal places; base-currency amounts use 4 decimal places. Monetary arithmetic uses `decimal.js`, never JavaScript floating point.
+- Each invoice stores its own FX rate in the direction `1 invoice currency unit = fxRateToBase base currency units`. Rates are never auto-refreshed.
 
-| Variable | Default | Description |
-|---|---|---|
-| `DATABASE_URL` | — | PostgreSQL connection string |
-| `UPLOAD_DIR` | `./uploads` | Directory for storing uploaded documents |
+## Documentation
 
-## Commands
-
-```
-npm run dev          # development server
-npm test             # run tests
-npm run lint         # lint
-npm run build        # production build
-npm run db:generate  # generate new migration after schema changes
-npm run db:migrate   # apply versioned migrations
-npm run db:seed      # seed demo data (idempotent)
-```
-
-## Monetary precision
-
-- Original-currency amounts support up to 18 decimal places (crypto-safe)
-- Base-currency amounts use 4 decimal places (fiat)
-- All monetary arithmetic uses `decimal.js` — never JavaScript floating-point
-- Each invoice stores its own FX rate; rates are never auto-refreshed
-
-## OCR support
-
-| Input | Method |
-|---|---|
-| PDF with embedded text | `pdf-parse` (pure JS) |
-| JPEG / PNG / TIFF image | `tesseract.js` (WASM) |
-| Scanned PDF (no text) | Manual entry (graceful fallback) |
-
-## Build for production
-
-```bash
-npm run build
-npm start
-```
+- [MVP status](docs/MVP_STATUS.md)
+- [Operations runbook](docs/OPERATIONS.md)
+- [Architecture map](docs/FinanceD_Architecture_Map.md)
+- [Future ideas](docs/FUTURE_IDEAS.md)
