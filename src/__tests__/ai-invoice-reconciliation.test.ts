@@ -492,6 +492,118 @@ describe("Test 12 — crypto: no fiat reconciliation", () => {
   });
 });
 
+// ── Partial monetary columns → review-required (micro-fix regression) ─────────
+describe("Partial monetary columns must not be matched", () => {
+  // Header used across all three cases:
+  //   net=5000, vat=950, gross=5950
+  // Line A is fully populated; Line B is missing one column.
+
+  it("partial VAT: one line has VAT, another does not → review-required", () => {
+    const extraction = makeExtraction({
+      netAmount: "5000",
+      vatAmount: "950",
+      grossAmount: "5950",
+      lines: [
+        makeLine({ netAmount: "4000", vatAmount: "760",  grossAmount: "4760" }),
+        makeLine({ netAmount: "1000", vatAmount: null,   grossAmount: "1190" }),
+      ],
+    });
+
+    const { extraction: out, reconciliation } = reconcileAiInvoiceExtraction(extraction, "fiat");
+
+    expect(reconciliation.kind).toBe("review-required");
+    // Extraction must be unchanged
+    expect(out.lines[0].vatAmount).toBe("760");
+    expect(out.lines[1].vatAmount).toBeNull();
+    expect(out.lines[1].grossAmount).toBe("1190");
+  });
+
+  it("partial gross: one line has gross, another does not → review-required", () => {
+    const extraction = makeExtraction({
+      netAmount: "5000",
+      vatAmount: "950",
+      grossAmount: "5950",
+      lines: [
+        makeLine({ netAmount: "4000", vatAmount: "760", grossAmount: "4760" }),
+        makeLine({ netAmount: "1000", vatAmount: "190", grossAmount: null  }),
+      ],
+    });
+
+    const { extraction: out, reconciliation } = reconcileAiInvoiceExtraction(extraction, "fiat");
+
+    expect(reconciliation.kind).toBe("review-required");
+    expect(out.lines[0].grossAmount).toBe("4760");
+    expect(out.lines[1].grossAmount).toBeNull();
+    expect(out.lines[1].vatAmount).toBe("190");
+  });
+
+  it("partial net: one line has net, another does not → review-required", () => {
+    const extraction = makeExtraction({
+      netAmount: "5000",
+      vatAmount: "950",
+      grossAmount: "5950",
+      lines: [
+        makeLine({ netAmount: "4000", vatAmount: "760", grossAmount: "4760" }),
+        makeLine({ netAmount: null,   vatAmount: "190", grossAmount: "1190" }),
+      ],
+    });
+
+    const { extraction: out, reconciliation } = reconcileAiInvoiceExtraction(extraction, "fiat");
+
+    expect(reconciliation.kind).toBe("review-required");
+    expect(out.lines[0].netAmount).toBe("4000");
+    expect(out.lines[1].netAmount).toBeNull();
+    expect(out.lines[1].vatAmount).toBe("190");
+  });
+});
+
+describe("Partial-column fix regressions — existing cases must still work", () => {
+  it("matched: all line fields complete and sums agree → matched", () => {
+    const extraction = makeExtraction({
+      netAmount: "5000",
+      vatAmount: "950",
+      grossAmount: "5950",
+      lines: [
+        makeLine({ netAmount: "4000", vatAmount: "760", grossAmount: "4760" }),
+        makeLine({ netAmount: "1000", vatAmount: "190", grossAmount: "1190" }),
+      ],
+    });
+
+    const { reconciliation } = reconcileAiInvoiceExtraction(extraction, "fiat");
+    expect(reconciliation.kind).toBe("matched");
+  });
+
+  it("vat-prorated: all nets present, all VAT/gross absent → vat-prorated", () => {
+    const extraction = makeExtraction({
+      netAmount: "5000",
+      vatAmount: "950",
+      grossAmount: "5950",
+      lines: [
+        makeLine({ netAmount: "4000" }),
+        makeLine({ netAmount: "1000" }),
+      ],
+    });
+
+    const { reconciliation } = reconcileAiInvoiceExtraction(extraction, "fiat");
+    expect(reconciliation.kind).toBe("vat-prorated");
+  });
+
+  it("gross-reclassified: all nets present as gross totals, all VAT/gross absent → gross-reclassified", () => {
+    const extraction = makeExtraction({
+      netAmount: "5000",
+      vatAmount: "950",
+      grossAmount: "5950",
+      lines: [
+        makeLine({ netAmount: "4760" }),
+        makeLine({ netAmount: "1190" }),
+      ],
+    });
+
+    const { reconciliation } = reconcileAiInvoiceExtraction(extraction, "fiat");
+    expect(reconciliation.kind).toBe("gross-reclassified");
+  });
+});
+
 // ── Edge: single-line all-blank VAT rate → proration allowed ──────────────────
 describe("VAT rate conflict logic", () => {
   it("allows proration when all lines have null vatRate", () => {

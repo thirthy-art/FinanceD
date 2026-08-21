@@ -134,13 +134,25 @@ export function reconcileAiInvoiceExtraction(
   // ── Case 1: Already reconciled ─────────────────────────────────────────────
   // Only fire when lines already carry vat or gross data (otherwise Cases 2/3 apply).
   if (!allVatGrossAbsent) {
-    const netOk = sumNets === null || withinFiatTolerance(sumNets, headerNet);
-    const vatOk = sumVats === null || withinFiatTolerance(sumVats, headerVat);
-    const grossOk = sumGrosses === null || withinFiatTolerance(sumGrosses, headerGross);
-    const anyData = sumNets !== null || sumVats !== null || sumGrosses !== null;
+    // A column is partial when some lines have meaningful values and others do not.
+    // Partial evidence is not complete enough to confirm reconciliation — fall through.
+    const allVatsAbsent = lines.every((l) => isNullOrZero(l.vatAmount));
+    const allGrossesAbsent = lines.every((l) => isNullOrZero(l.grossAmount));
+    const allNetsAbsent = lines.every((l) => isNullOrZero(l.netAmount));
 
-    if (anyData && netOk && vatOk && grossOk) {
-      return { extraction, reconciliation: { kind: "matched" } };
+    const netPartial = !allNets && !allNetsAbsent;
+    const vatPartial = !allVats && !allVatsAbsent;
+    const grossPartial = !allGrosses && !allGrossesAbsent;
+
+    if (!netPartial && !vatPartial && !grossPartial) {
+      const netOk = sumNets === null || withinFiatTolerance(sumNets, headerNet);
+      const vatOk = sumVats === null || withinFiatTolerance(sumVats, headerVat);
+      const grossOk = sumGrosses === null || withinFiatTolerance(sumGrosses, headerGross);
+      const anyData = sumNets !== null || sumVats !== null || sumGrosses !== null;
+
+      if (anyData && netOk && vatOk && grossOk) {
+        return { extraction, reconciliation: { kind: "matched" } };
+      }
     }
   }
 
