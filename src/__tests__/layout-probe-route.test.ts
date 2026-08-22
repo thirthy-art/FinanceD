@@ -55,6 +55,8 @@ describe("dev layout-probe route", () => {
     expect(body.evidence.pages[0].elements.map((element: { text: string }) => element.text))
       .toEqual(expect.arrayContaining(["LAYOUT PROBE INVOICE", "Description", "200.00"]));
     expect(body.tables[0]).toMatchObject({ page: 1, columnCount: 3, rowCount: 3 });
+    expect(body.tables[0].classification.role).toBe("line_items");
+    expect(typeof body.tables[0].classification.reason).toBe("string");
 
     const knownIds = new Set(
       body.evidence.pages[0].elements.map((element: { id: string }) => element.id),
@@ -138,5 +140,6 @@ describe("dev layout-probe route", () => {
     const body = await response.json();
     expect(body.evidence.pages).toHaveLength(1);
     expect(body.tables[0]).toMatchObject({ page: 1, columnCount: 3, rowCount: 3 });
+    expect(body.tables[0].classification.role).toBe("line_items");
   });
 });

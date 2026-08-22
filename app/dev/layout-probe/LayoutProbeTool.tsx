@@ -343,7 +343,9 @@ export default function LayoutProbeTool() {
                 <article key={table.id} className={styles.tableCard}>
                   <h3 className={styles.tableTitle}>
                     {table.id} — {table.rowCount} row(s) × {table.columnCount} column(s)
+                    <span className={styles.roleBadge}>{table.classification.role}</span>
                   </h3>
+                  <p className={styles.muted}>{table.classification.reason}</p>
                   <div className={styles.tableScroll}>
                     <table className={styles.candidateTable}>
                       <tbody>

@@ -9,11 +9,11 @@ import type {
   EvidenceBox,
   EvidencePageDimensions,
 } from "@/src/lib/experimental/document-evidence";
-import type { EvidenceTableCandidate } from "@/src/lib/experimental/layout-table-clustering";
+import type { ClassifiedEvidenceTableCandidate } from "@/src/lib/experimental/layout-block-classification";
 
 export interface LayoutProbeResult {
   evidence: DocumentEvidence;
-  tables: EvidenceTableCandidate[];
+  tables: ClassifiedEvidenceTableCandidate[];
 }
 
 export function isLayoutProbeResult(value: unknown): value is LayoutProbeResult {

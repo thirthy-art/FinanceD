@@ -83,6 +83,19 @@ describe("layout probe view model", () => {
     expect(isLayoutProbeResult({ error: "boom" })).toBe(false);
     expect(isLayoutProbeResult({ evidence: { pages: [] }, tables: "nope" })).toBe(false);
   });
+
+  it("accepts candidates carrying a deterministic classification", () => {
+    const result = {
+      evidence: { pages: [] },
+      tables: [
+        {
+          id: "p1-table-000",
+          classification: { role: "line_items", reason: "line-item header + numeric rows" },
+        },
+      ],
+    };
+    expect(isLayoutProbeResult(result)).toBe(true);
+  });
 });
 
 describe("layout probe upload validation", () => {

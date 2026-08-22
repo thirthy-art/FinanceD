@@ -3,6 +3,7 @@ import { pathToFileURL } from "node:url";
 import { GlobalWorkerOptions } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { extractPdfLayoutEvidence } from "@/src/lib/experimental/pdf-layout-evidence";
 import { clusterEvidenceTables } from "@/src/lib/experimental/layout-table-clustering";
+import { classifyEvidenceTables } from "@/src/lib/experimental/layout-block-classification";
 import {
   hasPdfMagicBytes,
   MAX_LAYOUT_PROBE_BYTES,
@@ -70,7 +71,7 @@ export async function POST(request: Request) {
 
   try {
     const evidence = await extractPdfLayoutEvidence(bytes);
-    const tables = clusterEvidenceTables(evidence);
+    const tables = classifyEvidenceTables(clusterEvidenceTables(evidence), evidence);
     return json({ evidence, tables }, 200);
   } catch {
     return json({ error: "Layout evidence extraction failed for this PDF." }, 422);
