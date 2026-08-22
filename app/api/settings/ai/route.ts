@@ -4,6 +4,7 @@ import {
   saveMimoSettings,
   saveOpenRouterSettings,
 } from "@/src/lib/ai-settings";
+import { getAiSettingsAdminAccess } from "@/src/lib/ai-settings-admin-auth";
 
 export const runtime = "nodejs";
 
@@ -30,7 +31,21 @@ function json(body: unknown, status = 200) {
   return Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
 }
 
-export async function GET() {
+function requireAdmin(request: Request): Response | null {
+  const access = getAiSettingsAdminAccess(request.headers.get("cookie"));
+  if (access === "authorized") return null;
+  if (access === "not-configured") {
+    return json({
+      error: "AI settings admin access is not configured.",
+      code: "AI_SETTINGS_ADMIN_NOT_CONFIGURED",
+    }, 503);
+  }
+  return json({ error: "Unauthorized." }, 401);
+}
+
+export async function GET(request: Request) {
+  const denied = requireAdmin(request);
+  if (denied) return denied;
   try {
     return json(await getPublicAiSettings());
   } catch {
@@ -39,6 +54,8 @@ export async function GET() {
 }
 
 export async function PATCH(request: Request) {
+  const denied = requireAdmin(request);
+  if (denied) return denied;
   let body: unknown;
   try {
     body = await request.json();

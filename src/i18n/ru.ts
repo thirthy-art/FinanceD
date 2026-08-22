@@ -442,6 +442,13 @@ export const ru: Messages = {
   aiSettings: {
     title: "Настройки провайдеров ИИ",
     description: "Настройте фиксированную цепочку провайдеров извлечения для этого развертывания FinanceD.",
+    adminAccessTitle: "Административный доступ к настройкам ИИ",
+    adminAccessDescription: "Введите секрет администратора развертывания для управления провайдерами ИИ.",
+    adminSecret: "СЕКРЕТ АДМИНИСТРАТОРА",
+    continue: "Продолжить",
+    authorizing: "Проверка…",
+    adminUnauthorized: "Административный доступ не подтвержден.",
+    adminNotConfigured: "Административный доступ к настройкам ИИ не настроен для этого развертывания.",
     loading: "Загрузка…",
     loadError: "Не удалось загрузить настройки ИИ.",
     mimoTitle: "MiMo Direct", openrouterTitle: "OpenRouter", model: "МОДЕЛЬ", apiKey: "API-КЛЮЧ",

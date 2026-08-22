@@ -446,6 +446,13 @@ export interface Messages {
   aiSettings: {
     title: string;
     description: string;
+    adminAccessTitle: string;
+    adminAccessDescription: string;
+    adminSecret: string;
+    continue: string;
+    authorizing: string;
+    adminUnauthorized: string;
+    adminNotConfigured: string;
     loading: string;
     loadError: string;
     mimoTitle: string;

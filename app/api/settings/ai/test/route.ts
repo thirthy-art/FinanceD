@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { getAiTestCandidate } from "@/src/lib/ai-provider";
 import { testAiProviderConnection } from "@/src/lib/ai-provider-chain";
+import { getAiSettingsAdminAccess } from "@/src/lib/ai-settings-admin-auth";
 
 export const runtime = "nodejs";
 
@@ -20,6 +21,15 @@ function json(body: unknown, status = 200) {
 }
 
 export async function POST(request: Request) {
+  const access = getAiSettingsAdminAccess(request.headers.get("cookie"));
+  if (access === "not-configured") {
+    return json({
+      error: "AI settings admin access is not configured.",
+      code: "AI_SETTINGS_ADMIN_NOT_CONFIGURED",
+    }, 503);
+  }
+  if (access !== "authorized") return json({ error: "Unauthorized." }, 401);
+
   let body: unknown;
   try {
     body = await request.json();

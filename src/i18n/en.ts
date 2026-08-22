@@ -442,6 +442,13 @@ export const en: Messages = {
   aiSettings: {
     title: "AI Provider Settings",
     description: "Configure the fixed extraction provider chain for this FinanceD deployment.",
+    adminAccessTitle: "AI Settings Admin Access",
+    adminAccessDescription: "Enter the deployment admin secret to manage AI provider settings.",
+    adminSecret: "ADMIN SECRET",
+    continue: "Continue",
+    authorizing: "Checking…",
+    adminUnauthorized: "Admin access was not authorized.",
+    adminNotConfigured: "AI settings admin access is not configured for this deployment.",
     loading: "Loading…",
     loadError: "AI settings could not be loaded.",
     mimoTitle: "MiMo Direct",

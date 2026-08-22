@@ -442,6 +442,13 @@ export const he: Messages = {
   aiSettings: {
     title: "הגדרות ספקי AI",
     description: "הגדר את שרשרת ספקי החילוץ הקבועה עבור פריסת FinanceD זו.",
+    adminAccessTitle: "גישת מנהל להגדרות AI",
+    adminAccessDescription: "הזן את סוד מנהל הפריסה כדי לנהל את ספקי ה-AI.",
+    adminSecret: "סוד מנהל",
+    continue: "המשך",
+    authorizing: "בודק…",
+    adminUnauthorized: "גישת המנהל לא אושרה.",
+    adminNotConfigured: "גישת מנהל להגדרות AI אינה מוגדרת עבור פריסה זו.",
     loading: "טוען…", loadError: "לא ניתן לטעון את הגדרות ה-AI.",
     mimoTitle: "MiMo Direct", openrouterTitle: "OpenRouter", model: "מודל", apiKey: "מפתח API", configured: "מוגדר",
     fallback1: "מודל גיבוי 1", fallback2: "מודל גיבוי 2", optional: "אופציונלי — השאר ריק כדי להשבית",

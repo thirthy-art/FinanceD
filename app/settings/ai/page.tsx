@@ -10,12 +10,17 @@ const inputStyle: React.CSSProperties = {
 
 type ProviderState = { saving: boolean; testing: boolean; message: "saved" | "connected" | "error" | null };
 const idleState: ProviderState = { saving: false, testing: false, message: null };
+type AdminGate = "none" | "required" | "not-configured";
 
 export default function AiSettingsPage() {
   const { t } = useI18n();
   const a = t.aiSettings;
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
+  const [adminGate, setAdminGate] = useState<AdminGate>("none");
+  const [adminSecret, setAdminSecret] = useState("");
+  const [adminSubmitting, setAdminSubmitting] = useState(false);
+  const [adminError, setAdminError] = useState(false);
   const [mimoModel, setMimoModel] = useState("mimo-v2.5");
   const [mimoKey, setMimoKey] = useState("");
   const [mimoConfigured, setMimoConfigured] = useState(false);
@@ -29,10 +34,20 @@ export default function AiSettingsPage() {
   useEffect(() => {
     fetch("/api/settings/ai", { cache: "no-store" })
       .then(async (response) => {
-        if (!response.ok) throw new Error("load failed");
-        return response.json();
+        const data = await response.json().catch(() => null);
+        if (response.status === 401) {
+          setAdminGate("required");
+          return null;
+        }
+        if (data?.code === "AI_SETTINGS_ADMIN_NOT_CONFIGURED") {
+          setAdminGate("not-configured");
+          return null;
+        }
+        if (!response.ok || !data) throw new Error("load failed");
+        return data;
       })
       .then((data) => {
+        if (!data) return;
         setMimoModel(data.mimo.model);
         setMimoConfigured(data.mimo.configured);
         setOpenrouterConfigured(data.openRouter.configured);
@@ -42,6 +57,36 @@ export default function AiSettingsPage() {
       .catch(() => setLoadError(true))
       .finally(() => setLoading(false));
   }, []);
+
+  async function authorizeAdmin(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setAdminSubmitting(true);
+    setAdminError(false);
+    try {
+      const response = await fetch("/api/settings/ai/auth", {
+        method: "POST",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ secret: adminSecret }),
+      });
+      const data = await response.json().catch(() => null);
+      setAdminSecret("");
+      if (response.ok) {
+        window.location.reload();
+        return;
+      }
+      if (data?.code === "AI_SETTINGS_ADMIN_NOT_CONFIGURED") {
+        setAdminGate("not-configured");
+      } else {
+        setAdminError(true);
+      }
+    } catch {
+      setAdminSecret("");
+      setAdminError(true);
+    } finally {
+      setAdminSubmitting(false);
+    }
+  }
 
   async function save(provider: "mimo" | "openrouter") {
     const setState = provider === "mimo" ? setMimoState : setOpenrouterState;
@@ -88,6 +133,41 @@ export default function AiSettingsPage() {
   }
 
   if (loading) return <div style={{ color: "#94a3b8" }}>{a.loading}</div>;
+  if (adminGate !== "none") {
+    return (
+      <div style={{ maxWidth: 480 }}>
+        <h1 style={{ fontSize: 20, fontWeight: 700, color: "#1e3a5f", marginBottom: 8 }}>{a.adminAccessTitle}</h1>
+        <p style={{ color: "#64748b", marginBottom: 24 }}>{a.adminAccessDescription}</p>
+        <form onSubmit={authorizeAdmin} style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: 24 }}>
+          <label style={{ display: "block", marginBottom: 18 }}>
+            <span style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#64748b", marginBottom: 4 }}>{a.adminSecret}</span>
+            <input
+              type="password"
+              autoComplete="current-password"
+              spellCheck={false}
+              required
+              disabled={adminGate === "not-configured" || adminSubmitting}
+              style={inputStyle}
+              value={adminSecret}
+              onChange={(event) => setAdminSecret(event.target.value)}
+            />
+          </label>
+          <button
+            type="submit"
+            disabled={adminGate === "not-configured" || adminSubmitting}
+            style={{ minHeight: 40, padding: "8px 16px", border: "none", borderRadius: 6, background: "#2563eb", color: "#fff", fontWeight: 600, cursor: "pointer" }}
+          >
+            {adminSubmitting ? a.authorizing : a.continue}
+          </button>
+          {(adminError || adminGate === "not-configured") && (
+            <p role="alert" style={{ color: "#dc2626", marginTop: 14 }}>
+              {adminGate === "not-configured" ? a.adminNotConfigured : a.adminUnauthorized}
+            </p>
+          )}
+        </form>
+      </div>
+    );
+  }
   if (loadError) return <div role="alert" style={{ color: "#dc2626" }}>{a.loadError}</div>;
 
   function status(state: ProviderState) {
