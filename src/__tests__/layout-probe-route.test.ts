@@ -1,18 +1,37 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("server-only", () => ({}));
+
+import {
+  AI_SETTINGS_ADMIN_COOKIE,
+  createAiSettingsAdminToken,
+} from "@/src/lib/ai-settings-admin-auth";
 import { POST } from "@/app/api/dev/layout-probe/route";
 import { MAX_LAYOUT_PROBE_BYTES } from "@/app/dev/layout-probe/layout-probe-shared";
+
+const ADMIN_SECRET = "layout-probe-route-test-admin-secret";
+
+function adminCookieHeader() {
+  const token = createAiSettingsAdminToken();
+  if (!token) throw new Error("Test requires AI_SETTINGS_ADMIN_SECRET.");
+  return `${AI_SETTINGS_ADMIN_COOKIE}=${token}`;
+}
 
 const fixturePath = path.join(
   process.cwd(),
   "src/__tests__/fixtures/layout/minimal-layout-invoice.pdf",
 );
 
-function requestWithFile(file: File | null) {
+function requestWithFile(file: File | null, cookie?: string) {
   const form = new FormData();
   if (file) form.append("file", file);
-  return new Request("http://localhost/api/dev/layout-probe", { method: "POST", body: form });
+  return new Request("http://localhost/api/dev/layout-probe", {
+    method: "POST",
+    headers: cookie ? { Cookie: cookie } : undefined,
+    body: form,
+  });
 }
 
 async function fixtureFile() {
@@ -89,9 +108,35 @@ describe("dev layout-probe route", () => {
     expect((await response.json()).error).toMatch(/not a valid PDF/);
   });
 
-  it("returns not-found in production", async () => {
+  it("returns not-found in production when the flag is absent or false", async () => {
     vi.stubEnv("NODE_ENV", "production");
-    const response = await POST(requestWithFile(await fixtureFile()));
-    expect(response.status).toBe(404);
+    vi.stubEnv("AI_SETTINGS_ADMIN_SECRET", ADMIN_SECRET);
+    expect((await POST(requestWithFile(await fixtureFile()))).status).toBe(404);
+
+    vi.stubEnv("LAYOUT_PROBE_ENABLED", "false");
+    const authorized = await POST(requestWithFile(await fixtureFile(), adminCookieHeader()));
+    expect(authorized.status).toBe(404);
+  });
+
+  it("denies production requests without the AI Settings admin session", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("LAYOUT_PROBE_ENABLED", "true");
+    vi.stubEnv("AI_SETTINGS_ADMIN_SECRET", ADMIN_SECRET);
+
+    expect((await POST(requestWithFile(await fixtureFile()))).status).toBe(404);
+    const wrongCookie = await POST(requestWithFile(await fixtureFile(), `${AI_SETTINGS_ADMIN_COOKIE}=v1.0.invalid`));
+    expect(wrongCookie.status).toBe(404);
+  });
+
+  it("serves production requests with the flag enabled and a valid admin session", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("LAYOUT_PROBE_ENABLED", "true");
+    vi.stubEnv("AI_SETTINGS_ADMIN_SECRET", ADMIN_SECRET);
+
+    const response = await POST(requestWithFile(await fixtureFile(), adminCookieHeader()));
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.evidence.pages).toHaveLength(1);
+    expect(body.tables[0]).toMatchObject({ page: 1, columnCount: 3, rowCount: 3 });
   });
 });

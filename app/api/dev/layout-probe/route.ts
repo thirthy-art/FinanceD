@@ -9,6 +9,7 @@ import {
   MAX_LAYOUT_PROBE_LABEL,
   validateLayoutProbeFile,
 } from "@/app/dev/layout-probe/layout-probe-shared";
+import { layoutProbeAccess } from "@/app/dev/layout-probe/layout-probe-gate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,7 +27,7 @@ function json(body: unknown, status: number) {
  * No OCR and no invoice field parsing happen here.
  */
 export async function POST(request: Request) {
-  if (process.env.NODE_ENV === "production") {
+  if (layoutProbeAccess(request.headers.get("cookie")) !== "available") {
     return json({ error: "Not found." }, 404);
   }
 
