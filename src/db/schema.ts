@@ -10,6 +10,7 @@ import {
   pgEnum,
   unique,
   uniqueIndex,
+  check,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
@@ -53,6 +54,23 @@ export const companies = pgTable("companies", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+// ─── Deployment-global AI Settings ───────────────────────────────────────────────
+
+export const aiSettings = pgTable("ai_settings", {
+  id: integer("id").primaryKey().default(1),
+  mimoModel: varchar("mimo_model", { length: 200 }),
+  mimoApiKeyEncrypted: text("mimo_api_key_encrypted"),
+  openrouterApiKeyEncrypted: text("openrouter_api_key_encrypted"),
+  openrouterFallback1Model: varchar("openrouter_fallback_1_model", { length: 200 })
+    .notNull()
+    .default("xiaomi/mimo-v2.5"),
+  openrouterFallback2Model: varchar("openrouter_fallback_2_model", { length: 200 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  singleton: check("ck_ai_settings_singleton", sql`${table.id} = 1`),
+}));
 
 // ─── Chart of Accounts ────────────────────────────────────────────────────────
 

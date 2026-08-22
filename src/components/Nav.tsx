@@ -28,6 +28,7 @@ export default function Nav() {
     { href: "/settings/vendors", label: t.nav.vendors, mobileOnly: false },
     { href: "/settings/chart-of-accounts", label: t.nav.chartOfAccounts, mobileOnly: false },
     { href: "/settings/company", label: t.nav.company, mobileOnly: false },
+    { href: "/settings/ai", label: t.nav.aiSettings, mobileOnly: false },
   ];
 
   function isActive(href: string) {

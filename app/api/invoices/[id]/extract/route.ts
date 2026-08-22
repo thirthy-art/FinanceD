@@ -1,15 +1,14 @@
 import { and, eq } from "drizzle-orm";
-import { z } from "zod";
 import { PDFParse } from "pdf-parse";
 import { getDb } from "@/src/db";
 import { supplierInvoiceDocuments, supplierInvoices } from "@/src/db/schema";
 import { getActiveCompanyFromRequest } from "@/src/lib/active-company";
 import {
   AI_EXTRACTION_PROMPT,
-  AiInvoiceExtractionSchema,
 } from "@/src/lib/ai-extraction";
 import { reconcileAiInvoiceExtraction } from "@/src/lib/ai-invoice-reconciliation";
-import { getAiProviderConfig } from "@/src/lib/ai-provider";
+import { getAiProviderCandidates } from "@/src/lib/ai-provider";
+import { isKnownImageIncompatibleModel, runAiProviderChain } from "@/src/lib/ai-provider-chain";
 import { DocumentNotFoundError, readDocument } from "@/src/lib/document-storage";
 
 export const runtime = "nodejs";
@@ -18,16 +17,6 @@ const IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const MAX_BASE64_IMAGE_BYTES = 50 * 1024 * 1024;
 // Total base64 size limit across all rendered PDF pages (50 MiB)
 const MAX_SCANNED_PDF_TOTAL_BYTES = 50 * 1024 * 1024;
-
-const AiResponseSchema = z.object({
-  choices: z
-    .array(
-      z.object({
-        message: z.object({ content: z.string() }),
-      }),
-    )
-    .min(1),
-});
 
 function errorResponse(error: string, status: number) {
   return Response.json({ error }, { status });
@@ -67,13 +56,22 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   if (!document) return errorResponse("This invoice has no document to extract.", 404);
 
-  const config = getAiProviderConfig();
-  if (!config.ok) return errorResponse(config.error, 503);
+  let candidates: Awaited<ReturnType<typeof getAiProviderCandidates>>;
+  try {
+    candidates = await getAiProviderCandidates();
+  } catch {
+    return errorResponse("AI extraction configuration is temporarily unavailable.", 503);
+  }
+  if (candidates.length === 0) {
+    return errorResponse("AI extraction is not configured on the server.", 503);
+  }
 
   let userContent: string | Array<Record<string, unknown>>;
+  let vision = false;
 
   if (IMAGE_MIME_TYPES.has(document.mimeType)) {
-    if (config.model === "mimo-v2.5-pro") {
+    vision = true;
+    if (candidates.every((candidate) => isKnownImageIncompatibleModel(candidate.model))) {
       return errorResponse(
         "The configured AI model does not support image input. Choose an image-capable model for JPEG, PNG, or WebP invoices.",
         422,
@@ -101,8 +99,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (extractedText && !forceImage) {
       userContent = `${AI_EXTRACTION_PROMPT}\n\nINVOICE TEXT START\n${extractedText}\nINVOICE TEXT END`;
     } else {
+      vision = true;
       // Scanned PDF fallback: render pages locally and send as images to AI
-      if (config.model === "mimo-v2.5-pro") {
+      if (candidates.every((candidate) => isKnownImageIncompatibleModel(candidate.model))) {
         return errorResponse(
           "The configured AI model does not support image input. Choose an image-capable model for scanned PDF invoices.",
           422,
@@ -160,66 +159,31 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     return errorResponse("AI extraction supports JPEG, PNG, WebP, and digital PDF documents only.", 415);
   }
 
-  let providerResponse: Response;
-  try {
-    const requestExtras = new URL(config.endpoint).hostname.endsWith("xiaomimimo.com")
-      ? { thinking: { type: "disabled" } }
-      : {};
-    providerResponse = await fetch(config.endpoint, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${config.apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: config.model,
-        messages: [
-          {
-            role: "system",
-            content: "You extract supplier invoices faithfully. Follow the user's JSON schema and extraction rules exactly.",
-          },
-          { role: "user", content: userContent },
-        ],
-        response_format: { type: "json_object" },
-        max_completion_tokens: 16384,
-        stream: false,
-        ...requestExtras,
-      }),
-      signal: AbortSignal.timeout(120_000),
-      cache: "no-store",
-    });
-  } catch {
-    return errorResponse("The AI extraction service could not be reached. Try again later.", 502);
+  const chainResult = await runAiProviderChain({
+    candidates,
+    userContent,
+    vision,
+    systemPrompt: "You extract supplier invoices faithfully. Follow the user's JSON schema and extraction rules exactly.",
+  });
+  if (chainResult.kind === "not-configured") {
+    return errorResponse("AI extraction is not configured on the server.", 503);
   }
-
-  if (!providerResponse.ok) {
-    return errorResponse(`The AI extraction service could not process this document (HTTP ${providerResponse.status}).`, 502);
+  if (chainResult.kind === "no-vision-provider") {
+    return errorResponse("The configured AI models do not support image input.", 422);
   }
-
-  let providerJson: unknown;
-  try {
-    providerJson = await providerResponse.json();
-  } catch {
-    return errorResponse("The AI extraction service returned an unreadable response.", 502);
+  if (chainResult.kind === "terminal-provider-error") {
+    return errorResponse("The AI extraction service rejected this document.", 502);
   }
-
-  const envelope = AiResponseSchema.safeParse(providerJson);
-  if (!envelope.success) return errorResponse("The AI extraction service returned an invalid response.", 502);
-
-  let extractionJson: unknown;
-  try {
-    extractionJson = JSON.parse(envelope.data.choices[0].message.content);
-  } catch {
-    return errorResponse("AI extraction returned invalid structured invoice data.", 502);
-  }
-
-  const extraction = AiInvoiceExtractionSchema.safeParse(extractionJson);
-  if (!extraction.success) {
-    return errorResponse("AI extraction returned invoice data that did not match the required structure.", 502);
+  if (chainResult.kind === "providers-exhausted") {
+    return errorResponse("The configured AI extraction services could not return valid invoice data. Try again later.", 502);
   }
 
   const { extraction: reconciledExtraction, reconciliation } =
-    reconcileAiInvoiceExtraction(extraction.data, document.currencyType);
+    reconcileAiInvoiceExtraction(chainResult.extraction, document.currencyType);
 
-  return Response.json({ extraction: reconciledExtraction, reconciliation });
+  return Response.json({
+    extraction: reconciledExtraction,
+    reconciliation,
+    providerMetadata: chainResult.metadata,
+  });
 }

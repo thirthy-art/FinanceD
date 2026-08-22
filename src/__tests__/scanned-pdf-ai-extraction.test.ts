@@ -1,5 +1,7 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 
+vi.mock("server-only", () => ({}));
+
 // ── Module mocks ──────────────────────────────────────────────────────────────
 // vi.mock calls are hoisted by Vitest and run before any imports.
 
@@ -8,7 +10,7 @@ vi.mock("@/src/db", () => ({ getDb: vi.fn() }));
 vi.mock("@/src/lib/active-company", () => ({
   getActiveCompanyFromRequest: vi.fn().mockResolvedValue({ id: 1, baseCurrency: "EUR" }),
 }));
-vi.mock("@/src/lib/ai-provider", () => ({ getAiProviderConfig: vi.fn() }));
+vi.mock("@/src/lib/ai-provider", () => ({ getAiProviderCandidates: vi.fn() }));
 vi.mock("@/src/lib/document-storage", () => ({
   readDocument: vi.fn(),
   DocumentNotFoundError: class DocumentNotFoundError extends Error {},
@@ -17,14 +19,14 @@ vi.mock("@/src/lib/document-storage", () => ({
 // ── Imports after mocks ───────────────────────────────────────────────────────
 import { PDFParse } from "pdf-parse";
 import { getDb } from "@/src/db";
-import { getAiProviderConfig } from "@/src/lib/ai-provider";
+import { getAiProviderCandidates } from "@/src/lib/ai-provider";
 import { DocumentNotFoundError, readDocument } from "@/src/lib/document-storage";
 import { AI_EXTRACTION_PROMPT } from "@/src/lib/ai-extraction";
 import { POST } from "@/app/api/invoices/[id]/extract/route";
 
 const MockPDFParse = vi.mocked(PDFParse);
 const mockGetDb = vi.mocked(getDb);
-const mockGetAiProviderConfig = vi.mocked(getAiProviderConfig);
+const mockGetAiProviderCandidates = vi.mocked(getAiProviderCandidates);
 const mockReadDocument = vi.mocked(readDocument);
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -72,19 +74,21 @@ function makeDbWithDocument(doc: {
 
 function imageCapableConfig() {
   return {
-    ok: true as const,
+    provider: "legacy-openai-compatible" as const,
     model: "gpt-4o",
     endpoint: "https://api.openai.com/v1/chat/completions",
     apiKey: "sk-test",
+    fallbackLevel: 0 as const,
   };
 }
 
 function imageIncapableConfig() {
   return {
-    ok: true as const,
+    provider: "mimo-direct" as const,
     model: "mimo-v2.5-pro",
     endpoint: "https://api.xiaomimimo.com/v1/chat/completions",
     apiKey: "mimo-key",
+    fallbackLevel: 0 as const,
   };
 }
 
@@ -132,8 +136,23 @@ beforeEach(() => {
 // ── 1. Digital PDF with extracted text ────────────────────────────────────────
 
 describe("digital PDF with extracted text", () => {
+  it("returns sanitized 503 JSON when provider settings lookup fails", async () => {
+    mockGetAiProviderCandidates.mockRejectedValueOnce(new Error("database details must not escape"));
+    mockGetDb.mockReturnValue(
+      makeDbWithDocument({
+        mimeType: "application/pdf",
+        storagePath: "/uploads/invoice.pdf",
+        extractedText: "embedded text",
+      }),
+    );
+    const res = await POST(makeRequest(1), params(1));
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ error: "AI extraction configuration is temporarily unavailable." });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   it("sends text to AI without calling getScreenshot", async () => {
-    mockGetAiProviderConfig.mockReturnValue(imageCapableConfig());
+    mockGetAiProviderCandidates.mockResolvedValue([imageCapableConfig()]);
     mockGetDb.mockReturnValue(
       makeDbWithDocument({
         mimeType: "application/pdf",
@@ -161,7 +180,7 @@ describe("digital PDF with extracted text", () => {
   });
 
   it("returns extraction matching the existing schema contract", async () => {
-    mockGetAiProviderConfig.mockReturnValue(imageCapableConfig());
+    mockGetAiProviderCandidates.mockResolvedValue([imageCapableConfig()]);
     mockGetDb.mockReturnValue(
       makeDbWithDocument({
         mimeType: "application/pdf",
@@ -184,7 +203,7 @@ describe("digital PDF with extracted text", () => {
 
 describe("digital PDF with forced image mode", () => {
   it("ignores extracted text and sends rendered pages in document order", async () => {
-    mockGetAiProviderConfig.mockReturnValue(imageCapableConfig());
+    mockGetAiProviderCandidates.mockResolvedValue([imageCapableConfig()]);
     mockGetDb.mockReturnValue(
       makeDbWithDocument({
         mimeType: "application/pdf",
@@ -223,7 +242,7 @@ describe("digital PDF with forced image mode", () => {
   });
 
   it("keeps the image-model guard and does not call the provider", async () => {
-    mockGetAiProviderConfig.mockReturnValue(imageIncapableConfig());
+    mockGetAiProviderCandidates.mockResolvedValue([imageIncapableConfig()]);
     mockGetDb.mockReturnValue(
       makeDbWithDocument({
         mimeType: "application/pdf",
@@ -244,7 +263,7 @@ describe("digital PDF with forced image mode", () => {
   });
 
   it("returns the reconciled extraction and reconciliation metadata", async () => {
-    mockGetAiProviderConfig.mockReturnValue(imageCapableConfig());
+    mockGetAiProviderCandidates.mockResolvedValue([imageCapableConfig()]);
     mockGetDb.mockReturnValue(
       makeDbWithDocument({
         mimeType: "application/pdf",
@@ -298,7 +317,7 @@ describe("digital PDF with forced image mode", () => {
 
 describe("scanned PDF with blank extracted text", () => {
   it("renders PDF pages and sends them as image inputs", async () => {
-    mockGetAiProviderConfig.mockReturnValue(imageCapableConfig());
+    mockGetAiProviderCandidates.mockResolvedValue([imageCapableConfig()]);
     mockGetDb.mockReturnValue(
       makeDbWithDocument({
         mimeType: "application/pdf",
@@ -348,7 +367,7 @@ describe("scanned PDF with blank extracted text", () => {
   });
 
   it("destroys the parser even when rendering succeeds", async () => {
-    mockGetAiProviderConfig.mockReturnValue(imageCapableConfig());
+    mockGetAiProviderCandidates.mockResolvedValue([imageCapableConfig()]);
     mockGetDb.mockReturnValue(
       makeDbWithDocument({
         mimeType: "application/pdf",
@@ -374,7 +393,7 @@ describe("scanned PDF with blank extracted text", () => {
   });
 
   it("returns structured extraction response", async () => {
-    mockGetAiProviderConfig.mockReturnValue(imageCapableConfig());
+    mockGetAiProviderCandidates.mockResolvedValue([imageCapableConfig()]);
     mockGetDb.mockReturnValue(
       makeDbWithDocument({
         mimeType: "application/pdf",
@@ -404,7 +423,7 @@ describe("scanned PDF with blank extracted text", () => {
 
 describe("multiple rendered PDF pages", () => {
   it("sends all pages as image inputs in document order", async () => {
-    mockGetAiProviderConfig.mockReturnValue(imageCapableConfig());
+    mockGetAiProviderCandidates.mockResolvedValue([imageCapableConfig()]);
     mockGetDb.mockReturnValue(
       makeDbWithDocument({
         mimeType: "application/pdf",
@@ -446,7 +465,7 @@ describe("multiple rendered PDF pages", () => {
 
 describe("image-incompatible configured model (mimo-v2.5-pro)", () => {
   it("returns 422 for scanned PDF without reading or rendering", async () => {
-    mockGetAiProviderConfig.mockReturnValue(imageIncapableConfig());
+    mockGetAiProviderCandidates.mockResolvedValue([imageIncapableConfig()]);
     mockGetDb.mockReturnValue(
       makeDbWithDocument({
         mimeType: "application/pdf",
@@ -467,7 +486,7 @@ describe("image-incompatible configured model (mimo-v2.5-pro)", () => {
   });
 
   it("also blocks JPEG images with the existing error", async () => {
-    mockGetAiProviderConfig.mockReturnValue(imageIncapableConfig());
+    mockGetAiProviderCandidates.mockResolvedValue([imageIncapableConfig()]);
     mockGetDb.mockReturnValue(
       makeDbWithDocument({
         mimeType: "image/jpeg",
@@ -488,7 +507,7 @@ describe("image-incompatible configured model (mimo-v2.5-pro)", () => {
 
 describe("PDF read/render failures", () => {
   it("returns 404 when PDF file cannot be read", async () => {
-    mockGetAiProviderConfig.mockReturnValue(imageCapableConfig());
+    mockGetAiProviderCandidates.mockResolvedValue([imageCapableConfig()]);
     mockGetDb.mockReturnValue(
       makeDbWithDocument({
         mimeType: "application/pdf",
@@ -508,7 +527,7 @@ describe("PDF read/render failures", () => {
   });
 
   it("returns 503 when scanned PDF storage is unavailable", async () => {
-    mockGetAiProviderConfig.mockReturnValue(imageCapableConfig());
+    mockGetAiProviderCandidates.mockResolvedValue([imageCapableConfig()]);
     mockGetDb.mockReturnValue(
       makeDbWithDocument({
         mimeType: "application/pdf",
@@ -526,7 +545,7 @@ describe("PDF read/render failures", () => {
   });
 
   it("returns 422 when getScreenshot throws, and still destroys parser", async () => {
-    mockGetAiProviderConfig.mockReturnValue(imageCapableConfig());
+    mockGetAiProviderCandidates.mockResolvedValue([imageCapableConfig()]);
     mockGetDb.mockReturnValue(
       makeDbWithDocument({
         mimeType: "application/pdf",
@@ -559,7 +578,7 @@ describe("PDF read/render failures", () => {
 
 describe("existing JPEG/PNG/WebP AI path", () => {
   it("sends image bytes to AI as image_url without using PDFParse", async () => {
-    mockGetAiProviderConfig.mockReturnValue(imageCapableConfig());
+    mockGetAiProviderCandidates.mockResolvedValue([imageCapableConfig()]);
     mockGetDb.mockReturnValue(
       makeDbWithDocument({
         mimeType: "image/jpeg",

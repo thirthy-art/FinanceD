@@ -9,6 +9,7 @@ export const he: Messages = {
     chartOfAccounts: "תרשים חשבונות",
     vendors: "ספקים",
     company: "חברה",
+    aiSettings: "הגדרות AI",
     language: "שפה",
     menu: "תפריט ניווט",
   },
@@ -437,5 +438,14 @@ export const he: Messages = {
     save: "שמור",
     saved: "✓ נשמר",
     couldNotSave: "לא ניתן לשמור. אנא נסה שנית.",
+  },
+  aiSettings: {
+    title: "הגדרות ספקי AI",
+    description: "הגדר את שרשרת ספקי החילוץ הקבועה עבור פריסת FinanceD זו.",
+    loading: "טוען…", loadError: "לא ניתן לטעון את הגדרות ה-AI.",
+    mimoTitle: "MiMo Direct", openrouterTitle: "OpenRouter", model: "מודל", apiKey: "מפתח API", configured: "מוגדר",
+    fallback1: "מודל גיבוי 1", fallback2: "מודל גיבוי 2", optional: "אופציונלי — השאר ריק כדי להשבית",
+    save: "שמור", saving: "שומר…", testConnection: "בדוק חיבור", testing: "בודק…",
+    saved: "✓ נשמר", connected: "✓ החיבור הצליח", actionError: "הפעולה נכשלה. בדוק את ההגדרות ונסה שוב.",
   },
 };

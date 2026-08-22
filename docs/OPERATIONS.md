@@ -51,6 +51,7 @@ The exact variables documented by `.env.example` are:
 | `AI_API_KEY` | AI only | Preferred provider credential. |
 | `AI_BASE_URL` | AI only | Preferred OpenAI-compatible base URL. |
 | `AI_MODEL` | AI only | Preferred model name. |
+| `AI_SETTINGS_ENCRYPTION_KEY` | Runtime AI settings only | Base64-encoded 32-byte deployment master key used for AES-256-GCM encryption of provider keys stored in PostgreSQL. |
 | `MIMO_API_KEY` | AI fallback config name | Backward-compatible credential name. |
 | `MIMO_BASE_URL` | AI fallback config name | Backward-compatible base URL. |
 | `MIMO_MODEL` | AI fallback config name | Backward-compatible model name. |
@@ -70,7 +71,9 @@ Never place actual values for credentials, connection strings, bucket identifier
 
 AI extraction is optional. Core upload, local PDF text extraction / image OCR, heuristic prefill, manual review, and saving continue without an AI key. If no key is configured, the on-demand AI route returns a configuration error rather than blocking upload.
 
-The provider interface is OpenAI-compatible and calls `{AI_BASE_URL}/chat/completions` using `AI_API_KEY` and `AI_MODEL`. `MIMO_*` names are backward-compatible fallbacks; current defaults target MiMo. The source does not implement a second-provider operational fallback.
+The deployment-global `/settings/ai` page configures a fixed provider chain: MiMo Direct, OpenRouter using the first fallback model, and an optional second OpenRouter model. The provider endpoints are built in. Runtime provider keys are encrypted before persistence with AES-256-GCM; set `AI_SETTINGS_ENCRYPTION_KEY` to a base64-encoded 32-byte secret in Render environment configuration and never commit its value. Losing or replacing this master key makes previously stored provider keys unreadable, so handle rotation as an explicit operational change.
+
+The legacy OpenAI-compatible `AI_*` and `MIMO_*` variables remain bootstrap fallbacks. They are used when no runtime settings row exists, and their MiMo credential remains available when the first runtime save changes only the model. This prevents a settings migration from disabling a working deployment. A provider key entered in the browser is sent only to the server, encrypted before storage, and is never returned by settings APIs.
 
 For normal extraction:
 

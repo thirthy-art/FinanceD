@@ -13,6 +13,7 @@ export interface Messages {
     chartOfAccounts: string;
     vendors: string;
     company: string;
+    aiSettings: string;
     language: string;
     menu: string;
   };
@@ -441,5 +442,26 @@ export interface Messages {
     save: string;
     saved: string;
     couldNotSave: string;
+  };
+  aiSettings: {
+    title: string;
+    description: string;
+    loading: string;
+    loadError: string;
+    mimoTitle: string;
+    openrouterTitle: string;
+    model: string;
+    apiKey: string;
+    configured: string;
+    fallback1: string;
+    fallback2: string;
+    optional: string;
+    save: string;
+    saving: string;
+    testConnection: string;
+    testing: string;
+    saved: string;
+    connected: string;
+    actionError: string;
   };
 }

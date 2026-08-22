@@ -37,7 +37,7 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-Production needs a PostgreSQL `DATABASE_URL`, a durable document-storage configuration, and—only if AI extraction is enabled—an AI provider key, endpoint, and model. See [Operations](docs/OPERATIONS.md) for the exact repository-supported variables and migration procedure.
+Production needs a PostgreSQL `DATABASE_URL` and durable document storage. Legacy environment-based AI extraction additionally needs provider credentials, endpoint, and model; database-backed runtime AI settings additionally need the deployment encryption key. See [Operations](docs/OPERATIONS.md) for the exact variables and migration procedure.
 
 ## Data and storage policies
 
