@@ -21,15 +21,21 @@ export interface InvoiceDiagnosticsInput {
   viewportWidth: number;
   viewportHeight: number;
   userAgent: string;
-  saveError: string | null;
-  extractionError: string | null;
-  monetaryValidationErrors: string[];
+  // Presence flags only — raw error text may embed user-entered values and
+  // must never reach the diagnostics payload.
+  saveError: boolean;
+  extractionError: boolean;
+  monetaryValidationErrorFields: string[];
   headerArithmeticMismatch: boolean;
   lineTotalsCheck: LineTotalsCheckResult;
 }
 
-function orNone(value: string | null): string {
-  return value && value.trim() !== "" ? value : "none";
+// Reduces existing validation messages ("Net: Invalid decimal value: ...")
+// to the field labels they belong to, dropping the raw parser text.
+export function extractValidationErrorFields(errors: string[]): string[] {
+  return errors
+    .map((message) => message.split(":")[0].trim())
+    .filter((field) => field !== "");
 }
 
 export function buildInvoiceDiagnosticsText(input: InvoiceDiagnosticsInput): string {
@@ -53,9 +59,9 @@ export function buildInvoiceDiagnosticsText(input: InvoiceDiagnosticsInput): str
     `Locale: ${input.locale}`,
     `Viewport: ${input.viewportWidth}x${input.viewportHeight}`,
     `User agent: ${input.userAgent}`,
-    `Save error: ${orNone(input.saveError)}`,
-    `Extraction error: ${orNone(input.extractionError)}`,
-    `Monetary validation errors: ${input.monetaryValidationErrors.length > 0 ? input.monetaryValidationErrors.join("; ") : "none"}`,
+    `Save error: ${input.saveError ? "present" : "none"}`,
+    `Extraction error: ${input.extractionError ? "present" : "none"}`,
+    `Monetary validation errors: ${input.monetaryValidationErrorFields.length > 0 ? input.monetaryValidationErrorFields.join(", ") : "none"}`,
     `Header arithmetic mismatch: ${input.headerArithmeticMismatch ? "yes" : "no"}`,
     `Invoice-line net mismatch: ${lineState("net-mismatch")}`,
     `Invoice-line VAT mismatch: ${lineState("vat-mismatch")}`,

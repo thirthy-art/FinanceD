@@ -11,7 +11,7 @@ import { applyExtractionLines, applyExtractionToDraft, extractionLinesToEditable
 import InvoiceLinesEditor from "@/src/components/InvoiceLinesEditor";
 import { selectableExpenseAccounts, selectablePrepaidAssetAccounts } from "@/src/lib/coa-hierarchy";
 import { useI18n } from "@/src/i18n/context";
-import { buildInvoiceDiagnosticsText } from "@/src/lib/invoice-diagnostics";
+import { buildInvoiceDiagnosticsText, extractValidationErrorFields } from "@/src/lib/invoice-diagnostics";
 
 interface Vendor { id: number; name: string; taxId: string | null; normalizedTaxId?: string | null; invoiceCount?: number; }
 interface CostCentre { id: number; code: string; name: string; }
@@ -635,9 +635,9 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
       viewportWidth: window.innerWidth,
       viewportHeight: window.innerHeight,
       userAgent: navigator.userAgent,
-      saveError: saveError || null,
-      extractionError: extractionError || null,
-      monetaryValidationErrors: inputErrors,
+      saveError: saveError !== "",
+      extractionError: extractionError !== "",
+      monetaryValidationErrorFields: extractValidationErrorFields(inputErrors),
       headerArithmeticMismatch: mismatch,
       lineTotalsCheck,
     });

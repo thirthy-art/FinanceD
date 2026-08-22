@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildInvoiceDiagnosticsText, type InvoiceDiagnosticsInput } from "@/src/lib/invoice-diagnostics";
+import { buildInvoiceDiagnosticsText, extractValidationErrorFields, type InvoiceDiagnosticsInput } from "@/src/lib/invoice-diagnostics";
 
 function baseInput(overrides: Partial<InvoiceDiagnosticsInput> = {}): InvoiceDiagnosticsInput {
   return {
@@ -13,9 +13,9 @@ function baseInput(overrides: Partial<InvoiceDiagnosticsInput> = {}): InvoiceDia
     viewportWidth: 1440,
     viewportHeight: 900,
     userAgent: "TestBrowser/1.0",
-    saveError: null,
-    extractionError: null,
-    monetaryValidationErrors: [],
+    saveError: false,
+    extractionError: false,
+    monetaryValidationErrorFields: [],
     headerArithmeticMismatch: false,
     lineTotalsCheck: "ok",
     ...overrides,
@@ -49,21 +49,21 @@ describe("buildInvoiceDiagnosticsText", () => {
     expect(text).toContain("Invoice-line gross mismatch: no");
   });
 
-  it("surfaces current error and mismatch state", () => {
+  it("surfaces current error and mismatch state without raw error text", () => {
     const text = buildInvoiceDiagnosticsText(baseInput({
       invoiceStatus: "approved",
       paymentStatus: "Paid",
-      saveError: "Save failed",
-      extractionError: "OCR unavailable",
-      monetaryValidationErrors: ["Net: Invalid decimal value"],
+      saveError: true,
+      extractionError: true,
+      monetaryValidationErrorFields: ["Net", "FX Rate"],
       headerArithmeticMismatch: true,
       lineTotalsCheck: "vat-mismatch",
     }));
     expect(text).toContain("Invoice status: approved");
     expect(text).toContain("Payment status: Paid");
-    expect(text).toContain("Save error: Save failed");
-    expect(text).toContain("Extraction error: OCR unavailable");
-    expect(text).toContain("Monetary validation errors: Net: Invalid decimal value");
+    expect(text).toContain("Save error: present");
+    expect(text).toContain("Extraction error: present");
+    expect(text).toContain("Monetary validation errors: Net, FX Rate");
     expect(text).toContain("Header arithmetic mismatch: yes");
     expect(text).toContain("Invoice-line net mismatch: not-checked");
     expect(text).toContain("Invoice-line VAT mismatch: yes");
@@ -77,11 +77,47 @@ describe("buildInvoiceDiagnosticsText", () => {
     expect(text).toContain("Invoice-line gross mismatch: not-checked");
   });
 
-  it("contains no sensitive invoice, vendor, or financial values", () => {
+  it("never leaks sensitive values embedded in raw error messages", () => {
+    const sensitiveValues = [
+      "1234.56", // user-entered amount echoed by the decimal parser
+      "INV-2026-001", // invoice number
+      "Acme Supplier", // vendor name
+      "Tax-998877", // vendor tax ID
+      "2026-01-15", // invoice date
+      "0.9234", // FX rate
+      "Consulting services", // line description
+      "invoice-scan.pdf", // document filename
+      "uploads/", // storage path
+    ];
+
+    // Raw UI error state containing sensitive values — the shape of what the
+    // review page actually holds when validation/save/extraction fail.
+    const rawSaveError: string = "Save failed for INV-2026-001 (Acme Supplier, 1234.56)";
+    const rawExtractionError: string = "Extraction failed on invoice-scan.pdf from uploads/ dated 2026-01-15";
+    const rawValidationErrors = [
+      `Net: Invalid decimal value: "1234.56"`,
+      `Gross: Ambiguous value: "1,234.56" — clarify for Acme Supplier (Tax-998877)`,
+      `FX Rate: Invalid decimal value: "0.9234" near Consulting services`,
+    ];
+
+    // Mirror the component-side derivation exactly.
     const text = buildInvoiceDiagnosticsText(baseInput({
-      saveError: "Request failed with status 422",
-      monetaryValidationErrors: ["Gross: Invalid decimal value: \"abc\""],
+      saveError: rawSaveError !== "",
+      extractionError: rawExtractionError !== "",
+      monetaryValidationErrorFields: extractValidationErrorFields(rawValidationErrors),
     }));
+
+    expect(text).toContain("Save error: present");
+    expect(text).toContain("Extraction error: present");
+    expect(text).toContain("Monetary validation errors: Net, Gross, FX Rate");
+    for (const value of sensitiveValues) {
+      expect(text).not.toContain(value);
+    }
+    expect(text).not.toMatch(/Invalid decimal value|Ambiguous value|Save failed|Extraction failed/);
+  });
+
+  it("contains no sensitive invoice, vendor, or financial values", () => {
+    const text = buildInvoiceDiagnosticsText(baseInput());
     const sensitiveValues = [
       "Acme", // vendor name
       "Tax-998877", // vendor tax ID
@@ -103,7 +139,6 @@ describe("buildInvoiceDiagnosticsText", () => {
     for (const value of sensitiveValues) {
       expect(text).not.toContain(value);
     }
-    // The only monetary content allowed is validation error messages.
     expect(text).not.toMatch(/Net amount|VAT amount|Gross amount|FX rate/i);
   });
 });
