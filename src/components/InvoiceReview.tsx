@@ -855,6 +855,35 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
           <div className="invoice-details-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
             <h2 style={{ fontSize: 18, fontWeight: 700, color: "#1e3a5f" }}>{ir.invoiceDetails}</h2>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <button
+                type="button"
+                onClick={copyDiagnostics}
+                aria-label={ir.copyDiagnostics}
+                title={ir.copyDiagnostics}
+                style={{
+                  width: 28,
+                  height: 28,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: 0,
+                  border: "1px solid #e2e8f0",
+                  borderRadius: 6,
+                  background: "transparent",
+                  color: "#94a3b8",
+                  cursor: "pointer",
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <rect x="5" y="3" width="8" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
+                  <path d="M3 11V2.5A1.5 1.5 0 0 1 4.5 1H11" stroke="currentColor" strokeWidth="1.4" />
+                </svg>
+              </button>
+              {diagnosticsFeedback && (
+                <span role="status" style={{ fontSize: 12, color: diagnosticsFeedback === "copied" ? "#16a34a" : "#dc2626" }}>
+                  {diagnosticsFeedback === "copied" ? ir.diagnosticsCopied : ir.diagnosticsCopyFailed}
+                </span>
+              )}
               <span
                 style={{
                   padding: "3px 12px",
@@ -1246,28 +1275,6 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
               >
                 {ir.approveInvoice}
               </button>
-            )}
-            <button
-              type="button"
-              onClick={copyDiagnostics}
-              style={{
-                padding: "6px 12px",
-                alignSelf: "center",
-                border: "1px solid #e2e8f0",
-                borderRadius: 6,
-                background: "transparent",
-                color: "#64748b",
-                cursor: "pointer",
-                fontSize: 12,
-                fontWeight: 500,
-              }}
-            >
-              {ir.copyDiagnostics}
-            </button>
-            {diagnosticsFeedback && (
-              <span style={{ alignSelf: "center", fontSize: 12, color: diagnosticsFeedback === "copied" ? "#16a34a" : "#dc2626" }}>
-                {diagnosticsFeedback === "copied" ? ir.diagnosticsCopied : ir.diagnosticsCopyFailed}
-              </span>
             )}
             {!isApproved && (
               <button
