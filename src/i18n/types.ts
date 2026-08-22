@@ -150,6 +150,9 @@ export interface Messages {
     deleteInvoice: string;
     changesSaved: string;
     draftSaved: string;
+    copyDiagnostics: string;
+    diagnosticsCopied: string;
+    diagnosticsCopyFailed: string;
     fixInvalidPages: string;
     approveDisabledInvalid: string;
     approveDisabledMismatch: string;

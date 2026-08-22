@@ -11,6 +11,7 @@ import { applyExtractionLines, applyExtractionToDraft, extractionLinesToEditable
 import InvoiceLinesEditor from "@/src/components/InvoiceLinesEditor";
 import { selectableExpenseAccounts, selectablePrepaidAssetAccounts } from "@/src/lib/coa-hierarchy";
 import { useI18n } from "@/src/i18n/context";
+import { buildInvoiceDiagnosticsText } from "@/src/lib/invoice-diagnostics";
 
 interface Vendor { id: number; name: string; taxId: string | null; normalizedTaxId?: string | null; invoiceCount?: number; }
 interface CostCentre { id: number; code: string; name: string; }
@@ -258,7 +259,7 @@ function AiExtractionPreview({
 
 export default function InvoiceReview({ invoice, documents, lines, vendors, costCentres, accounts, extractedFields, baseCurrency }: Props) {
   const router = useRouter();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const ir = t.invoiceReview;
   const cm = t.common;
 
@@ -313,6 +314,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
   const [pendingPaidDate, setPendingPaidDate] = useState(invoice.paidDate ?? "");
   const [paymentSaving, setPaymentSaving] = useState(false);
   const [paymentError, setPaymentError] = useState("");
+  const [diagnosticsFeedback, setDiagnosticsFeedback] = useState<"copied" | "failed" | null>(null);
 
   const doc = documents[0];
   const isPdfDocument = doc?.mimeType === "application/pdf";
@@ -603,6 +605,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
   const hasInvalidPage = editableLines.some((l) => !!parsePageInput(l.sourcePage).error);
 
   let headerLineMismatch = false;
+  let lineTotalsCheck: "ok" | "net-mismatch" | "vat-mismatch" | "gross-mismatch" | "not-checked" = "not-checked";
   const meaningfulLines = editableLines.filter((l) => !isCompletelyEmptyLine(l));
   if (meaningfulLines.length > 0 && !hasInputErrors) {
     try {
@@ -613,10 +616,38 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
         form.currencyType,
         form.lineNetAdjustment || "0",
       );
+      lineTotalsCheck = result;
       if (result !== "ok") headerLineMismatch = true;
     } catch {
       // ignore arithmetic errors during render
     }
+  }
+
+  async function copyDiagnostics() {
+    const text = buildInvoiceDiagnosticsText({
+      pathname: window.location.pathname,
+      invoiceId: invoice.id,
+      invoiceStatus: invoice.status,
+      paymentStatus,
+      documentCount: documents.length,
+      editableLineCount: editableLines.length,
+      locale,
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+      userAgent: navigator.userAgent,
+      saveError: saveError || null,
+      extractionError: extractionError || null,
+      monetaryValidationErrors: inputErrors,
+      headerArithmeticMismatch: mismatch,
+      lineTotalsCheck,
+    });
+    try {
+      await navigator.clipboard.writeText(text);
+      setDiagnosticsFeedback("copied");
+    } catch {
+      setDiagnosticsFeedback("failed");
+    }
+    window.setTimeout(() => setDiagnosticsFeedback(null), 2500);
   }
 
   const approveDisabled = saving || mismatch || hasInputErrors || headerLineMismatch || hasInvalidPage || prepaidLinesInvalid;
@@ -1215,6 +1246,28 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
               >
                 {ir.approveInvoice}
               </button>
+            )}
+            <button
+              type="button"
+              onClick={copyDiagnostics}
+              style={{
+                padding: "6px 12px",
+                alignSelf: "center",
+                border: "1px solid #e2e8f0",
+                borderRadius: 6,
+                background: "transparent",
+                color: "#64748b",
+                cursor: "pointer",
+                fontSize: 12,
+                fontWeight: 500,
+              }}
+            >
+              {ir.copyDiagnostics}
+            </button>
+            {diagnosticsFeedback && (
+              <span style={{ alignSelf: "center", fontSize: 12, color: diagnosticsFeedback === "copied" ? "#16a34a" : "#dc2626" }}>
+                {diagnosticsFeedback === "copied" ? ir.diagnosticsCopied : ir.diagnosticsCopyFailed}
+              </span>
             )}
             {!isApproved && (
               <button
