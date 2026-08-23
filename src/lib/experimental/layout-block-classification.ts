@@ -21,6 +21,8 @@ export interface TableBlockClassification {
   role: TableBlockRole;
   /** Short stable diagnostic token, not a user-facing explanation. */
   reason: string;
+  /** Detected line-item header row index; only set for line_items. */
+  headerRowIndex?: number;
 }
 
 export type ClassifiedEvidenceTableCandidate = EvidenceTableCandidate & {
@@ -68,6 +70,9 @@ const FOOTER_STRONG_CONCEPTS = [
   "routing",
 ];
 const FOOTER_WEAK_CONCEPTS = ["thank", "account"];
+
+/** Only the first few candidate rows are scanned for a line-item header. */
+const MAX_HEADER_SCAN_ROWS = 3;
 
 /** Cells whose whole text is a plain number with optional currency/percent marks. */
 export function isNumericLike(text: string): boolean {
@@ -143,12 +148,30 @@ export function classifyTableCandidate(
 
   // Line items: a recognizable header row plus a numeric-dense data grid.
   // Requiring combined evidence keeps plain "Amount"/"Total" headers below.
-  const dataCells = rows.slice(1).flatMap((row) => row.cells);
-  if (rows.length >= 2 && dataCells.length > 0) {
-    const headerHits = conceptHits(rows[0].tokens, LINE_ITEM_HEADER_CONCEPTS);
-    const numericRatio = dataCells.filter((cell) => isNumericLike(cell)).length / dataCells.length;
-    if (headerHits.size >= 2 && numericRatio >= 0.4) {
-      return { role: "line_items", reason: "line-item header + numeric rows" };
+  // Real invoices can carry metadata rows above the header, so scan only the
+  // first few rows for a plausible header instead of assuming row 0; numeric
+  // evidence comes only from rows after the detected header.
+  let headerRowIndex = -1;
+  for (let rowIndex = 0; rowIndex < Math.min(MAX_HEADER_SCAN_ROWS, rows.length - 1); rowIndex += 1) {
+    if (conceptHits(rows[rowIndex].tokens, LINE_ITEM_HEADER_CONCEPTS).size >= 2) {
+      headerRowIndex = rowIndex;
+      break;
+    }
+  }
+  if (headerRowIndex >= 0) {
+    const dataCells = rows.slice(headerRowIndex + 1).flatMap((row) => row.cells);
+    if (dataCells.length > 0) {
+      const numericRatio = dataCells.filter((cell) => isNumericLike(cell)).length / dataCells.length;
+      if (numericRatio >= 0.4) {
+        return {
+          role: "line_items",
+          reason:
+            headerRowIndex === 0
+              ? "line-item header + numeric rows"
+              : "embedded line-item header + numeric rows",
+          headerRowIndex,
+        };
+      }
     }
   }
 

@@ -29,7 +29,7 @@ const MIN_MATCHED_ANCHOR_RATIO = 0.6;
 /** Continuation rows may differ in height by at most this factor. */
 const MAX_ROW_HEIGHT_RATIO = 2;
 
-export type LogicalRowKind = "header" | "repeated-header" | "data";
+export type LogicalRowKind = "metadata" | "header" | "repeated-header" | "data";
 
 export interface LogicalTableRow {
   sourceCandidateId: string;
@@ -65,7 +65,7 @@ export interface LogicalLineItemTable {
   candidateIds: string[];
   /** Largest column count across the linked candidates. */
   columnCount: number;
-  /** All rows, including header and repeated-header rows. */
+  /** All rows, including metadata, header, and repeated-header rows. */
   rowCount: number;
   dataRowCount: number;
   repeatedHeaderRowCount: number;
@@ -93,12 +93,18 @@ function candidateCellTexts(
   );
 }
 
+/** Header row detected by the classifier; row 0 only as a fallback. */
+function detectedHeaderRowIndex(candidate: ClassifiedEvidenceTableCandidate): number {
+  return candidate.classification.headerRowIndex ?? 0;
+}
+
 function headerConcepts(
   candidate: ClassifiedEvidenceTableCandidate,
   index: EvidenceIndex,
 ): Set<string> {
   const hits = new Set<string>();
-  for (const token of candidateCellTexts(candidate, 0, index).flatMap(tokensOf)) {
+  for (const token of candidateCellTexts(candidate, detectedHeaderRowIndex(candidate), index)
+    .flatMap(tokensOf)) {
     if (LINE_ITEM_HEADER_CONCEPTS.includes(token)) hits.add(token);
   }
   return hits;
@@ -233,7 +239,7 @@ function assessLink(
   if (overlap.length < 1) return null;
 
   const repeatedHeader = isRepeatedHeaderRow(
-    candidateCellTexts(next, 0, index),
+    candidateCellTexts(next, detectedHeaderRowIndex(next), index),
     overlap.length,
   );
 
@@ -331,9 +337,14 @@ export function linkCrossPageLineItemTables(
     const firstCandidateId = group.candidates[0]?.id ?? "";
     const rows: LogicalTableRow[] = [];
     for (const candidate of group.candidates) {
+      const headerRowIndex = detectedHeaderRowIndex(candidate);
       candidate.rows.forEach((row, rowIndex) => {
+        // Metadata rows above the detected header stay in the logical table
+        // with their provenance; they are never data rows.
         let kind: LogicalRowKind = "data";
-        if (rowIndex === 0) {
+        if (rowIndex < headerRowIndex) {
+          kind = "metadata";
+        } else if (rowIndex === headerRowIndex) {
           if (candidate.id === firstCandidateId) {
             kind = "header";
           } else {

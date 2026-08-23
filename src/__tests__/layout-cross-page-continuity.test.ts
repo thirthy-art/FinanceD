@@ -332,6 +332,98 @@ describe("cross-page line-item continuity", () => {
     expect(logicalTables[0].candidateIds).toEqual([tables[0].id]);
   });
 
+  it("links Carfix-shaped candidates with metadata rows before the header", () => {
+    const carfixPage = (
+      metaRows: Array<[string, string]>,
+      dataRows: Array<[string, string, string]>,
+    ): CellSpec[][] => [
+      ...metaRows.map((row, index) => [
+        cell(20, 100 + 20 * index, row[0]),
+        cell(250, 100 + 20 * index, row[1]),
+      ]),
+      ...lineItemRows(100 + 20 * metaRows.length, dataRows),
+    ];
+    const evidence = makeEvidence([
+      {
+        page: 1,
+        rows: carfixPage(
+          [
+            ["Invoice No", "CF-1001"],
+            ["Invoice Date", "2024-06-10"],
+          ],
+          [
+            ["Labour", "2", "200.00"],
+            ["Parts", "1", "50.00"],
+          ],
+        ),
+      },
+      {
+        page: 2,
+        rows: carfixPage(
+          [
+            ["Customer", "Carfix Ltd"],
+            ["Vehicle", "AB-123-CD"],
+          ],
+          [
+            ["Paint", "1", "80.00"],
+            ["Polish", "1", "30.00"],
+          ],
+        ),
+      },
+    ]);
+    const { tables, logicalTables } = pipeline(evidence);
+
+    expect(tables.map((table) => table.classification.role)).toEqual([
+      "line_items",
+      "line_items",
+    ]);
+    expect(tables.map((table) => table.classification.headerRowIndex)).toEqual([2, 2]);
+
+    expect(logicalTables).toHaveLength(1);
+    const logical = logicalTables[0];
+    expect(logical.pages).toEqual([1, 2]);
+    expect(logical.candidateIds).toEqual(tables.map((table) => table.id));
+    expect(logical.links).toHaveLength(1);
+    expect(logical.links[0].repeatedHeader).toBe(true);
+
+    // Metadata rows above each header are preserved with provenance, and the
+    // detected header rows drive header/repeated-header tagging and counts.
+    expect(logical.rows.map((row) => row.kind)).toEqual([
+      "metadata",
+      "metadata",
+      "header",
+      "data",
+      "data",
+      "metadata",
+      "metadata",
+      "repeated-header",
+      "data",
+      "data",
+    ]);
+    expect(logical.rowCount).toBe(10);
+    expect(logical.dataRowCount).toBe(4);
+    expect(logical.repeatedHeaderRowCount).toBe(1);
+
+    expect(logical.rows.map((row) => row.sourcePage)).toEqual([
+      1, 1, 1, 1, 1, 2, 2, 2, 2, 2,
+    ]);
+    expect(logical.rows.map((row) => row.sourceRowIndex)).toEqual([
+      0, 1, 2, 3, 4, 0, 1, 2, 3, 4,
+    ]);
+
+    const knownIds = new Map<string, number>();
+    for (const page of evidence.pages) {
+      for (const element of page.elements) knownIds.set(element.id, element.page);
+    }
+    for (const row of logical.rows) {
+      expect(row.evidenceElementIds.length).toBeGreaterThan(0);
+      for (const id of row.evidenceElementIds) {
+        expect(knownIds.has(id)).toBe(true);
+        expect(knownIds.get(id)).toBe(row.sourcePage);
+      }
+    }
+  });
+
   it("chains a three-page continuation into one logical table", () => {
     const pageRows = (startY: number, rows: Array<[string, string, string]>) =>
       lineItemRows(startY, rows);

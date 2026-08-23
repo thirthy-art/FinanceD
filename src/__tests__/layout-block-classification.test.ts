@@ -112,6 +112,46 @@ describe("deterministic block classification", () => {
     expect(roles(evidence)).toEqual(["line_items"]);
   });
 
+  it("detects a line-item header below leading metadata rows", () => {
+    const evidence = makeEvidence([
+      [{ x: 20, y: 20, text: "Invoice No" }, { x: 250, y: 20, text: "CF-1001" }],
+      [{ x: 20, y: 40, text: "Invoice Date" }, { x: 250, y: 40, text: "2024-06-10" }],
+      [{ x: 20, y: 60, text: "Description" }, { x: 250, y: 60, text: "Qty" }, { x: 400, y: 60, text: "Amount" }],
+      [{ x: 20, y: 80, text: "Labour" }, { x: 250, y: 80, text: "2" }, { x: 400, y: 80, text: "200.00" }],
+      [{ x: 20, y: 100, text: "Parts" }, { x: 250, y: 100, text: "1" }, { x: 400, y: 100, text: "50.00" }],
+    ]);
+    const classified = classifyEvidenceTables(clusterEvidenceTables(evidence), evidence);
+    expect(classified).toHaveLength(1);
+    expect(classified[0].classification).toEqual({
+      role: "line_items",
+      reason: "embedded line-item header + numeric rows",
+      headerRowIndex: 2,
+    });
+  });
+
+  it("does not scan beyond the first few rows for a line-item header", () => {
+    const evidence = makeEvidence([
+      [{ x: 20, y: 20, text: "Alpha" }, { x: 250, y: 20, text: "One" }],
+      [{ x: 20, y: 40, text: "Beta" }, { x: 250, y: 40, text: "Two" }],
+      [{ x: 20, y: 60, text: "Gamma" }, { x: 250, y: 60, text: "Three" }],
+      [{ x: 20, y: 80, text: "Description" }, { x: 250, y: 80, text: "Qty" }, { x: 400, y: 80, text: "Amount" }],
+      [{ x: 20, y: 100, text: "Service" }, { x: 250, y: 100, text: "2" }, { x: 400, y: 100, text: "200.00" }],
+    ]);
+    const classified = classifyEvidenceTables(clusterEvidenceTables(evidence), evidence);
+    expect(classified[0].classification.role).toBe("unknown");
+    expect(classified[0].classification.headerRowIndex).toBeUndefined();
+  });
+
+  it("stays unknown when rows after an embedded header lack numeric evidence", () => {
+    const evidence = makeEvidence([
+      [{ x: 20, y: 20, text: "Invoice No" }, { x: 250, y: 20, text: "CF-1001" }],
+      [{ x: 20, y: 40, text: "Description" }, { x: 250, y: 40, text: "Qty" }, { x: 400, y: 40, text: "Amount" }],
+      [{ x: 20, y: 60, text: "Notes" }, { x: 250, y: 60, text: "See" }, { x: 400, y: 60, text: "attached" }],
+    ]);
+    const classified = classifyEvidenceTables(clusterEvidenceTables(evidence), evidence);
+    expect(classified[0].classification.role).toBe("unknown");
+  });
+
   it("keeps classification deterministic and free of copied invoice text", () => {
     const evidence = makeEvidence([
       [{ x: 20, y: 20, text: "Subtotal" }, { x: 400, y: 20, text: "200.00" }],
