@@ -10,19 +10,35 @@ import type {
   EvidencePageDimensions,
 } from "@/src/lib/experimental/document-evidence";
 import type { ClassifiedEvidenceTableCandidate } from "@/src/lib/experimental/layout-block-classification";
+import type { LogicalLineItemTable } from "@/src/lib/experimental/layout-cross-page-continuity";
 
 export interface LayoutProbeResult {
   evidence: DocumentEvidence;
   tables: ClassifiedEvidenceTableCandidate[];
+  logicalTables?: LogicalLineItemTable[];
 }
 
 export function isLayoutProbeResult(value: unknown): value is LayoutProbeResult {
   if (typeof value !== "object" || value === null) return false;
-  const candidate = value as { evidence?: unknown; tables?: unknown };
+  const candidate = value as {
+    evidence?: unknown;
+    tables?: unknown;
+    logicalTables?: unknown;
+  };
   return (
     typeof candidate.evidence === "object" &&
     candidate.evidence !== null &&
-    Array.isArray(candidate.tables)
+    Array.isArray(candidate.tables) &&
+    (candidate.logicalTables === undefined || Array.isArray(candidate.logicalTables))
+  );
+}
+
+export function logicalTableForCandidate(
+  result: LayoutProbeResult,
+  candidateId: string,
+): LogicalLineItemTable | null {
+  return (
+    result.logicalTables?.find((table) => table.candidateIds.includes(candidateId)) ?? null
   );
 }
 

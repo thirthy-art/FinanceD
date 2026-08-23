@@ -27,7 +27,7 @@ export type ClassifiedEvidenceTableCandidate = EvidenceTableCandidate & {
   classification: TableBlockClassification;
 };
 
-const LINE_ITEM_HEADER_CONCEPTS = [
+export const LINE_ITEM_HEADER_CONCEPTS = [
   "description",
   "item",
   "qty",
@@ -70,11 +70,11 @@ const FOOTER_STRONG_CONCEPTS = [
 const FOOTER_WEAK_CONCEPTS = ["thank", "account"];
 
 /** Cells whose whole text is a plain number with optional currency/percent marks. */
-function isNumericLike(text: string): boolean {
+export function isNumericLike(text: string): boolean {
   return /^[$€£¥₪]?[0-9\s.,]+%?$/.test(text.trim());
 }
 
-function tokensOf(text: string): string[] {
+export function tokensOf(text: string): string[] {
   return text
     .toLowerCase()
     .split(/[^a-z0-9]+/)

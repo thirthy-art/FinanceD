@@ -10,6 +10,7 @@ import {
   buildEvidenceIndex,
   evidenceBoxPosition,
   isLayoutProbeResult,
+  logicalTableForCandidate,
   pageAspectRatio,
   resolveElementText,
   type LayoutProbeResult,
@@ -201,7 +202,8 @@ export default function LayoutProbeTool() {
             <p role="status" className={styles.successText}>
               Inspection complete — {pages.length} page(s),{" "}
               {result?.evidence.pages.reduce((total, page) => total + page.elements.length, 0)}{" "}
-              evidence elements, {result?.tables.length ?? 0} table candidate(s).
+              evidence elements, {result?.tables.length ?? 0} table candidate(s),{" "}
+              {result?.logicalTables?.length ?? 0} logical line-item table(s).
             </p>
           )}
         </div>
@@ -344,6 +346,11 @@ export default function LayoutProbeTool() {
                   <h3 className={styles.tableTitle}>
                     {table.id} — {table.rowCount} row(s) × {table.columnCount} column(s)
                     <span className={styles.roleBadge}>{table.classification.role}</span>
+                    {logicalTableForCandidate(result, table.id) && (
+                      <span className={styles.roleBadge}>
+                        {logicalTableForCandidate(result, table.id)?.id}
+                      </span>
+                    )}
                   </h3>
                   <p className={styles.muted}>{table.classification.reason}</p>
                   <div className={styles.tableScroll}>
@@ -392,6 +399,41 @@ export default function LayoutProbeTool() {
                         ))}
                       </ul>
                     </div>
+                  )}
+                </article>
+              ))
+            )}
+          </section>
+
+          <section className={styles.panel} aria-labelledby="layout-probe-logical">
+            <h2 id="layout-probe-logical" className={styles.panelTitle}>
+              Cross-page logical tables
+            </h2>
+            {(result.logicalTables ?? []).length === 0 ? (
+              <p className={styles.muted}>No line-item candidates to link.</p>
+            ) : (
+              (result.logicalTables ?? []).map((logical) => (
+                <article key={logical.id} className={styles.tableCard}>
+                  <h3 className={styles.tableTitle}>
+                    {logical.id} — page(s) {logical.pages.join(", ")} — {logical.rowCount}{" "}
+                    logical row(s) ({logical.dataRowCount} data)
+                    {logical.candidateIds.length > 1 && (
+                      <span className={styles.roleBadge}>linked across pages</span>
+                    )}
+                  </h3>
+                  <p className={styles.muted}>
+                    Candidates: {logical.candidateIds.join(", ")} · repeated header row(s):{" "}
+                    {logical.repeatedHeaderRowCount}
+                  </p>
+                  {logical.links.length > 0 && (
+                    <ul className={styles.muted}>
+                      {logical.links.map((link) => (
+                        <li key={`${link.fromCandidateId}-${link.toCandidateId}`}>
+                          {link.fromCandidateId} → {link.toCandidateId} (page {link.fromPage} →{" "}
+                          {link.toPage}): {link.reasons.join("; ")}
+                        </li>
+                      ))}
+                    </ul>
                   )}
                 </article>
               ))

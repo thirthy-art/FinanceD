@@ -58,6 +58,16 @@ describe("dev layout-probe route", () => {
     expect(body.tables[0].classification.role).toBe("line_items");
     expect(typeof body.tables[0].classification.reason).toBe("string");
 
+    expect(body.logicalTables).toHaveLength(1);
+    expect(body.logicalTables[0]).toMatchObject({
+      id: "logical-001",
+      role: "line_items",
+      pages: [1],
+      candidateIds: [body.tables[0].id],
+      links: [],
+    });
+    expect(body.logicalTables[0].rowCount).toBe(body.tables[0].rowCount);
+
     const knownIds = new Set(
       body.evidence.pages[0].elements.map((element: { id: string }) => element.id),
     );

@@ -9,9 +9,11 @@ import {
   buildEvidenceIndex,
   evidenceBoxPosition,
   isLayoutProbeResult,
+  logicalTableForCandidate,
   pageAspectRatio,
   resolveElementText,
   safeCssDecimal,
+  type LayoutProbeResult,
 } from "@/app/dev/layout-probe/layout-probe-view";
 
 function element(id: string, text: string, page = 1) {
@@ -95,6 +97,52 @@ describe("layout probe view model", () => {
       ],
     };
     expect(isLayoutProbeResult(result)).toBe(true);
+  });
+
+  it("accepts logical cross-page tables when present and well-shaped", () => {
+    const withLogical = {
+      evidence: { pages: [] },
+      tables: [],
+      logicalTables: [
+        {
+          id: "logical-001",
+          pages: [1, 2],
+          candidateIds: ["p1-table-000", "p2-table-001"],
+          rowCount: 6,
+          dataRowCount: 4,
+        },
+      ],
+    };
+    expect(isLayoutProbeResult(withLogical)).toBe(true);
+    expect(isLayoutProbeResult({ evidence: { pages: [] }, tables: [], logicalTables: "nope" }))
+      .toBe(false);
+  });
+
+  it("finds the logical table containing a candidate", () => {
+    const result: LayoutProbeResult = {
+      evidence: evidence(),
+      tables: [],
+      logicalTables: [
+        {
+          id: "logical-001",
+          role: "line_items",
+          linkerVersion: "deterministic-cross-page-link-v1",
+          pages: [1, 2],
+          candidateIds: ["p1-table-000", "p2-table-001"],
+          columnCount: 3,
+          rowCount: 6,
+          dataRowCount: 4,
+          repeatedHeaderRowCount: 1,
+          rows: [],
+          columnAnchorGeometry: {},
+          links: [],
+        },
+      ],
+    };
+    expect(logicalTableForCandidate(result, "p2-table-001")?.id).toBe("logical-001");
+    expect(logicalTableForCandidate(result, "p9-table-999")).toBeNull();
+    expect(logicalTableForCandidate({ evidence: evidence(), tables: [] }, "p1-table-000"))
+      .toBeNull();
   });
 });
 
