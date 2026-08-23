@@ -15,6 +15,7 @@ import InvoiceReview from "@/src/components/InvoiceReview";
 import Link from "next/link";
 import { parseInvoiceFields } from "@/src/lib/extract";
 import { stripTrailingZeros } from "@/src/lib/invoice-validation";
+import { getDeterministicInitialInvoiceLines } from "@/src/lib/experimental/layout-initial-lines";
 import { resolveLocale, getMessages } from "@/src/i18n/index";
 import { LOCALE_COOKIE } from "@/src/i18n/types";
 import { getActiveCompanyForPage } from "@/src/lib/active-company-page";
@@ -67,6 +68,18 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
   const extractedText = docs[0]?.extractedText ?? "";
   const extractedFields = parseInvoiceFields(extractedText) as Record<string, string>;
 
+  // Born-digital PDF without saved lines: deterministic layout lines become
+  // the initial editor lines. Persisted DB lines always win; any failure or
+  // non-useful result falls back to the existing text-based behavior.
+  const deterministicLines = docs[0]
+    ? await getDeterministicInitialInvoiceLines({
+        mimeType: docs[0].mimeType,
+        storagePath: docs[0].storagePath,
+        extractedText: docs[0].extractedText,
+        persistedLineCount: lines.length,
+      })
+    : null;
+
   return (
     <div>
       <div style={{ marginBottom: 20, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
@@ -85,7 +98,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
       <InvoiceReview
         invoice={invoice}
         documents={docs}
-        lines={lines.map((line) => ({
+        lines={deterministicLines ?? lines.map((line) => ({
           id: line.id,
           lineNumber: line.lineNumber ?? "",
           descriptionOriginal: line.descriptionOriginal ?? "",
