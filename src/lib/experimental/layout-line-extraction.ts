@@ -17,6 +17,7 @@ import { classifyEvidenceTables } from "./layout-block-classification";
 import {
   linkCrossPageLineItemTables,
   type LogicalLineItemTable,
+  type LogicalTableRow,
 } from "./layout-cross-page-continuity";
 import type {
   DocumentEvidence,
@@ -195,6 +196,7 @@ function mapHeaderColumns(
   const amountColumns: number[] = [];
   const unmappedHeaderTexts: string[] = [];
   const unsupportedHeaderTexts: string[] = [];
+  const unmappedCells: Array<{ columnIndex: number; text: string }> = [];
 
   for (const cell of headerCells) {
     const resolution = resolveHeader(cell.text);
@@ -206,6 +208,32 @@ function mapHeaderColumns(
       unsupportedHeaderTexts.push(cell.text);
     } else if (cell.text.trim() !== "") {
       unmappedHeaderTexts.push(cell.text);
+      unmappedCells.push({ columnIndex: cell.columnIndex, text: cell.text });
+    }
+  }
+
+  // Narrow known simple-invoice header: Item | Quantity/Qty | Rate | Amount.
+  // Bare Item/Rate stay unmapped generally; only this coherent combination,
+  // with no conflicting tax/discount/gross header, resolves them.
+  const squashedOf = (text: string) => normalizeHeaderText(text).replace(/\s+/g, "");
+  const squashedTexts = headerCells.map((cell) => squashedOf(cell.text));
+  const itemColumns = unmappedCells.filter((cell) => squashedOf(cell.text) === "item");
+  const rateColumns = unmappedCells.filter((cell) => squashedOf(cell.text) === "rate");
+  const simpleInvoicePattern =
+    itemColumns.length === 1 &&
+    rateColumns.length === 1 &&
+    amountColumns.length === 1 &&
+    squashedTexts.some((text) => text === "quantity" || text === "qty") &&
+    unsupportedHeaderTexts.length === 0 &&
+    !squashedTexts.some((text) =>
+      /^(tax|vat|gst)/.test(text) || /^gross/.test(text) || /^total/.test(text),
+    );
+  if (simpleInvoicePattern) {
+    claims.set(itemColumns[0].columnIndex, "descriptionOriginal");
+    claims.set(rateColumns[0].columnIndex, "unitPrice");
+    for (let i = unmappedHeaderTexts.length - 1; i >= 0; i--) {
+      const squashed = squashedOf(unmappedHeaderTexts[i]);
+      if (squashed === "item" || squashed === "rate") unmappedHeaderTexts.splice(i, 1);
     }
   }
 
@@ -263,6 +291,13 @@ function buildEvidenceIndex(evidence: DocumentEvidence): Map<string, DocumentEvi
   return index;
 }
 
+const EMPTY_MAPPING: ColumnMapping = {
+  columnFields: new Map<number, LayoutInvoiceLineField>(),
+  unmappedHeaderTexts: [],
+  unsupportedHeaderTexts: [],
+  conflictingFields: [],
+};
+
 /** Extracts invoice-line candidates from one logical table in row order. */
 export function extractInvoiceLinesFromLogicalTable(
   table: LogicalLineItemTable,
@@ -272,26 +307,44 @@ export function extractInvoiceLinesFromLogicalTable(
   const cellText = (evidenceElementIds: string[]): string =>
     evidenceElementIds.map((id) => index.get(id)?.text ?? "").join(" ").trim();
 
-  const headerRow = table.rows.find((row) => row.kind === "header");
-  const mapping = headerRow
-    ? mapHeaderColumns(
-        headerRow.cells.map((cell) => ({
-          columnIndex: cell.columnIndex,
-          text: cellText(cell.evidenceElementIds),
-        })),
-      )
-    : {
-        columnFields: new Map<number, LayoutInvoiceLineField>(),
-        unmappedHeaderTexts: [] as string[],
-        unsupportedHeaderTexts: [] as string[],
-        conflictingFields: [] as LayoutInvoiceLineField[],
-      };
+  // Header mapping is candidate-local: each physical candidate's header (or
+  // repeated-header) row defines its own columnIndex → field mapping, because
+  // continuation candidates can have different column layouts. A candidate
+  // without any local header keeps an empty mapping — its raw column indexes
+  // must not be read through another candidate's header.
+  const mappingsByCandidate = new Map<string, ColumnMapping>();
+  let firstHeaderRow: LogicalTableRow | undefined;
+  const firstMapping: ColumnMapping = {
+    columnFields: new Map<number, LayoutInvoiceLineField>(),
+    unmappedHeaderTexts: [] as string[],
+    unsupportedHeaderTexts: [] as string[],
+    conflictingFields: [] as LayoutInvoiceLineField[],
+  };
+  for (const row of table.rows) {
+    if (row.kind !== "header" && row.kind !== "repeated-header") continue;
+    if (row.kind === "header" && firstHeaderRow === undefined) firstHeaderRow = row;
+    if (mappingsByCandidate.has(row.sourceCandidateId)) continue;
+    const mapping = mapHeaderColumns(
+      row.cells.map((cell) => ({
+        columnIndex: cell.columnIndex,
+        text: cellText(cell.evidenceElementIds),
+      })),
+    );
+    mappingsByCandidate.set(row.sourceCandidateId, mapping);
+    if (row.kind === "header" && firstMapping.columnFields.size === 0) {
+      firstMapping.columnFields = mapping.columnFields;
+      firstMapping.unmappedHeaderTexts = mapping.unmappedHeaderTexts;
+      firstMapping.unsupportedHeaderTexts = mapping.unsupportedHeaderTexts;
+      firstMapping.conflictingFields = mapping.conflictingFields;
+    }
+  }
 
   let uncertainCellCount = 0;
   const lines: DeterministicInvoiceLine[] = [];
 
   for (const row of table.rows) {
     if (row.kind !== "data") continue;
+    const mapping = mappingsByCandidate.get(row.sourceCandidateId) ?? EMPTY_MAPPING;
     const line: DeterministicInvoiceLine = {
       lineNumber: null,
       descriptionOriginal: null,
@@ -337,7 +390,7 @@ export function extractInvoiceLinesFromLogicalTable(
   // AND deterministic numeric evidence. Numeric-only rows never displace the
   // existing AI fallback.
   const useful =
-    headerRow !== undefined &&
+    firstHeaderRow !== undefined &&
     lines.some(
       (line) =>
         (line.descriptionOriginal !== null || line.lineNumber !== null) &&
@@ -352,12 +405,12 @@ export function extractInvoiceLinesFromLogicalTable(
   return {
     extractorVersion: LAYOUT_LINE_EXTRACTOR_VERSION,
     logicalTableId: table.id,
-    columnFields: Object.fromEntries(mapping.columnFields),
+    columnFields: Object.fromEntries(firstMapping.columnFields),
     lines,
     diagnostics: {
-      unmappedHeaderTexts: mapping.unmappedHeaderTexts,
-      unsupportedHeaderTexts: mapping.unsupportedHeaderTexts,
-      conflictingFields: mapping.conflictingFields,
+      unmappedHeaderTexts: firstMapping.unmappedHeaderTexts,
+      unsupportedHeaderTexts: firstMapping.unsupportedHeaderTexts,
+      conflictingFields: firstMapping.conflictingFields,
       uncertainCellCount,
     },
     useful,

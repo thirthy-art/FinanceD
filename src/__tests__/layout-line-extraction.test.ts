@@ -309,6 +309,255 @@ describe("deterministic header mapping", () => {
     // Description-only lines fail the usefulness gate.
     expect(result.useful).toBe(false);
   });
+
+  it("maps the known simple-invoice header Item | Quantity | Rate | Amount", () => {
+    const { table, evidence } = makeLogicalTable(
+      ["Item", "Quantity", "Rate", "Amount"],
+      [
+        ["Test1", "1", "13440.00", "13440.00"],
+        ["Test2", "2", "100.00", "200.00"],
+        ["Test3", "3", "25.00", "75.00"],
+      ],
+    );
+    const result = extractInvoiceLinesFromLogicalTable(table, evidence);
+
+    expect(result.useful).toBe(true);
+    expect(result.columnFields).toEqual({
+      0: "descriptionOriginal",
+      1: "quantity",
+      2: "unitPrice",
+      3: "netAmount",
+    });
+    expect(result.lines).toHaveLength(3);
+    expect(result.lines[0]).toMatchObject({
+      descriptionOriginal: "Test1",
+      quantity: "1",
+      unitPrice: "13440",
+      netAmount: "13440",
+    });
+    expect(result.lines[2]).toMatchObject({
+      descriptionOriginal: "Test3",
+      quantity: "3",
+      unitPrice: "25",
+      netAmount: "75",
+    });
+  });
+
+  it("does not extend the simple-invoice pattern when a tax header is present", () => {
+    const { table, evidence } = makeLogicalTable(
+      ["Item", "Quantity", "Rate", "Amount", "Vat %"],
+      [["Test1", "1", "100.00", "100.00", "23"]],
+    );
+    const result = extractInvoiceLinesFromLogicalTable(table, evidence);
+
+    // Rate and bare Amount stay unmapped; Item stays unmapped.
+    expect(result.columnFields).toEqual({ 1: "quantity", 4: "vatRate" });
+    expect(result.diagnostics.unmappedHeaderTexts).toEqual(["Item", "Rate", "Amount"]);
+    expect(result.lines[0].unitPrice).toBeNull();
+    expect(result.lines[0].netAmount).toBeNull();
+  });
+});
+
+// ── Candidate-local column mapping across pages ──────────────────────────────
+
+describe("candidate-local cross-page column mapping", () => {
+  /** One page's candidate: header (kind given) plus data rows. */
+  function candidatePageRows(
+    page: number,
+    candidateId: string,
+    headerKind: "header" | "repeated-header",
+    headerTexts: string[],
+    dataRowTexts: string[][],
+    elements: DocumentEvidenceElement[],
+    order: { value: number },
+  ): LogicalTableRow[] {
+    const makeRow = (
+      texts: string[],
+      rowIndex: number,
+      kind: LogicalTableRow["kind"],
+    ): LogicalTableRow => {
+      const cells = texts.map((text, columnIndex) => {
+        const element = makeElement(
+          page,
+          order.value,
+          20 + columnIndex * 60,
+          100 + rowIndex * 20,
+          text,
+        );
+        order.value += 1;
+        elements.push(element);
+        return { columnIndex, evidenceElementIds: [element.id] };
+      });
+      return {
+        sourceCandidateId: candidateId,
+        sourcePage: page,
+        sourceRowIndex: rowIndex,
+        kind,
+        cells,
+        evidenceElementIds: cells.flatMap((cell) => cell.evidenceElementIds),
+      };
+    };
+    return [
+      makeRow(headerTexts, 0, headerKind),
+      ...dataRowTexts.map((texts, index) => makeRow(texts, index + 1, "data")),
+    ];
+  }
+
+  it("maps continuation rows through their own candidate header, not page 1's", () => {
+    const elements: DocumentEvidenceElement[] = [];
+    const order = { value: 0 };
+
+    // Page 1: Carfix-style 12-column candidate.
+    const p1Rows = candidatePageRows(
+      1,
+      "cand-p1",
+      "header",
+      ["Item Code", "Description", "Qty", "U.Price", "Price", "Disc. %", "Amount", "Vat %", "Extra A", "Extra B", "Extra C", "Extra D"],
+      [["10", "Widget", "2", "5.00", "10.00", "0", "10.00", "23", "xa", "xb", "xc", "xd"]],
+      elements,
+      order,
+    );
+    // Page 2: continuation candidate with a 10-column layout — the Item Code
+    // and Description cells merged into one Description cell at index 0, and
+    // the Item Code cell repeated at the last position instead of index 0.
+    const p2Rows = candidatePageRows(
+      2,
+      "cand-p2",
+      "repeated-header",
+      ["Description", "Qty", "U.Price", "Price", "Disc. %", "Amount", "Vat %", "Extra A", "Extra B", "Item Code"],
+      [["11 Gasket", "4", "1.50", "6.00", "0", "6.00", "23", "ya", "yb", "11"]],
+      elements,
+      order,
+    );
+
+    const rows = [...p1Rows, ...p2Rows];
+    const table: LogicalLineItemTable = {
+      id: "logical-xp",
+      role: "line_items",
+      linkerVersion: "deterministic-cross-page-link-v1",
+      pages: [1, 2],
+      candidateIds: ["cand-p1", "cand-p2"],
+      columnCount: 12,
+      rowCount: rows.length,
+      dataRowCount: 2,
+      repeatedHeaderRowCount: 1,
+      rows,
+      columnAnchorGeometry: {},
+      links: [],
+    };
+    const evidence: DocumentEvidence = {
+      formatVersion: DOCUMENT_EVIDENCE_VERSION,
+      extractorVersion: "test-v1",
+      source: "pdf-text",
+      pages: [
+        { page: 1, dimensions: { width: "600", height: "800", unit: "pdf-point" }, elements: elements.filter((e) => e.page === 1) },
+        { page: 2, dimensions: { width: "600", height: "800", unit: "pdf-point" }, elements: elements.filter((e) => e.page === 2) },
+      ],
+    };
+
+    const result = extractInvoiceLinesFromLogicalTable(table, evidence);
+
+    expect(result.useful).toBe(true);
+    expect(result.lines).toHaveLength(2);
+
+    const p1Line = result.lines[0];
+    expect(p1Line.sourcePage).toBe(1);
+    expect(p1Line.sourceCandidateId).toBe("cand-p1");
+    expect(p1Line).toMatchObject({
+      lineNumber: "10",
+      descriptionOriginal: "Widget",
+      quantity: "2",
+      unitPrice: "5",
+      netAmount: "10",
+      vatRate: "23",
+    });
+
+    // Page-2 cells must resolve through the page-2 header positions: the p2
+    // Item Code lives at column 9, not column 0 where p1 keeps it, and the p2
+    // Amount/Vat % cells land in netAmount/vatRate rather than being shifted.
+    const p2Line = result.lines[1];
+    expect(p2Line.sourcePage).toBe(2);
+    expect(p2Line.sourceCandidateId).toBe("cand-p2");
+    expect(p2Line).toMatchObject({
+      lineNumber: "11",
+      descriptionOriginal: "11 Gasket",
+      quantity: "4",
+      unitPrice: "1.5",
+      netAmount: "6",
+      vatRate: "23",
+    });
+
+    // Price and Disc. % stay unsupported/unmapped on both candidates.
+    expect(p1Line.vatAmount).toBeNull();
+    expect(p1Line.grossAmount).toBeNull();
+    expect(p2Line.vatAmount).toBeNull();
+    expect(p2Line.grossAmount).toBeNull();
+  });
+
+  it("does not remap continuation rows when the candidate has no local header", () => {
+    const elements: DocumentEvidenceElement[] = [];
+    const order = { value: 0 };
+
+    const p1Rows = candidatePageRows(
+      1,
+      "cand-p1",
+      "header",
+      ["Description", "Qty", "Net Amount"],
+      [["Consulting", "2", "200.00"]],
+      elements,
+      order,
+    );
+    // Page-2 continuation candidate with no header of its own.
+    const p2DataOnly = candidatePageRows(
+      2,
+      "cand-p2",
+      "repeated-header",
+      [],
+      [["Shifted", "9", "999.00"]],
+      elements,
+      order,
+    ).filter((row) => row.kind === "data");
+    // Raw page-2 column indexes deliberately disagree with the page-1 layout
+    // (Qty text placed at index 2, Net Amount text at index 1).
+    const shiftedCells = p2DataOnly[0].cells.map((cell, index) => ({
+      ...cell,
+      columnIndex: [0, 2, 1][index],
+    }));
+    const shiftedRow = { ...p2DataOnly[0], cells: shiftedCells };
+
+    const rows = [...p1Rows, shiftedRow];
+    const table: LogicalLineItemTable = {
+      id: "logical-noheader",
+      role: "line_items",
+      linkerVersion: "deterministic-cross-page-link-v1",
+      pages: [1, 2],
+      candidateIds: ["cand-p1", "cand-p2"],
+      columnCount: 3,
+      rowCount: rows.length,
+      dataRowCount: 2,
+      repeatedHeaderRowCount: 0,
+      rows,
+      columnAnchorGeometry: {},
+      links: [],
+    };
+    const evidence: DocumentEvidence = {
+      formatVersion: DOCUMENT_EVIDENCE_VERSION,
+      extractorVersion: "test-v1",
+      source: "pdf-text",
+      pages: [
+        { page: 1, dimensions: { width: "600", height: "800", unit: "pdf-point" }, elements: elements.filter((e) => e.page === 1) },
+        { page: 2, dimensions: { width: "600", height: "800", unit: "pdf-point" }, elements: elements.filter((e) => e.page === 2) },
+      ],
+    };
+
+    const result = extractInvoiceLinesFromLogicalTable(table, evidence);
+
+    // Page-1 line extracts normally; the headerless continuation row is not
+    // remapped through page 1's columns, so it yields no line.
+    expect(result.lines).toHaveLength(1);
+    expect(result.lines[0].descriptionOriginal).toBe("Consulting");
+    expect(result.useful).toBe(true);
+  });
 });
 
 // ── Usefulness gate ───────────────────────────────────────────────────────────
