@@ -172,10 +172,10 @@ describe("digital PDF with extracted text", () => {
 
     expect(res.status).toBe(200);
 
-    // PDFParse must not have been instantiated; the PDF bytes are read only
-    // for the best-effort deterministic layout attempt, never for rendering.
+    // PDFParse must not have been instantiated, and the digital text path
+    // never reads the PDF bytes at all.
     expect(MockPDFParse).not.toHaveBeenCalled();
-    expect(mockReadDocument).toHaveBeenCalledWith("/uploads/invoice.pdf");
+    expect(mockReadDocument).not.toHaveBeenCalled();
 
     // AI fetch body must contain extracted text, not image_url items
     const fetchBody = JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string);

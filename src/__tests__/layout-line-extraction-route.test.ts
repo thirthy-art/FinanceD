@@ -15,8 +15,8 @@ vi.mock("@/src/lib/document-storage", () => ({
   readDocument: vi.fn(),
   DocumentNotFoundError: class DocumentNotFoundError extends Error {},
 }));
-// The byte-level pipeline is mocked, but the real merge semantics are kept so
-// these tests exercise the actual deterministic-vs-AI precedence rules.
+// The byte-level pipeline is mocked so these tests can prove the AI route
+// never invokes deterministic layout extraction at all.
 vi.mock("@/src/lib/experimental/layout-line-extraction", async (importActual) => {
   const actual =
     await importActual<typeof import("@/src/lib/experimental/layout-line-extraction")>();
@@ -108,7 +108,7 @@ function aiOkResponse(
 }
 
 // currencyType "crypto" keeps reconcileAiInvoiceExtraction a pass-through so
-// the deterministic merge operates on exactly the AI lines returned above.
+// the response carries exactly the AI lines returned above.
 function makeDbWithDigitalPdf(currencyType: "fiat" | "crypto" = "crypto") {
   const document = {
     mimeType: "application/pdf",
@@ -201,16 +201,12 @@ beforeEach(() => {
   mockReadDocument.mockResolvedValue(Buffer.from("PDF bytes"));
 });
 
-// ── Deterministic line precedence ─────────────────────────────────────────────
+// ── AI extraction independence ────────────────────────────────────────────────
 
-describe("deterministic layout lines over born-digital PDFs", () => {
-  it("lets confident deterministic values win and AI fill only unresolved fields", async () => {
-    mockExtractLayout.mockResolvedValue(
-      detResult([
-        detLine(),
-        detLine({ descriptionOriginal: "Support", netAmount: "50", sourceRowIndex: 2 }),
-      ]),
-    );
+describe("AI extraction independence from deterministic layout lines", () => {
+  it("never invokes deterministic layout extraction and returns the AI lines unchanged", async () => {
+    // Even a useful deterministic result must not leak into the AI preview.
+    mockExtractLayout.mockResolvedValue(detResult([detLine()], true));
     fetchSpy.mockImplementation(() =>
       aiOkResponse([AI_LINE, { ...AI_LINE, lineNumber: "2" }]),
     );
@@ -219,132 +215,43 @@ describe("deterministic layout lines over born-digital PDFs", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
 
-    expect(mockReadDocument).toHaveBeenCalledWith("/uploads/invoice.pdf");
-    expect(body.extraction.lines).toHaveLength(2);
-    const line = body.extraction.lines[0];
-    // Deterministic non-null values win over conflicting AI values.
-    expect(line.descriptionOriginal).toBe("Consulting");
-    expect(line.quantity).toBe("2");
-    expect(line.unitPrice).toBe("100");
-    expect(line.netAmount).toBe("200");
-    expect(line.sourcePage).toBe(1);
-    // Null deterministic fields are filled from the aligned AI line.
-    expect(line.lineNumber).toBe("1");
-    expect(line.unit).toBe("pcs");
-    expect(line.vatRate).toBe("5");
-    expect(line.vatAmount).toBe("1.11");
-    expect(line.grossAmount).toBe("1000.00");
-    expect(line.description).toBe("English description");
-    // Header fields remain the AI/provider output.
+    expect(mockExtractLayout).not.toHaveBeenCalled();
+    // The digital text path no longer reads the document bytes at all.
+    expect(mockReadDocument).not.toHaveBeenCalled();
+    expect(body.extraction.lines).toEqual([AI_LINE, { ...AI_LINE, lineNumber: "2" }]);
     expect(body.extraction.invoiceNumber).toBe("INV-001");
   });
 
-  it("does not guess AI pairings when line counts make alignment unsafe", async () => {
-    mockExtractLayout.mockResolvedValue(
-      detResult([
-        detLine(),
-        detLine({ descriptionOriginal: "Support", netAmount: "50", sourceRowIndex: 2 }),
-      ]),
-    );
-    fetchSpy.mockImplementation(() => aiOkResponse([AI_LINE]));
-
-    const res = await POST(makeRequest(1), params(1));
-    expect(res.status).toBe(200);
-    const body = await res.json();
-
-    expect(body.extraction.lines).toHaveLength(2);
-    const line = body.extraction.lines[0];
-    expect(line.netAmount).toBe("200");
-    expect(line.lineNumber).toBeNull();
-    expect(line.unit).toBeNull();
-    expect(line.vatRate).toBeNull();
-    expect(line.grossAmount).toBeNull();
-    expect(line.description).toBeNull();
-    expect(body.extraction.lines[1].descriptionOriginal).toBe("Support");
-  });
-
-  it("runs reconciliation on the final merged extraction, not the raw AI lines", async () => {
+  it("reconciles the AI extraction itself", async () => {
     mockGetDb.mockReturnValue(makeDbWithDigitalPdf("fiat"));
-    // Deterministic nets reconcile to the AI header; the raw AI line nets do
-    // not, so a pre-merge reconciliation would report review-required.
-    mockExtractLayout.mockResolvedValue(
-      detResult([
-        detLine(),
-        detLine({ descriptionOriginal: "Support", netAmount: "50", sourceRowIndex: 2 }),
-      ]),
-    );
     const sparseAiLine = {
       ...AI_LINE,
-      netAmount: "999.99",
+      netAmount: "200.00",
       vatRate: null,
       vatAmount: null,
       grossAmount: null,
     };
     fetchSpy.mockImplementation(() =>
-      aiOkResponse([sparseAiLine, { ...sparseAiLine, lineNumber: "2" }], {
-        netAmount: "250.00",
-        vatAmount: "0.00",
-        grossAmount: "250.00",
-      }),
-    );
-
-    const res = await POST(makeRequest(1), params(1));
-    expect(res.status).toBe(200);
-    const body = await res.json();
-
-    // Only possible when reconciliation saw the merged deterministic nets.
-    expect(body.reconciliation.kind).toBe("vat-prorated");
-    // The returned lines carry the reconciliation transform on top of the
-    // merged deterministic values.
-    expect(body.extraction.lines).toHaveLength(2);
-    expect(body.extraction.lines[0].netAmount).toBe("200");
-    expect(body.extraction.lines[0].vatAmount).toBe("0.00");
-    expect(body.extraction.lines[0].grossAmount).toBe("200.00");
-    expect(body.extraction.lines[1].netAmount).toBe("50");
-    expect(body.extraction.lines[1].grossAmount).toBe("50.00");
-  });
-
-  it("keeps the AI lines exactly when deterministic rows are numeric-only", async () => {
-    // Numeric-only deterministic rows fail the usefulness gate and must not
-    // displace the AI fallback.
-    mockExtractLayout.mockResolvedValue(
-      detResult(
-        [
-          detLine({ descriptionOriginal: null }),
-          detLine({ descriptionOriginal: null, netAmount: "50", sourceRowIndex: 2 }),
-        ],
-        false,
+      aiOkResponse(
+        [sparseAiLine, { ...sparseAiLine, lineNumber: "2", netAmount: "50.00" }],
+        { netAmount: "250.00", vatAmount: "0.00", grossAmount: "250.00" },
       ),
     );
-    fetchSpy.mockImplementation(() =>
-      aiOkResponse([AI_LINE, { ...AI_LINE, lineNumber: "2" }]),
-    );
 
     const res = await POST(makeRequest(1), params(1));
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.extraction.lines).toEqual([AI_LINE, { ...AI_LINE, lineNumber: "2" }]);
-  });
 
-  it("falls back to the AI path unchanged when layout extraction fails", async () => {
-    mockExtractLayout.mockRejectedValue(new Error("pdfjs exploded"));
-    fetchSpy.mockImplementation(() => aiOkResponse([AI_LINE]));
-
-    const res = await POST(makeRequest(1), params(1));
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.extraction.lines).toEqual([AI_LINE]);
-    expect(body.extraction.invoiceNumber).toBe("INV-001");
-  });
-
-  it("keeps the AI path when the document bytes cannot be read", async () => {
-    mockReadDocument.mockRejectedValue(new Error("storage unavailable"));
-    fetchSpy.mockImplementation(() => aiOkResponse([AI_LINE]));
-
-    const res = await POST(makeRequest(1), params(1));
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.extraction.lines).toEqual([AI_LINE]);
+    expect(mockExtractLayout).not.toHaveBeenCalled();
+    // Reconciliation metadata describes the AI output: the AI line nets match
+    // the AI header, so the header VAT is prorated across the AI lines.
+    expect(body.reconciliation.kind).toBe("vat-prorated");
+    expect(body.extraction.lines).toHaveLength(2);
+    expect(body.extraction.lines[0].netAmount).toBe("200.00");
+    expect(body.extraction.lines[0].vatAmount).toBe("0.00");
+    expect(body.extraction.lines[0].grossAmount).toBe("200.00");
+    expect(body.extraction.lines[1].netAmount).toBe("50.00");
+    expect(body.extraction.lines[1].grossAmount).toBe("50.00");
   });
 });
 

@@ -49,7 +49,7 @@ function makeElement(
 /** Hand-built logical table with a header row and plain data rows on page 1. */
 function makeLogicalTable(
   headerTexts: string[],
-  dataRowTexts: string[][],
+  dataRowTexts: (string | string[])[][],
 ): { table: LogicalLineItemTable; evidence: DocumentEvidence } {
   const elements: DocumentEvidenceElement[] = [];
   let order = 0;
@@ -71,10 +71,15 @@ function makeLogicalTable(
   ];
   dataRowTexts.forEach((rowTexts, rowIndex) => {
     const cells = rowTexts.map((text, columnIndex) => {
-      const element = makeElement(1, order, 20 + columnIndex * 60, 120 + rowIndex * 20, text);
-      order += 1;
-      elements.push(element);
-      return { columnIndex, evidenceElementIds: [element.id] };
+      // A cell may carry several evidence fragments (split numeric cells).
+      const fragments = Array.isArray(text) ? text : [text];
+      const ids = fragments.map((fragment) => {
+        const element = makeElement(1, order, 20 + columnIndex * 60, 120 + rowIndex * 20, fragment);
+        order += 1;
+        elements.push(element);
+        return element.id;
+      });
+      return { columnIndex, evidenceElementIds: ids };
     });
     rows.push({
       sourceCandidateId: "cand-1",
@@ -249,8 +254,9 @@ describe("deterministic header mapping", () => {
 
     expect(result.columnFields).toEqual({ 1: "quantity", 2: "netAmount" });
     expect(result.diagnostics.unmappedHeaderTexts).toEqual(["Item"]);
-    expect(result.lines[0].lineNumber).toBeNull();
-    expect(result.lines[0].descriptionOriginal).toBeNull();
+    // Without identity/content the numeric-only row is not a line.
+    expect(result.lines).toEqual([]);
+    expect(result.useful).toBe(false);
   });
 
   it("never guesses bare Price as unitPrice, even beside a quantity column", () => {
@@ -275,8 +281,9 @@ describe("deterministic header mapping", () => {
 
     expect(result.columnFields).toEqual({ 0: "descriptionOriginal" });
     expect(result.diagnostics.unmappedHeaderTexts).toEqual(["Price", "Amount"]);
-    expect(result.lines[0].unitPrice).toBeNull();
-    expect(result.lines[0].netAmount).toBeNull();
+    // A description-only row without numeric evidence is not a line.
+    expect(result.lines).toEqual([]);
+    expect(result.useful).toBe(false);
   });
 
   it("never guesses bare Total as grossAmount", () => {
@@ -293,7 +300,8 @@ describe("deterministic header mapping", () => {
     const bareResult = extractInvoiceLinesFromLogicalTable(bare.table, bare.evidence);
     expect(bareResult.columnFields).toEqual({ 0: "descriptionOriginal" });
     expect(bareResult.diagnostics.unmappedHeaderTexts).toEqual(["Total"]);
-    expect(bareResult.lines[0].grossAmount).toBeNull();
+    // A description-only row without numeric evidence is not a line.
+    expect(bareResult.lines).toEqual([]);
   });
 
   it("rejects duplicate field claims instead of picking one", () => {
@@ -305,8 +313,8 @@ describe("deterministic header mapping", () => {
 
     expect(result.columnFields).toEqual({ 0: "descriptionOriginal" });
     expect(result.diagnostics.conflictingFields).toEqual(["netAmount"]);
-    expect(result.lines[0].netAmount).toBeNull();
-    // Description-only lines fail the usefulness gate.
+    // Description-only rows are not lines and fail the usefulness gate.
+    expect(result.lines).toEqual([]);
     expect(result.useful).toBe(false);
   });
 
@@ -353,8 +361,9 @@ describe("deterministic header mapping", () => {
     // Rate and bare Amount stay unmapped; Item stays unmapped.
     expect(result.columnFields).toEqual({ 1: "quantity", 4: "vatRate" });
     expect(result.diagnostics.unmappedHeaderTexts).toEqual(["Item", "Rate", "Amount"]);
-    expect(result.lines[0].unitPrice).toBeNull();
-    expect(result.lines[0].netAmount).toBeNull();
+    // Without identity/content the numeric-only row is not a line.
+    expect(result.lines).toEqual([]);
+    expect(result.useful).toBe(false);
   });
 });
 
@@ -573,9 +582,8 @@ describe("usefulness gate", () => {
     );
     const result = extractInvoiceLinesFromLogicalTable(table, evidence);
 
-    // The rows are extracted, but they must not displace the AI fallback.
-    expect(result.lines).toHaveLength(2);
-    expect(result.lines[0].netAmount).toBe("200");
+    // Numeric-only rows are not lines at all and never displace the AI fallback.
+    expect(result.lines).toEqual([]);
     expect(result.useful).toBe(false);
   });
 
@@ -603,7 +611,7 @@ describe("usefulness gate", () => {
       [["A-1", "Work"]],
     );
     const result = extractInvoiceLinesFromLogicalTable(table, evidence);
-    expect(result.lines).toHaveLength(1);
+    expect(result.lines).toEqual([]);
     expect(result.useful).toBe(false);
   });
 });
@@ -642,6 +650,114 @@ describe("conservative cell normalization", () => {
     expect(result.lines).toEqual([]);
     expect(result.useful).toBe(false);
     expect(result.diagnostics.unmappedHeaderTexts).toEqual(["Foo", "Bar"]);
+  });
+});
+
+// ── Split numeric cell reconstruction ─────────────────────────────────────────
+
+describe("split numeric cell reconstruction", () => {
+  it("rejoins in-cell numeric fragments without artificial spaces", () => {
+    const { table, evidence } = makeLogicalTable(
+      ["Description", "Qty", "Unit Price", "Amount"],
+      [["Work", ["1", ".", "45"], ["59", ".", "50"], ["103", ".", "23"]]],
+    );
+    const result = extractInvoiceLinesFromLogicalTable(table, evidence);
+
+    expect(result.lines).toHaveLength(1);
+    expect(result.lines[0].quantity).toBe("1.45");
+    expect(result.lines[0].unitPrice).toBe("59.5");
+    expect(result.lines[0].netAmount).toBe("103.23");
+    expect(result.diagnostics.uncertainCellCount).toBe(0);
+  });
+
+  it("rejoins fragments carrying a currency symbol or percent mark", () => {
+    const { table, evidence } = makeLogicalTable(
+      ["Description", "Qty", "Net Amount", "Vat %"],
+      [["Work", ["4", ".", "30"], ["€", "103", ".", "23"], ["19", ".", "00", "%"]]],
+    );
+    const result = extractInvoiceLinesFromLogicalTable(table, evidence);
+
+    expect(result.lines[0].quantity).toBe("4.3");
+    expect(result.lines[0].netAmount).toBe("103.23");
+    expect(result.lines[0].vatRate).toBe("19");
+    expect(result.diagnostics.uncertainCellCount).toBe(0);
+  });
+
+  it("keeps invalid or ambiguous fragment reconstructions null", () => {
+    const { table, evidence } = makeLogicalTable(
+      ["Description", "Qty", "Net Amount"],
+      [
+        // "1,234" stays ambiguous; "abc.def" is not a decimal at all.
+        ["Work", ["1", ",", "234"], ["abc", ".", "def"]],
+      ],
+    );
+    const result = extractInvoiceLinesFromLogicalTable(table, evidence);
+
+    // No numeric evidence survives, so the row is not a line.
+    expect(result.lines).toEqual([]);
+    expect(result.diagnostics.uncertainCellCount).toBe(2);
+  });
+
+  it("never combines evidence across cells and leaves text reconstruction unchanged", () => {
+    const { table, evidence } = makeLogicalTable(
+      ["Description", "Qty"],
+      [[["Full", "Service"], ["1", ".", "45"]]],
+    );
+    const result = extractInvoiceLinesFromLogicalTable(table, evidence);
+
+    // Description fragments keep the normal single-space join.
+    expect(result.lines[0].descriptionOriginal).toBe("Full Service");
+    expect(result.lines[0].quantity).toBe("1.45");
+    // Per-cell provenance is preserved fragment by fragment.
+    expect(result.lines[0].fieldEvidenceElementIds.descriptionOriginal).toHaveLength(2);
+    expect(result.lines[0].fieldEvidenceElementIds.quantity).toHaveLength(3);
+  });
+});
+
+// ── Non-line row exclusion ────────────────────────────────────────────────────
+
+describe("non-line row exclusion", () => {
+  it("drops description-only and notes-only rows", () => {
+    const { table, evidence } = makeLogicalTable(
+      ["Item Code", "Description", "Qty", "Net Amount"],
+      [
+        ["10", "Widget", "2", "10.00"],
+        ["", "Notes: All work carries a 12-month warranty", "", ""],
+        ["", "Thank you for your business", "", ""],
+      ],
+    );
+    const result = extractInvoiceLinesFromLogicalTable(table, evidence);
+
+    expect(result.lines).toHaveLength(1);
+    expect(result.lines[0].lineNumber).toBe("10");
+    expect(result.useful).toBe(true);
+  });
+
+  it("drops numeric-only rows with no identity/content", () => {
+    const { table, evidence } = makeLogicalTable(
+      ["Item Code", "Description", "Qty", "Net Amount"],
+      [
+        ["10", "Widget", "2", "10.00"],
+        ["", "", "1", "5.00"],
+      ],
+    );
+    const result = extractInvoiceLinesFromLogicalTable(table, evidence);
+
+    expect(result.lines).toHaveLength(1);
+    expect(result.lines[0].lineNumber).toBe("10");
+  });
+
+  it("keeps zero numeric values as valid evidence", () => {
+    const { table, evidence } = makeLogicalTable(
+      ["Item Code", "Description", "Qty", "Net Amount"],
+      [["10", "Free of charge replacement", "0", "0.00"]],
+    );
+    const result = extractInvoiceLinesFromLogicalTable(table, evidence);
+
+    expect(result.lines).toHaveLength(1);
+    expect(result.lines[0].quantity).toBe("0");
+    expect(result.lines[0].netAmount).toBe("0");
+    expect(result.useful).toBe(true);
   });
 });
 
@@ -852,5 +968,165 @@ describe("mergeDeterministicWithAiLines", () => {
     for (const line of merged) {
       expect(AiInvoiceLineSchema.safeParse(line).success).toBe(true);
     }
+  });
+});
+
+// ── Real Carfix-shaped layout: split numerics + non-line rows ────────────────
+
+describe("Carfix-shaped two-page table", () => {
+  const CARFIX_HEADER = [
+    "Item Code",
+    "Description",
+    "Qty",
+    "U.Price",
+    "Price",
+    "Disc. %",
+    "Amount",
+    "Vat %",
+  ];
+
+  /** One page's candidate: header (kind given) plus data rows; cells may be split into fragments. */
+  function carfixPageRows(
+    page: number,
+    candidateId: string,
+    headerKind: "header" | "repeated-header",
+    dataRowTexts: (string | string[])[][],
+    elements: DocumentEvidenceElement[],
+    order: { value: number },
+  ): LogicalTableRow[] {
+    const makeRow = (
+      texts: (string | string[])[],
+      rowIndex: number,
+      kind: LogicalTableRow["kind"],
+    ): LogicalTableRow => {
+      const cells = texts.map((text, columnIndex) => {
+        const fragments = Array.isArray(text) ? text : [text];
+        const ids = fragments.map((fragment) => {
+          const element = makeElement(
+            page,
+            order.value,
+            20 + columnIndex * 60,
+            100 + rowIndex * 20,
+            fragment,
+          );
+          order.value += 1;
+          elements.push(element);
+          return element.id;
+        });
+        return { columnIndex, evidenceElementIds: ids };
+      });
+      return {
+        sourceCandidateId: candidateId,
+        sourcePage: page,
+        sourceRowIndex: rowIndex,
+        kind,
+        cells,
+        evidenceElementIds: cells.flatMap((cell) => cell.evidenceElementIds),
+      };
+    };
+    return [
+      makeRow(CARFIX_HEADER, 0, headerKind),
+      ...dataRowTexts.map((texts, index) => makeRow(texts, index + 1, "data")),
+    ];
+  }
+
+  it("yields 22 lines (20 + 2), drops Notes rows, and keeps split page-2 decimals", () => {
+    const elements: DocumentEvidenceElement[] = [];
+    const order = { value: 0 };
+
+    // Page 1: 20 ordinary part lines.
+    const p1Data: string[][] = Array.from({ length: 20 }, (_, index) => {
+      const code = `880100${String(index + 1).padStart(2, "0")}`;
+      return [code, `Part ${index + 1}`, "1", "10.00", "10.00", "0", "10.00", "19"];
+    });
+    const p1Rows = carfixPageRows(1, "cand-p1", "header", p1Data, elements, order);
+
+    // Page 2: two labour lines with split numeric cells, plus four
+    // description-only Notes rows that must never become invoice lines.
+    const p2Data: (string | string[])[][] = [
+      [
+        "99010001",
+        "Service Labour",
+        ["1", ".", "45"],
+        ["59", ".", "50"],
+        "103.23",
+        "0",
+        ["103", ".", "23"],
+        ["19", ".", "00", "%"],
+      ],
+      [
+        "99010004",
+        "General Repair Labour",
+        ["4", ".", "30"],
+        ["59", ".", "50"],
+        "265.44",
+        "0",
+        ["265", ".", "44"],
+        ["19", ".", "00", "%"],
+      ],
+      ["", "Notes:", "", "", "", "", "", ""],
+      ["", "All work carries a 12-month warranty", "", "", "", "", "", ""],
+      ["", "Vehicle collected and returned", "", "", "", "", "", ""],
+      ["", "Thank you for your business", "", "", "", "", "", ""],
+    ];
+    const p2Rows = carfixPageRows(2, "cand-p2", "repeated-header", p2Data, elements, order);
+
+    const rows = [...p1Rows, ...p2Rows];
+    const table: LogicalLineItemTable = {
+      id: "logical-carfix",
+      role: "line_items",
+      linkerVersion: "deterministic-cross-page-link-v1",
+      pages: [1, 2],
+      candidateIds: ["cand-p1", "cand-p2"],
+      columnCount: 8,
+      rowCount: rows.length,
+      dataRowCount: p1Data.length + p2Data.length,
+      repeatedHeaderRowCount: 1,
+      rows,
+      columnAnchorGeometry: {},
+      links: [],
+    };
+    const evidence: DocumentEvidence = {
+      formatVersion: DOCUMENT_EVIDENCE_VERSION,
+      extractorVersion: "test-v1",
+      source: "pdf-text",
+      pages: [
+        { page: 1, dimensions: { width: "600", height: "800", unit: "pdf-point" }, elements: elements.filter((e) => e.page === 1) },
+        { page: 2, dimensions: { width: "600", height: "800", unit: "pdf-point" }, elements: elements.filter((e) => e.page === 2) },
+      ],
+    };
+
+    const result = extractInvoiceLinesFromLogicalTable(table, evidence);
+
+    expect(result.useful).toBe(true);
+    // 26 data rows went in; the four Notes rows come out. 22 lines remain.
+    expect(result.lines).toHaveLength(22);
+    expect(result.lines.filter((line) => line.sourcePage === 1)).toHaveLength(20);
+    expect(result.lines.filter((line) => line.sourcePage === 2)).toHaveLength(2);
+    expect(
+      result.lines.some((line) => line.descriptionOriginal?.startsWith("Notes")),
+    ).toBe(false);
+
+    const labour = result.lines[20];
+    expect(labour).toMatchObject({
+      lineNumber: "99010001",
+      descriptionOriginal: "Service Labour",
+      quantity: "1.45",
+      unitPrice: "59.5",
+      netAmount: "103.23",
+      vatRate: "19",
+      sourcePage: 2,
+    });
+
+    const repair = result.lines[21];
+    expect(repair).toMatchObject({
+      lineNumber: "99010004",
+      descriptionOriginal: "General Repair Labour",
+      quantity: "4.3",
+      unitPrice: "59.5",
+      netAmount: "265.44",
+      vatRate: "19",
+      sourcePage: 2,
+    });
   });
 });

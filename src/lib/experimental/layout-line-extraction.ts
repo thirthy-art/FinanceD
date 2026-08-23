@@ -306,6 +306,13 @@ export function extractInvoiceLinesFromLogicalTable(
   const index = buildEvidenceIndex(evidence);
   const cellText = (evidenceElementIds: string[]): string =>
     evidenceElementIds.map((id) => index.get(id)?.text ?? "").join(" ").trim();
+  // Born-digital numeric cells are often split into several evidence
+  // fragments ("1", ".", "45"). Numeric candidates rejoin their own cell's
+  // fragments in evidence order without artificial spaces; evidence is never
+  // combined across cells or columns. The conservative parser below still
+  // decides validity — ambiguous reconstructions stay null.
+  const numericCellText = (evidenceElementIds: string[]): string =>
+    evidenceElementIds.map((id) => index.get(id)?.text ?? "").join("").trim();
 
   // Header mapping is candidate-local: each physical candidate's header (or
   // repeated-header) row defines its own columnIndex → field mapping, because
@@ -364,9 +371,9 @@ export function extractInvoiceLinesFromLogicalTable(
     for (const cell of row.cells) {
       const field = mapping.columnFields.get(cell.columnIndex);
       if (!field) continue;
-      const text = cellText(cell.evidenceElementIds);
-      if (text === "") continue;
       if (NUMERIC_FIELDS.has(field)) {
+        const text = numericCellText(cell.evidenceElementIds);
+        if (text === "") continue;
         const value = normalizeNumericCell(text, field);
         if (value === null) {
           uncertainCellCount += 1;
@@ -374,15 +381,25 @@ export function extractInvoiceLinesFromLogicalTable(
         }
         line[field] = value;
       } else {
+        const text = cellText(cell.evidenceElementIds);
+        if (text === "") continue;
         line[field] = text;
       }
       line.fieldEvidenceElementIds[field] = cell.evidenceElementIds;
     }
-    // Structure-only rows carry no field values and never become lines.
-    const hasValue = (
-      Object.keys(line.fieldEvidenceElementIds) as LayoutInvoiceLineField[]
-    ).some((field) => line[field] !== null);
-    if (hasValue) lines.push(line);
+    // Non-line rows (notes, description-only continuations, bare numerics)
+    // never become invoice lines: a row needs BOTH identity/content (a
+    // description or a confidently mapped line number) AND numeric evidence.
+    // Zero numeric values count as evidence like any other parsed value.
+    const hasIdentity = line.descriptionOriginal !== null || line.lineNumber !== null;
+    const hasNumericEvidence =
+      line.quantity !== null ||
+      line.unitPrice !== null ||
+      line.netAmount !== null ||
+      line.vatRate !== null ||
+      line.vatAmount !== null ||
+      line.grossAmount !== null;
+    if (hasIdentity && hasNumericEvidence) lines.push(line);
   }
 
   // Usefulness gate: at least one emitted line must carry BOTH a meaningful
