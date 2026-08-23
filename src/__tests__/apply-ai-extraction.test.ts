@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AiInvoiceExtraction } from "@/src/lib/ai-extraction";
 import { AiInvoiceExtractionSchema } from "@/src/lib/ai-extraction";
-import { applyExtractionLines, applyExtractionToDraft, extractionLinesToEditable } from "@/src/lib/apply-ai-extraction";
+import { applyExtractionLines, applyExtractionToDraft, extractionLinesToEditable, invoiceLinesSignature } from "@/src/lib/apply-ai-extraction";
 import { sumInvoiceLineAmounts } from "@/src/lib/invoice-lines";
 
 const extraction: AiInvoiceExtraction = {
@@ -119,14 +119,40 @@ describe("applying AI extraction", () => {
     expect(result.skippedFields).toContain("Invoice date (unrecognized date)");
   });
 
-  it("keeps manually edited invoice lines protected", () => {
+  it("replaces an untouched deterministic initial-line baseline", () => {
     const extractedLines = extractionLinesToEditable(extraction);
-    const manualLines = [{ ...extractedLines[0], description: "Manual description" }];
-    const result = applyExtractionLines(manualLines, extractedLines, null);
+    const deterministicLines = [{ ...extractedLines[0], description: "Deterministic description" }];
+    const result = applyExtractionLines(
+      deterministicLines,
+      extractedLines,
+      null,
+      invoiceLinesSignature(deterministicLines),
+    );
+
+    expect(result.applied).toBe(true);
+    expect(result.lines).toEqual(extractedLines);
+  });
+
+  it("keeps deterministic initial lines protected after a manual edit", () => {
+    const extractedLines = extractionLinesToEditable(extraction);
+    const deterministicLines = [{ ...extractedLines[0], description: "Deterministic description" }];
+    const deterministicSignature = invoiceLinesSignature(deterministicLines);
+    const editedLines = [{ ...deterministicLines[0], description: "Manual description" }];
+    const result = applyExtractionLines(editedLines, extractedLines, null, deterministicSignature);
 
     expect(result.applied).toBe(false);
-    expect(result.lines).toBe(manualLines);
+    expect(result.lines).toBe(editedLines);
     expect(result.lines[0].description).toBe("Manual description");
+  });
+
+  it("keeps persisted or otherwise existing invoice lines protected", () => {
+    const extractedLines = extractionLinesToEditable(extraction);
+    const existingLines = [{ ...extractedLines[0], description: "Persisted description" }];
+    const result = applyExtractionLines(existingLines, extractedLines, null);
+
+    expect(result.applied).toBe(false);
+    expect(result.lines).toBe(existingLines);
+    expect(result.lines[0].description).toBe("Persisted description");
   });
 
   it("reapplying the same extraction replaces its lines without duplicating them", () => {

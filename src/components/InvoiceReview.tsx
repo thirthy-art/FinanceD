@@ -7,7 +7,7 @@ import type { AiInvoiceReconciliationInfo } from "@/src/lib/ai-invoice-reconcili
 import type { EditableInvoiceLine } from "@/src/lib/invoice-lines";
 import { editableLineToInput, applyAutoCalcToLine, isCompletelyEmptyLine, parsePageInput, checkLineTotalsForApproval, fillMissingLineNumbers } from "@/src/lib/invoice-lines";
 import { buildTextExtractionFallbackLine } from "@/src/lib/local-invoice-parser";
-import { applyExtractionLines, applyExtractionToDraft, extractionLinesToEditable } from "@/src/lib/apply-ai-extraction";
+import { applyExtractionLines, applyExtractionToDraft, extractionLinesToEditable, invoiceLinesSignature } from "@/src/lib/apply-ai-extraction";
 import InvoiceLinesEditor from "@/src/components/InvoiceLinesEditor";
 import { selectableExpenseAccounts, selectablePrepaidAssetAccounts } from "@/src/lib/coa-hierarchy";
 import { useI18n } from "@/src/i18n/context";
@@ -44,6 +44,7 @@ interface Invoice {
 interface Props {
   invoice: Invoice;
   documents: Document[];
+  initialLinesAreDeterministic: boolean;
   lines: EditableInvoiceLine[];
   vendors: Vendor[];
   costCentres: CostCentre[];
@@ -257,7 +258,7 @@ function AiExtractionPreview({
   );
 }
 
-export default function InvoiceReview({ invoice, documents, lines, vendors, costCentres, accounts, extractedFields, baseCurrency }: Props) {
+export default function InvoiceReview({ invoice, documents, initialLinesAreDeterministic, lines, vendors, costCentres, accounts, extractedFields, baseCurrency }: Props) {
   const router = useRouter();
   const { t, locale } = useI18n();
   const ir = t.invoiceReview;
@@ -304,6 +305,9 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
     );
     return fillMissingLineNumbers(fallback ? [fallback] : lines);
   });
+  const [deterministicInitialLineSignature] = useState<string | null>(() =>
+    initialLinesAreDeterministic ? invoiceLinesSignature(editableLines) : null
+  );
   const [lastAppliedLineSignature, setLastAppliedLineSignature] = useState<string | null>(null);
   const [applyNotice, setApplyNotice] = useState<{ applied: string[]; skipped: string[]; warnings: string[] } | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -481,6 +485,7 @@ export default function InvoiceReview({ invoice, documents, lines, vendors, cost
       editableLines,
       extractionLinesToEditable(aiExtraction),
       lastAppliedLineSignature,
+      deterministicInitialLineSignature,
     );
 
     const applied = [...draftResult.appliedFields];

@@ -98,6 +98,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
       <InvoiceReview
         invoice={invoice}
         documents={docs}
+        initialLinesAreDeterministic={deterministicLines !== null}
         lines={deterministicLines ?? lines.map((line) => ({
           id: line.id,
           lineNumber: line.lineNumber ?? "",

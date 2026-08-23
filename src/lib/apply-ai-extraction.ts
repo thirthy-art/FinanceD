@@ -131,9 +131,13 @@ export function applyExtractionLines(
   currentLines: EditableInvoiceLine[],
   extractedLines: EditableInvoiceLine[],
   lastAppliedSignature: string | null,
+  deterministicInitialSignature: string | null = null,
 ): { lines: EditableInvoiceLine[]; applied: boolean; signature: string | null } {
-  const currentIsLastApplied = lastAppliedSignature !== null && invoiceLinesSignature(currentLines) === lastAppliedSignature;
-  if (currentLines.length > 0 && !currentIsLastApplied) {
+  const currentSignature = invoiceLinesSignature(currentLines);
+  const currentIsLastApplied = lastAppliedSignature !== null && currentSignature === lastAppliedSignature;
+  const currentIsUntouchedDeterministic = deterministicInitialSignature !== null
+    && currentSignature === deterministicInitialSignature;
+  if (currentLines.length > 0 && !currentIsLastApplied && !currentIsUntouchedDeterministic) {
     return { lines: currentLines, applied: false, signature: lastAppliedSignature };
   }
   const lines = extractedLines.map((line) => ({ ...line }));
