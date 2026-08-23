@@ -220,58 +220,85 @@ describe("deterministic header mapping", () => {
     expect(line.unit).toBeNull();
   });
 
-  it("resolves bare Price to unitPrice only when a quantity column makes it safe", () => {
-    const safe = makeLogicalTable(
+  it("keeps explicit Item Code / Unit Price / Net Amount mappings working", () => {
+    const { table, evidence } = makeLogicalTable(
+      ["Item Code", "Unit Price", "Net Amount"],
+      [["A-1", "25.00", "25.00"]],
+    );
+    const result = extractInvoiceLinesFromLogicalTable(table, evidence);
+
+    expect(result.columnFields).toEqual({
+      0: "lineNumber",
+      1: "unitPrice",
+      2: "netAmount",
+    });
+    expect(result.useful).toBe(true);
+    expect(result.lines[0]).toMatchObject({
+      lineNumber: "A-1",
+      unitPrice: "25",
+      netAmount: "25",
+    });
+  });
+
+  it("never maps bare Item to lineNumber", () => {
+    const { table, evidence } = makeLogicalTable(
+      ["Item", "Qty", "Net Amount"],
+      [["Widget", "2", "10.00"]],
+    );
+    const result = extractInvoiceLinesFromLogicalTable(table, evidence);
+
+    expect(result.columnFields).toEqual({ 1: "quantity", 2: "netAmount" });
+    expect(result.diagnostics.unmappedHeaderTexts).toEqual(["Item"]);
+    expect(result.lines[0].lineNumber).toBeNull();
+    expect(result.lines[0].descriptionOriginal).toBeNull();
+  });
+
+  it("never guesses bare Price as unitPrice, even beside a quantity column", () => {
+    const { table, evidence } = makeLogicalTable(
       ["Description", "Qty", "Price"],
       [["Work", "3", "12.50"]],
     );
-    const safeResult = extractInvoiceLinesFromLogicalTable(safe.table, safe.evidence);
-    expect(safeResult.columnFields).toEqual({
-      0: "descriptionOriginal",
-      1: "quantity",
-      2: "unitPrice",
-    });
-    expect(safeResult.lines[0].unitPrice).toBe("12.5");
+    const result = extractInvoiceLinesFromLogicalTable(table, evidence);
 
-    const ambiguous = makeLogicalTable(
+    expect(result.columnFields).toEqual({ 0: "descriptionOriginal", 1: "quantity" });
+    expect(result.diagnostics.unmappedHeaderTexts).toEqual(["Price"]);
+    expect(result.lines[0].unitPrice).toBeNull();
+    expect(result.lines[0].netAmount).toBeNull();
+  });
+
+  it("never guesses bare Amount as netAmount outside the Qty x unit-price layout", () => {
+    const { table, evidence } = makeLogicalTable(
       ["Description", "Price", "Amount"],
       [["Work", "12.50", "37.50"]],
     );
-    const ambiguousResult = extractInvoiceLinesFromLogicalTable(
-      ambiguous.table,
-      ambiguous.evidence,
-    );
-    expect(ambiguousResult.columnFields).toEqual({
-      0: "descriptionOriginal",
-      2: "netAmount",
-    });
-    expect(ambiguousResult.diagnostics.unmappedHeaderTexts).toEqual(["Price"]);
-    expect(ambiguousResult.lines[0].unitPrice).toBeNull();
+    const result = extractInvoiceLinesFromLogicalTable(table, evidence);
+
+    expect(result.columnFields).toEqual({ 0: "descriptionOriginal" });
+    expect(result.diagnostics.unmappedHeaderTexts).toEqual(["Price", "Amount"]);
+    expect(result.lines[0].unitPrice).toBeNull();
+    expect(result.lines[0].netAmount).toBeNull();
   });
 
-  it("resolves bare Total to grossAmount only when a net column makes it safe", () => {
-    const safe = makeLogicalTable(
+  it("never guesses bare Total as grossAmount", () => {
+    const withNet = makeLogicalTable(
       ["Description", "Net", "Total"],
       [["Work", "100.00", "123.00"]],
     );
-    const safeResult = extractInvoiceLinesFromLogicalTable(safe.table, safe.evidence);
-    expect(safeResult.columnFields[1]).toBe("netAmount");
-    expect(safeResult.columnFields[2]).toBe("grossAmount");
-    expect(safeResult.lines[0].grossAmount).toBe("123");
+    const netResult = extractInvoiceLinesFromLogicalTable(withNet.table, withNet.evidence);
+    expect(netResult.columnFields).toEqual({ 0: "descriptionOriginal", 1: "netAmount" });
+    expect(netResult.diagnostics.unmappedHeaderTexts).toEqual(["Total"]);
+    expect(netResult.lines[0].grossAmount).toBeNull();
 
-    const ambiguous = makeLogicalTable(["Description", "Total"], [["Work", "123.00"]]);
-    const ambiguousResult = extractInvoiceLinesFromLogicalTable(
-      ambiguous.table,
-      ambiguous.evidence,
-    );
-    expect(ambiguousResult.columnFields).toEqual({ 0: "descriptionOriginal" });
-    expect(ambiguousResult.diagnostics.unmappedHeaderTexts).toEqual(["Total"]);
-    expect(ambiguousResult.lines[0].grossAmount).toBeNull();
+    const bare = makeLogicalTable(["Description", "Total"], [["Work", "123.00"]]);
+    const bareResult = extractInvoiceLinesFromLogicalTable(bare.table, bare.evidence);
+    expect(bareResult.columnFields).toEqual({ 0: "descriptionOriginal" });
+    expect(bareResult.diagnostics.unmappedHeaderTexts).toEqual(["Total"]);
+    expect(bareResult.lines[0].grossAmount).toBeNull();
   });
 
   it("rejects duplicate field claims instead of picking one", () => {
     const { table, evidence } = makeLogicalTable(
-      ["Description", "Amount", "Net Amount"],
+      ["Description", "Net", "Net Amount"],
       [["Work", "100.00", "100.00"]],
     );
     const result = extractInvoiceLinesFromLogicalTable(table, evidence);
@@ -279,7 +306,55 @@ describe("deterministic header mapping", () => {
     expect(result.columnFields).toEqual({ 0: "descriptionOriginal" });
     expect(result.diagnostics.conflictingFields).toEqual(["netAmount"]);
     expect(result.lines[0].netAmount).toBeNull();
-    // One mapped field and no numeric column is below the usefulness gate.
+    // Description-only lines fail the usefulness gate.
+    expect(result.useful).toBe(false);
+  });
+});
+
+// ── Usefulness gate ───────────────────────────────────────────────────────────
+
+describe("usefulness gate", () => {
+  it("fails for numeric-only rows with no identity/content column", () => {
+    const { table, evidence } = makeLogicalTable(
+      ["Qty", "Unit Price", "Net Amount"],
+      [
+        ["2", "100.00", "200.00"],
+        ["1", "50.00", "50.00"],
+      ],
+    );
+    const result = extractInvoiceLinesFromLogicalTable(table, evidence);
+
+    // The rows are extracted, but they must not displace the AI fallback.
+    expect(result.lines).toHaveLength(2);
+    expect(result.lines[0].netAmount).toBe("200");
+    expect(result.useful).toBe(false);
+  });
+
+  it("passes with description plus numeric evidence", () => {
+    const { table, evidence } = makeLogicalTable(
+      ["Description", "Net Amount"],
+      [["Work", "100.00"]],
+    );
+    const result = extractInvoiceLinesFromLogicalTable(table, evidence);
+    expect(result.useful).toBe(true);
+  });
+
+  it("passes with a confidently mapped line number plus numeric evidence", () => {
+    const { table, evidence } = makeLogicalTable(
+      ["Item Code", "Net Amount"],
+      [["A-1", "100.00"]],
+    );
+    const result = extractInvoiceLinesFromLogicalTable(table, evidence);
+    expect(result.useful).toBe(true);
+  });
+
+  it("fails when identity exists but no numeric evidence does", () => {
+    const { table, evidence } = makeLogicalTable(
+      ["Item Code", "Description"],
+      [["A-1", "Work"]],
+    );
+    const result = extractInvoiceLinesFromLogicalTable(table, evidence);
+    expect(result.lines).toHaveLength(1);
     expect(result.useful).toBe(false);
   });
 });
@@ -289,7 +364,7 @@ describe("deterministic header mapping", () => {
 describe("conservative cell normalization", () => {
   it("normalizes edge currency and percent marks without floating point", () => {
     const { table, evidence } = makeLogicalTable(
-      ["Description", "Qty", "Amount", "Vat %"],
+      ["Description", "Qty", "Net Amount", "Vat %"],
       [["Work", "2", "€1,234.56", "23%"]],
     );
     const result = extractInvoiceLinesFromLogicalTable(table, evidence);
@@ -300,7 +375,7 @@ describe("conservative cell normalization", () => {
 
   it("turns ambiguous locale/grouping forms into null instead of guessing", () => {
     const { table, evidence } = makeLogicalTable(
-      ["Description", "Qty", "Amount"],
+      ["Description", "Qty", "Net Amount"],
       [["Work", "1,234", "10.00"]],
     );
     const result = extractInvoiceLinesFromLogicalTable(table, evidence);
@@ -326,7 +401,7 @@ describe("conservative cell normalization", () => {
 describe("provenance and reproducibility", () => {
   it("preserves page, row, and per-field evidence provenance deterministically", () => {
     const { table, evidence } = makeLogicalTable(
-      ["Description", "Qty", "Amount"],
+      ["Description", "Qty", "Net Amount"],
       [["Consulting", "2", "200.00"]],
     );
     const first = extractInvoiceLinesFromLogicalTable(table, evidence);
@@ -370,14 +445,14 @@ describe("logical table row kinds", () => {
     const evidence = makePagedEvidence([
       {
         page: 1,
-        rows: tableRows(100, ["Description", "Qty", "Amount"], [
+        rows: tableRows(100, ["Description", "Qty", "Net Amount"], [
           ["Consulting", "2", "200.00"],
           ["Support", "1", "50.00"],
         ]),
       },
       {
         page: 2,
-        rows: tableRows(100, ["Description", "Qty", "Amount"], [
+        rows: tableRows(100, ["Description", "Qty", "Net Amount"], [
           ["Hosting", "1", "80.00"],
           ["Backup", "1", "30.00"],
         ]),
@@ -401,11 +476,11 @@ describe("logical table row kinds", () => {
     const evidence = makePagedEvidence([
       {
         page: 1,
-        rows: tableRows(100, ["Description", "Qty", "Amount"], [["Consulting", "2", "200.00"]]),
+        rows: tableRows(100, ["Description", "Qty", "Net Amount"], [["Consulting", "2", "200.00"]]),
       },
       {
         page: 2,
-        rows: tableRows(100, ["Description", "Qty", "Amount"], [["Hosting", "1", "80.00"]]),
+        rows: tableRows(100, ["Description", "Qty", "Net Amount"], [["Hosting", "1", "80.00"]]),
       },
     ]);
     const logicalTables = fullPipeline(evidence);
@@ -426,7 +501,7 @@ describe("logical table row kinds", () => {
         page: 1,
         rows: [
           [cell(20, 60, "Invoice"), cell(300, 60, "INV-001")],
-          ...tableRows(100, ["Description", "Qty", "Amount"], [
+          ...tableRows(100, ["Description", "Qty", "Net Amount"], [
             ["Consulting", "2", "200.00"],
             ["Support", "1", "50.00"],
           ]),

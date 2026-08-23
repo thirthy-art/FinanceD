@@ -91,11 +91,16 @@ export interface LayoutLineExtractionResult {
 
 type HeaderResolution =
   | { kind: "field"; field: LayoutInvoiceLineField }
-  | { kind: "ambiguous"; concept: "price" | "total" }
+  | { kind: "amount" }
   | { kind: "unsupported" }
   | null;
 
-/** Exact aliases, matched on the squashed normalized header form. */
+/**
+ * Exact aliases, matched on the squashed normalized header form. Only headers
+ * whose own wording makes the FinanceD field clear are listed; bare "Item",
+ * "Price", and "Total" stay unmapped because their meaning varies across
+ * invoices.
+ */
 const EXACT_HEADER_ALIASES: Readonly<Record<string, LayoutInvoiceLineField>> = {
   line: "lineNumber",
   lineno: "lineNumber",
@@ -104,7 +109,6 @@ const EXACT_HEADER_ALIASES: Readonly<Record<string, LayoutInvoiceLineField>> = {
   nr: "lineNumber",
   pos: "lineNumber",
   position: "lineNumber",
-  item: "lineNumber",
   itemno: "lineNumber",
   itemnumber: "lineNumber",
   itemcode: "lineNumber",
@@ -128,7 +132,6 @@ const EXACT_HEADER_ALIASES: Readonly<Record<string, LayoutInvoiceLineField>> = {
   net: "netAmount",
   netamount: "netAmount",
   lineamount: "netAmount",
-  amount: "netAmount",
   "vat%": "vatRate",
   vatrate: "vatRate",
   "tax%": "vatRate",
@@ -153,12 +156,6 @@ const UNSUPPORTED_HEADERS: ReadonlySet<string> = new Set([
   "discount%",
 ]);
 
-/** Bare Price/Total are ambiguous; context may resolve them safely later. */
-const AMBIGUOUS_HEADERS: Readonly<Record<string, "price" | "total">> = {
-  price: "price",
-  total: "total",
-};
-
 function normalizeHeaderText(text: string): string {
   return text
     .toLowerCase()
@@ -174,8 +171,7 @@ function resolveHeader(text: string): HeaderResolution {
   const exact = EXACT_HEADER_ALIASES[squashed];
   if (exact) return { kind: "field", field: exact };
   if (UNSUPPORTED_HEADERS.has(squashed)) return { kind: "unsupported" };
-  const ambiguous = AMBIGUOUS_HEADERS[squashed];
-  if (ambiguous) return { kind: "ambiguous", concept: ambiguous };
+  if (squashed === "amount") return { kind: "amount" };
   return null;
 }
 
@@ -188,14 +184,15 @@ interface ColumnMapping {
 
 /**
  * Maps header columns to fields. Duplicate claims on one field reject every
- * claiming column; bare Price/Total resolve only when the surrounding mapped
- * headers make one meaning uniquely safe, otherwise they stay unmapped.
+ * claiming column. Bare "Amount" is a line net only in the narrow Qty × unit
+ * price layout (a confidently mapped unitPrice column); otherwise it stays
+ * unmapped rather than guessed.
  */
 function mapHeaderColumns(
   headerCells: Array<{ columnIndex: number; text: string }>,
 ): ColumnMapping {
   const claims = new Map<number, LayoutInvoiceLineField>();
-  const ambiguous = new Map<number, "price" | "total">();
+  const amountColumns: number[] = [];
   const unmappedHeaderTexts: string[] = [];
   const unsupportedHeaderTexts: string[] = [];
 
@@ -203,8 +200,8 @@ function mapHeaderColumns(
     const resolution = resolveHeader(cell.text);
     if (resolution?.kind === "field") {
       claims.set(cell.columnIndex, resolution.field);
-    } else if (resolution?.kind === "ambiguous") {
-      ambiguous.set(cell.columnIndex, resolution.concept);
+    } else if (resolution?.kind === "amount") {
+      amountColumns.push(cell.columnIndex);
     } else if (resolution?.kind === "unsupported") {
       unsupportedHeaderTexts.push(cell.text);
     } else if (cell.text.trim() !== "") {
@@ -212,21 +209,18 @@ function mapHeaderColumns(
     }
   }
 
-  // Bare Price is a unit price only when a quantity column exists; bare Total
-  // is line gross only when a line net column exists. Either way the target
-  // field must still be free.
   const claimedFields = new Set(claims.values());
-  for (const [columnIndex, concept] of ambiguous) {
-    if (concept === "price" && claimedFields.has("quantity") && !claimedFields.has("unitPrice")) {
-      claims.set(columnIndex, "unitPrice");
-    } else if (
-      concept === "total" &&
-      claimedFields.has("netAmount") &&
-      !claimedFields.has("grossAmount")
-    ) {
-      claims.set(columnIndex, "grossAmount");
+  const amountResolves =
+    amountColumns.length === 1 &&
+    claimedFields.has("unitPrice") &&
+    !claimedFields.has("netAmount");
+  for (const columnIndex of amountColumns) {
+    if (amountResolves) {
+      claims.set(columnIndex, "netAmount");
     } else {
-      unmappedHeaderTexts.push(headerCells.find((c) => c.columnIndex === columnIndex)?.text ?? "");
+      unmappedHeaderTexts.push(
+        headerCells.find((c) => c.columnIndex === columnIndex)?.text ?? "",
+      );
     }
   }
 
@@ -338,15 +332,22 @@ export function extractInvoiceLinesFromLogicalTable(
     if (hasValue) lines.push(line);
   }
 
-  const mappedFields = new Set(mapping.columnFields.values());
-  const mappedNumericCount = [...mappedFields].filter((field) =>
-    NUMERIC_FIELDS.has(field),
-  ).length;
+  // Usefulness gate: at least one emitted line must carry BOTH a meaningful
+  // identity/content field (description or confidently mapped line number)
+  // AND deterministic numeric evidence. Numeric-only rows never displace the
+  // existing AI fallback.
   const useful =
     headerRow !== undefined &&
-    lines.length > 0 &&
-    mappedFields.size >= 2 &&
-    mappedNumericCount >= 1;
+    lines.some(
+      (line) =>
+        (line.descriptionOriginal !== null || line.lineNumber !== null) &&
+        (line.quantity !== null ||
+          line.unitPrice !== null ||
+          line.netAmount !== null ||
+          line.vatRate !== null ||
+          line.vatAmount !== null ||
+          line.grossAmount !== null),
+    );
 
   return {
     extractorVersion: LAYOUT_LINE_EXTRACTOR_VERSION,

@@ -193,19 +193,21 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     return errorResponse("The configured AI extraction services could not return valid invoice data. Try again later.", 502);
   }
 
-  const { extraction: reconciledExtraction, reconciliation } =
-    reconcileAiInvoiceExtraction(chainResult.extraction, document.currencyType);
-
   // Useful deterministic layout lines override the AI lines; deterministic
   // non-null values win and AI may only fill unresolved fields. Without useful
   // deterministic output the AI lines are the unchanged fallback.
-  const extraction =
+  const mergedExtraction =
     layoutLines && layoutLines.useful
       ? {
-          ...reconciledExtraction,
-          lines: mergeDeterministicWithAiLines(layoutLines.lines, reconciledExtraction.lines),
+          ...chainResult.extraction,
+          lines: mergeDeterministicWithAiLines(layoutLines.lines, chainResult.extraction.lines),
         }
-      : reconciledExtraction;
+      : chainResult.extraction;
+
+  // Reconciliation runs on the final merged extraction so its metadata always
+  // describes the returned values.
+  const { extraction, reconciliation } =
+    reconcileAiInvoiceExtraction(mergedExtraction, document.currencyType);
 
   return Response.json({
     extraction,
