@@ -10,6 +10,11 @@ import { reconcileAiInvoiceExtraction } from "@/src/lib/ai-invoice-reconciliatio
 import { getAiProviderCandidates } from "@/src/lib/ai-provider";
 import { isKnownImageIncompatibleModel, runAiProviderChain } from "@/src/lib/ai-provider-chain";
 import { DocumentNotFoundError, readDocument } from "@/src/lib/document-storage";
+import {
+  extractDeterministicLayoutInvoiceLines,
+  mergeDeterministicWithAiLines,
+  type LayoutLineExtractionResult,
+} from "@/src/lib/experimental/layout-line-extraction";
 
 export const runtime = "nodejs";
 
@@ -68,6 +73,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   let userContent: string | Array<Record<string, unknown>>;
   let vision = false;
+  let layoutLines: LayoutLineExtractionResult | null = null;
 
   if (IMAGE_MIME_TYPES.has(document.mimeType)) {
     vision = true;
@@ -98,6 +104,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const extractedText = document.extractedText?.trim();
     if (extractedText && !forceImage) {
       userContent = `${AI_EXTRACTION_PROMPT}\n\nINVOICE TEXT START\n${extractedText}\nINVOICE TEXT END`;
+
+      // Best-effort deterministic line extraction from the PDF layout. Any
+      // failure is non-fatal: the AI path below continues unchanged.
+      try {
+        const pdfBytes = await readDocument(document.storagePath);
+        layoutLines = await extractDeterministicLayoutInvoiceLines(pdfBytes);
+      } catch {
+        layoutLines = null;
+      }
     } else {
       vision = true;
       // Scanned PDF fallback: render pages locally and send as images to AI
@@ -181,8 +196,19 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const { extraction: reconciledExtraction, reconciliation } =
     reconcileAiInvoiceExtraction(chainResult.extraction, document.currencyType);
 
+  // Useful deterministic layout lines override the AI lines; deterministic
+  // non-null values win and AI may only fill unresolved fields. Without useful
+  // deterministic output the AI lines are the unchanged fallback.
+  const extraction =
+    layoutLines && layoutLines.useful
+      ? {
+          ...reconciledExtraction,
+          lines: mergeDeterministicWithAiLines(layoutLines.lines, reconciledExtraction.lines),
+        }
+      : reconciledExtraction;
+
   return Response.json({
-    extraction: reconciledExtraction,
+    extraction,
     reconciliation,
     providerMetadata: chainResult.metadata,
   });

@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["pdf-parse", "tesseract.js", "pg"],
+  serverExternalPackages: ["pdf-parse", "pdfjs-dist", "tesseract.js", "pg"],
   experimental: {},
 };
 

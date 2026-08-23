@@ -6,6 +6,12 @@ vi.mock("server-only", () => ({}));
 // vi.mock calls are hoisted by Vitest and run before any imports.
 
 vi.mock("pdf-parse", () => ({ PDFParse: vi.fn() }));
+// Deterministic layout extraction is exercised in its own focused tests; here
+// it always reports no useful lines so the AI path remains the only behavior.
+vi.mock("@/src/lib/experimental/layout-line-extraction", () => ({
+  extractDeterministicLayoutInvoiceLines: vi.fn().mockResolvedValue(null),
+  mergeDeterministicWithAiLines: vi.fn(),
+}));
 vi.mock("@/src/db", () => ({ getDb: vi.fn() }));
 vi.mock("@/src/lib/active-company", () => ({
   getActiveCompanyFromRequest: vi.fn().mockResolvedValue({ id: 1, baseCurrency: "EUR" }),
@@ -166,9 +172,10 @@ describe("digital PDF with extracted text", () => {
 
     expect(res.status).toBe(200);
 
-    // PDFParse must not have been instantiated
+    // PDFParse must not have been instantiated; the PDF bytes are read only
+    // for the best-effort deterministic layout attempt, never for rendering.
     expect(MockPDFParse).not.toHaveBeenCalled();
-    expect(mockReadDocument).not.toHaveBeenCalled();
+    expect(mockReadDocument).toHaveBeenCalledWith("/uploads/invoice.pdf");
 
     // AI fetch body must contain extracted text, not image_url items
     const fetchBody = JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string);
