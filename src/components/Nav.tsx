@@ -24,6 +24,7 @@ export default function Nav() {
   ];
   const menuLinks = [
     ...primaryLinks.map((link) => ({ ...link, mobileOnly: true })),
+    { href: "/reconciliation", label: t.nav.reconciliation, mobileOnly: false },
     { href: "/budget", label: t.nav.budget, mobileOnly: false },
     { href: "/settings/vendors", label: t.nav.vendors, mobileOnly: false },
     { href: "/settings/chart-of-accounts", label: t.nav.chartOfAccounts, mobileOnly: false },

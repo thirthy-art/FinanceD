@@ -1,0 +1,23 @@
+import type { MatchStatus, ReconciliationSource } from "@/src/lib/reconciliation/types";
+
+export interface UiTransaction {
+  id: number;
+  source: ReconciliationSource;
+  externalId: string | null;
+  playerId: string | null;
+  type: "deposit" | "withdrawal";
+  amount: string;
+  currency: string;
+  eventDate: string | null;
+  status: string | null;
+  matchStatus: MatchStatus;
+  linkedTransactionId: number | null;
+}
+
+export interface UiImport {
+  id: number;
+  source: ReconciliationSource;
+  originalFilename: string;
+  rowCount: number;
+  createdAt: string;
+}
