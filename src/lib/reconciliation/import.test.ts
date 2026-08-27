@@ -54,6 +54,20 @@ describe("CSV import normalization", () => {
     expect(parsed.transactions[0].transactionType).toBe("deposit");
     expect(parsed.transactions[1].transactionType).toBe("withdrawal");
     expect(parsed.transactions[0].status).toBe("settled");
+    expect(parsed.transactions[0].externalId).toBe("P-900");
+    expect(parsed.transactions[0].statusProvided).toBe(true);
+  });
+
+  it("normalizes signed deposit and withdrawal amounts to positive magnitudes", () => {
+    const parsed = parseReconciliationCsv(
+      "player_ledger",
+      "transaction_id,type,amount,currency\nD-1,deposit,-100.00,EUR\nW-1,withdrawal,-40.50,EUR"
+    );
+    expect(parsed.transactions.map((transaction) => transaction.amount)).toEqual(["100", "40.5"]);
+    expect(parsed.transactions.map((transaction) => transaction.transactionType)).toEqual([
+      "deposit",
+      "withdrawal",
+    ]);
   });
 });
 

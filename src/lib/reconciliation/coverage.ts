@@ -1,5 +1,6 @@
 import { Decimal } from "@/src/lib/decimal";
 import type { ReconciliationTransaction } from "./types";
+import { isPspStatusEligible } from "./match";
 
 /**
  * Client Funds coverage summary.
@@ -38,6 +39,16 @@ export interface CoverageSummary {
   pspTotals: CoverageTotal[];
 }
 
+export type CoverageDifferenceKind = "surplus" | "shortfall" | "balanced" | "unavailable";
+
+export function coverageDifferenceKind(value: string | null): CoverageDifferenceKind {
+  if (value === null) return "unavailable";
+  const comparison = new Decimal(value).comparedTo(0);
+  if (comparison > 0) return "surplus";
+  if (comparison < 0) return "shortfall";
+  return "balanced";
+}
+
 function sumByCurrency(
   transactions: Array<{ amount: string | number; currency: string }>
 ): Map<string, Decimal> {
@@ -57,8 +68,11 @@ export function computeCoverage(
 ): CoverageSummary {
   const playerDeposits = ledger.filter((tx) => tx.transactionType === "deposit");
   const playerWithdrawals = ledger.filter((tx) => tx.transactionType === "withdrawal");
-  const pspDeposits = psp.filter((tx) => tx.transactionType === "deposit");
-  const pspWithdrawals = psp.filter((tx) => tx.transactionType === "withdrawal");
+  const eligiblePsp = psp.filter((tx) =>
+    isPspStatusEligible({ status: tx.status, statusProvided: tx.statusProvided })
+  );
+  const pspDeposits = eligiblePsp.filter((tx) => tx.transactionType === "deposit");
+  const pspWithdrawals = eligiblePsp.filter((tx) => tx.transactionType === "withdrawal");
 
   const playerNet = sumByCurrency([...playerDeposits, ...playerWithdrawals.map((tx) => ({ amount: `-${tx.amount}`, currency: tx.currency }))]);
   const pspNet = sumByCurrency([...pspDeposits, ...pspWithdrawals.map((tx) => ({ amount: `-${tx.amount}`, currency: tx.currency }))]);

@@ -24,6 +24,8 @@ export interface ReconciliationTransaction {
   eventDate: string | null;
   reference: string | null;
   status: string | null;
+  /** True when the source file included a status column, even if this row was blank. */
+  statusProvided: boolean;
 }
 
 export interface MatchPair {

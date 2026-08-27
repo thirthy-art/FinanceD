@@ -1,17 +1,17 @@
 import { Decimal } from "@/src/lib/decimal";
-import type { MatchPair, ReconciliationTransaction } from "./types";
+import type { MatchPair } from "./types";
 
 /**
  * Deterministic client-funds / PSP matching.
  *
  * A player-ledger transaction and a PSP transaction auto-match ONLY when ALL
  * of the following hold:
- *   - a matching normalized external/reference identifier, or (falling back)
- *     a matching player id on both sides;
+ *   - a matching normalized external/reference identifier across the sources;
  *   - an equivalent transaction direction (player deposit ↔ PSP deposit/capture,
  *     player withdrawal ↔ PSP withdrawal/payout);
  *   - exactly the same currency;
- *   - exactly the same amount.
+ *   - exactly the same amount;
+ *   - a terminal-success PSP status, unless the PSP file had no status column.
  *
  * If more than one candidate would satisfy the rules, no auto-match is made
  * and the involved transactions are flagged ambiguous. The engine never
@@ -30,6 +30,8 @@ export interface IndexedTransaction {
   transactionType: TransactionDirection;
   amount: string;
   currency: string;
+  status: string | null;
+  statusProvided: boolean;
 }
 
 export interface MatchCandidate {
@@ -69,26 +71,40 @@ export function amountsEqual(a: string, b: string): boolean {
 }
 
 /**
- * The identifier values that can link a transaction to its counterpart. Order
- * reflects confidence: an external transaction id is strongest, then a
- * merchant/internal reference, then the player id.
+ * Only transaction/reference identifiers can authorize an automatic match.
+ * playerId is deliberately excluded because it identifies an account, not a
+ * unique payment event.
  */
 function identifierValues(tx: {
   externalId: string | null;
   reference: string | null;
-  playerId: string | null;
 }): Array<{ value: string; label: string }> {
   const values: Array<{ value: string | null; label: string }> = [
     { value: normalizeId(tx.externalId), label: "external id" },
     { value: normalizeId(tx.reference), label: "reference" },
-    { value: normalizeId(tx.playerId), label: "player id" },
   ];
   return values.filter((entry): entry is { value: string; label: string } => entry.value !== null);
 }
 
+const SUCCESSFUL_PSP_STATUSES = new Set([
+  "settled", "success", "successful", "completed", "captured", "paid", "approved",
+]);
+
+/**
+ * PSP rows are eligible only with a recognized terminal-success status. The
+ * sole conservative exception is a file that had no status column at all.
+ */
+export function isPspStatusEligible(
+  tx: Pick<IndexedTransaction, "status" | "statusProvided">
+): boolean {
+  if (!tx.statusProvided) return true;
+  const normalized = tx.status?.trim().toLowerCase() ?? "";
+  return SUCCESSFUL_PSP_STATUSES.has(normalized);
+}
+
 /**
  * Compute all candidate (player, psp) pairs that satisfy the exact-match
- * rules. Matching compares external id / merchant reference / player id on
+ * rules. Matching compares external id / merchant reference on
  * both sides; amount, currency and direction must all agree exactly. Used by
  * the engine and by focused tests.
  */
@@ -99,6 +115,7 @@ export function findMatchCandidates(
   // Index every PSP transaction under each of its identifier values.
   const pspIndex = new Map<string, Array<{ tx: IndexedTransaction; label: string }>>();
   for (const tx of psp) {
+    if (!isPspStatusEligible(tx)) continue;
     for (const { value, label } of identifierValues(tx)) {
       if (!pspIndex.has(value)) pspIndex.set(value, []);
       pspIndex.get(value)!.push({ tx, label });
@@ -120,7 +137,7 @@ export function findMatchCandidates(
         candidates.push({
           playerId: player.id,
           pspId: pspTx.id,
-          reason: `${label} matches ${pspLabel}`,
+          reason: `${label} ↔ ${pspLabel}`,
         });
       }
     }

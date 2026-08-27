@@ -1,15 +1,17 @@
 import { cookies } from "next/headers";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "@/src/db";
 import {
   reconciliationImports,
   reconciliationMatches,
+  reconciliationRunItems,
+  reconciliationRuns,
   reconciliationTransactions,
 } from "@/src/db/schema";
 import { getActiveCompanyForPage } from "@/src/lib/active-company-page";
 import CompanySelectionRequired from "@/src/components/CompanySelectionRequired";
 import { computeCoverage } from "@/src/lib/reconciliation";
-import { resolveLocale, getMessages } from "@/src/i18n/index";
+import { resolveLocale } from "@/src/i18n/index";
 import { LOCALE_COOKIE } from "@/src/i18n/types";
 import ReconciliationClient from "./ReconciliationClient";
 import type { UiImport, UiTransaction } from "./types";
@@ -23,8 +25,6 @@ export default async function ReconciliationPage() {
   const company = await getActiveCompanyForPage();
   if (!company) return <CompanySelectionRequired locale={locale} />;
   const db = getDb();
-  const { reconciliation: t } = getMessages(locale);
-
   const imports = await db
     .select({
       id: reconciliationImports.id,
@@ -37,30 +37,57 @@ export default async function ReconciliationPage() {
     .where(eq(reconciliationImports.companyId, company.id))
     .orderBy(desc(reconciliationImports.createdAt));
 
-  const txRows = await db
-    .select({
-      id: reconciliationTransactions.id,
-      source: reconciliationTransactions.source,
-      externalId: reconciliationTransactions.externalId,
-      playerId: reconciliationTransactions.playerId,
-      transactionType: reconciliationTransactions.transactionType,
-      amount: reconciliationTransactions.amount,
-      currency: reconciliationTransactions.currency,
-      eventDate: reconciliationTransactions.eventDate,
-      status: reconciliationTransactions.status,
-      matchStatus: reconciliationTransactions.matchStatus,
-    })
-    .from(reconciliationTransactions)
-    .where(eq(reconciliationTransactions.companyId, company.id))
-    .orderBy(reconciliationTransactions.id);
+  const [latestRun] = await db
+    .select({ id: reconciliationRuns.id })
+    .from(reconciliationRuns)
+    .where(and(
+      eq(reconciliationRuns.companyId, company.id),
+      eq(reconciliationRuns.status, "completed")
+    ))
+    .orderBy(desc(reconciliationRuns.updatedAt), desc(reconciliationRuns.id))
+    .limit(1);
 
-  const matchRows = await db
-    .select({
-      playerTransactionId: reconciliationMatches.playerTransactionId,
-      pspTransactionId: reconciliationMatches.pspTransactionId,
-    })
-    .from(reconciliationMatches)
-    .where(eq(reconciliationMatches.companyId, company.id));
+  const txRows = latestRun
+    ? await db
+        .select({
+          id: reconciliationTransactions.id,
+          source: reconciliationTransactions.source,
+          externalId: reconciliationTransactions.externalId,
+          playerId: reconciliationTransactions.playerId,
+          transactionType: reconciliationTransactions.transactionType,
+          amount: reconciliationTransactions.amount,
+          currency: reconciliationTransactions.currency,
+          eventDate: reconciliationTransactions.eventDate,
+          reference: reconciliationTransactions.reference,
+          status: reconciliationTransactions.status,
+          statusProvided: reconciliationTransactions.statusProvided,
+          matchStatus: reconciliationRunItems.matchStatus,
+        })
+        .from(reconciliationRunItems)
+        .innerJoin(
+          reconciliationTransactions,
+          eq(reconciliationRunItems.transactionId, reconciliationTransactions.id)
+        )
+        .where(and(
+          eq(reconciliationRunItems.companyId, company.id),
+          eq(reconciliationRunItems.runId, latestRun.id),
+          eq(reconciliationTransactions.companyId, company.id)
+        ))
+        .orderBy(reconciliationTransactions.id)
+    : [];
+
+  const matchRows = latestRun
+    ? await db
+        .select({
+          playerTransactionId: reconciliationMatches.playerTransactionId,
+          pspTransactionId: reconciliationMatches.pspTransactionId,
+        })
+        .from(reconciliationMatches)
+        .where(and(
+          eq(reconciliationMatches.companyId, company.id),
+          eq(reconciliationMatches.runId, latestRun.id)
+        ))
+    : [];
   const matchByTx = new Map<number, number>();
   for (const m of matchRows) {
     matchByTx.set(m.playerTransactionId, m.pspTransactionId);
@@ -72,11 +99,13 @@ export default async function ReconciliationPage() {
     source: r.source,
     externalId: r.externalId,
     playerId: r.playerId,
+    reference: r.reference,
     type: r.transactionType,
     amount: String(r.amount),
     currency: String(r.currency),
     eventDate: r.eventDate,
     status: r.status,
+    statusProvided: r.statusProvided,
     matchStatus: r.matchStatus,
     linkedTransactionId: matchByTx.get(r.id) ?? null,
   }));
@@ -89,15 +118,16 @@ export default async function ReconciliationPage() {
     amount: tx.amount,
     currency: tx.currency,
     eventDate: tx.eventDate,
-    reference: tx.externalId,
+    reference: tx.reference,
     status: tx.status,
+    statusProvided: tx.statusProvided,
   }));
   const coverage = computeCoverage(
     canonical.filter((tx) => tx.source === "player_ledger"),
     canonical.filter((tx) => tx.source === "psp_transactions")
   );
 
-  const matchedPairs = transactions.filter((tx) => tx.matchStatus === "matched").length / 2;
+  const matchedPairs = matchRows.length;
   const unmatchedCount = transactions.filter((tx) => tx.matchStatus === "unmatched").length;
   const ambiguousCount = transactions.filter((tx) => tx.matchStatus === "ambiguous").length;
 

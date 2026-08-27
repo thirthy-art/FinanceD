@@ -4,6 +4,7 @@ export {
   normalizeId,
   amountsEqual,
   isCompatibleDirection,
+  isPspStatusEligible,
   findMatchCandidates,
   runDeterministicReconciliation,
   runReconciliation,
@@ -11,11 +12,17 @@ export {
   type MatchCandidate,
   type ReconciliationOutcome,
 } from "./match";
-export { computeCoverage, type CoverageSummary } from "./coverage";
+export {
+  computeCoverage,
+  coverageDifferenceKind,
+  type CoverageDifferenceKind,
+  type CoverageSummary,
+} from "./coverage";
 export {
   createImport,
   runAndPersistReconciliation,
   DuplicateImportError,
+  ReconciliationSelectionError,
   type ImportPersistedResult,
   type ReconciliationResult,
 } from "./service";

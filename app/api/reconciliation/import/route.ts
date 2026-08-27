@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
 
   const originalFilename = file.name;
   const lower = originalFilename.toLowerCase();
-  const isXlsx = lower.endsWith(".xlsx") || lower.endsWith(".xls");
+  const isXlsx = lower.endsWith(".xlsx");
   const isCsv = lower.endsWith(".csv");
   if (!isXlsx && !isCsv) {
     return NextResponse.json(

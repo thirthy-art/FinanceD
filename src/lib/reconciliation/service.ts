@@ -1,14 +1,13 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { getDb, type Db } from "@/src/db";
 import {
   reconciliationImports,
   reconciliationMatches,
+  reconciliationRunItems,
+  reconciliationRuns,
   reconciliationTransactions,
 } from "@/src/db/schema";
-import {
-  type IndexedTransaction,
-  runReconciliation,
-} from "./match";
+import { type IndexedTransaction, runReconciliation } from "./match";
 import type {
   MatchPair,
   ReconciliationSource,
@@ -30,6 +29,8 @@ export class DuplicateImportError extends Error {
   }
 }
 
+export class ReconciliationSelectionError extends Error {}
+
 async function findImportId(
   db: Db,
   companyId: number,
@@ -39,22 +40,16 @@ async function findImportId(
   const [row] = await db
     .select({ id: reconciliationImports.id })
     .from(reconciliationImports)
-    .where(
-      and(
-        eq(reconciliationImports.companyId, companyId),
-        eq(reconciliationImports.sourceKind, sourceKind),
-        eq(reconciliationImports.contentHash, contentHash)
-      )
-    )
+    .where(and(
+      eq(reconciliationImports.companyId, companyId),
+      eq(reconciliationImports.sourceKind, sourceKind),
+      eq(reconciliationImports.contentHash, contentHash)
+    ))
     .limit(1);
   return row?.id ?? null;
 }
 
-/**
- * Insert a parsed import for a company. If the same content has already been
- * imported for the same company+source, returns a reused result without
- * duplicating transaction rows.
- */
+/** Persist an import once per company, source and normalized content. */
 export async function createImport(
   companyId: number,
   sourceKind: ReconciliationSource,
@@ -63,7 +58,6 @@ export async function createImport(
   contentHash: string
 ): Promise<ImportPersistedResult> {
   const db = getDb();
-
   const existingId = await findImportId(db, companyId, sourceKind, contentHash);
   if (existingId !== null) {
     return { importId: existingId, transactionIds: [], reused: true };
@@ -97,6 +91,7 @@ export async function createImport(
           eventDate: txInfo.eventDate,
           reference: txInfo.reference,
           status: txInfo.status,
+          statusProvided: txInfo.statusProvided,
         })
         .returning({ id: reconciliationTransactions.id });
       inserted.push(row.id);
@@ -112,6 +107,9 @@ export async function createImport(
 }
 
 export interface ReconciliationResult {
+  runId: number;
+  playerLedgerImportId: number;
+  pspImportId: number;
   matches: MatchPair[];
   ambiguousIds: number[];
   matchedPlayerIds: number[];
@@ -119,78 +117,148 @@ export interface ReconciliationResult {
 }
 
 /**
- * Load a company's imported transactions and persist the deterministic
- * reconciliation outcome (matches + ambiguous flags). Idempotent: re-running
- * recomputes and replaces the previous result for the same company.
+ * Reconcile exactly one player-ledger import against exactly one PSP import.
+ * When ids are omitted, the latest import of each kind is selected. The pair
+ * is persisted as an idempotent run; historical runs are never combined.
  */
 export async function runAndPersistReconciliation(
-  companyId: number
+  companyId: number,
+  selected?: { playerLedgerImportId?: number; pspImportId?: number }
 ): Promise<ReconciliationResult> {
   const db = getDb();
-  const ledger = await loadIndexed(db, companyId, "player_ledger");
-  const psp = await loadIndexed(db, companyId, "psp_transactions");
+  const playerLedgerImportId = await resolveImportId(
+    db,
+    companyId,
+    "player_ledger",
+    selected?.playerLedgerImportId
+  );
+  const pspImportId = await resolveImportId(
+    db,
+    companyId,
+    "psp_transactions",
+    selected?.pspImportId
+  );
+  const runId = await getOrCreateRun(db, companyId, playerLedgerImportId, pspImportId);
+  const ledger = await loadIndexed(db, companyId, "player_ledger", playerLedgerImportId);
+  const psp = await loadIndexed(db, companyId, "psp_transactions", pspImportId);
   const { matches, ambiguousIds } = runReconciliation(ledger, psp);
 
   await db.transaction(async (tx) => {
-    // Reset prior state so results stay deterministic and idempotent.
-    await tx
-      .delete(reconciliationMatches)
-      .where(eq(reconciliationMatches.companyId, companyId));
-    await tx
-      .update(reconciliationTransactions)
-      .set({ matchStatus: "unmatched" })
-      .where(eq(reconciliationTransactions.companyId, companyId));
+    await tx.delete(reconciliationMatches).where(and(
+      eq(reconciliationMatches.companyId, companyId),
+      eq(reconciliationMatches.runId, runId)
+    ));
+    await tx.delete(reconciliationRunItems).where(and(
+      eq(reconciliationRunItems.companyId, companyId),
+      eq(reconciliationRunItems.runId, runId)
+    ));
+
+    const matchedIds = new Set(
+      matches.flatMap((match) => [match.playerTransactionId, match.pspTransactionId])
+    );
+    const ambiguousIdSet = new Set(ambiguousIds);
+    const allTransactions = [...ledger, ...psp];
+    if (allTransactions.length > 0) {
+      await tx.insert(reconciliationRunItems).values(
+        allTransactions.map((transaction) => ({
+          companyId,
+          runId,
+          transactionId: transaction.id,
+          matchStatus: matchedIds.has(transaction.id)
+            ? "matched" as const
+            : ambiguousIdSet.has(transaction.id)
+              ? "ambiguous" as const
+              : "unmatched" as const,
+        }))
+      );
+    }
 
     if (matches.length > 0) {
-      await tx
-        .insert(reconciliationMatches)
-        .values(
-          matches.map((m) => ({
-            companyId,
-            playerTransactionId: m.playerTransactionId,
-            pspTransactionId: m.pspTransactionId,
-          }))
-        );
+      await tx.insert(reconciliationMatches).values(
+        matches.map((match) => ({
+          companyId,
+          runId,
+          playerTransactionId: match.playerTransactionId,
+          pspTransactionId: match.pspTransactionId,
+          matchReason: match.matchedOn,
+        }))
+      );
     }
 
-    if (ambiguousIds.length > 0) {
-      await tx
-        .update(reconciliationTransactions)
-        .set({ matchStatus: "ambiguous" })
-        .where(
-          and(
-            eq(reconciliationTransactions.companyId, companyId),
-            sql`${reconciliationTransactions.id} = ANY(${sql.param(ambiguousIds)})`
-          )
-        );
-    }
-
-    const matchedIds = matches.flatMap((m) => [m.playerTransactionId, m.pspTransactionId]);
-    if (matchedIds.length > 0) {
-      await tx
-        .update(reconciliationTransactions)
-        .set({ matchStatus: "matched" })
-        .where(
-          and(
-            eq(reconciliationTransactions.companyId, companyId),
-            sql`${reconciliationTransactions.id} = ANY(${sql.param(matchedIds)})`
-          )
-        );
-    }
+    await tx
+      .update(reconciliationRuns)
+      .set({ status: "completed", updatedAt: new Date() })
+      .where(and(eq(reconciliationRuns.id, runId), eq(reconciliationRuns.companyId, companyId)));
   });
 
   return {
+    runId,
+    playerLedgerImportId,
+    pspImportId,
     matches,
     ambiguousIds,
-    matchedPlayerIds: matches.map((m) => m.playerTransactionId),
-    matchedPspIds: matches.map((m) => m.pspTransactionId),
+    matchedPlayerIds: matches.map((match) => match.playerTransactionId),
+    matchedPspIds: matches.map((match) => match.pspTransactionId),
   };
+}
+
+async function resolveImportId(
+  db: Db,
+  companyId: number,
+  source: ReconciliationSource,
+  requestedId?: number
+): Promise<number> {
+  const filters = [
+    eq(reconciliationImports.companyId, companyId),
+    eq(reconciliationImports.sourceKind, source),
+  ];
+  if (requestedId !== undefined) filters.push(eq(reconciliationImports.id, requestedId));
+
+  const [row] = await db
+    .select({ id: reconciliationImports.id })
+    .from(reconciliationImports)
+    .where(and(...filters))
+    .orderBy(desc(reconciliationImports.createdAt), desc(reconciliationImports.id))
+    .limit(1);
+
+  if (!row) {
+    const label = source === "player_ledger" ? "player-ledger" : "PSP";
+    throw new ReconciliationSelectionError(`No valid ${label} import is available for this company.`);
+  }
+  return row.id;
+}
+
+async function getOrCreateRun(
+  db: Db,
+  companyId: number,
+  playerLedgerImportId: number,
+  pspImportId: number
+): Promise<number> {
+  const [created] = await db
+    .insert(reconciliationRuns)
+    .values({ companyId, playerLedgerImportId, pspImportId, status: "running" })
+    .onConflictDoNothing()
+    .returning({ id: reconciliationRuns.id });
+  if (created) return created.id;
+
+  const [existing] = await db
+    .select({ id: reconciliationRuns.id })
+    .from(reconciliationRuns)
+    .where(and(
+      eq(reconciliationRuns.companyId, companyId),
+      eq(reconciliationRuns.playerLedgerImportId, playerLedgerImportId),
+      eq(reconciliationRuns.pspImportId, pspImportId)
+    ))
+    .limit(1);
+  if (!existing) throw new Error("The reconciliation run could not be created safely.");
+  return existing.id;
 }
 
 async function loadIndexed(
   db: Db,
   companyId: number,
-  source: ReconciliationSource
+  source: ReconciliationSource,
+  importId: number
 ): Promise<IndexedTransaction[]> {
   const rows = await db
     .select({
@@ -203,25 +271,28 @@ async function loadIndexed(
       transactionType: reconciliationTransactions.transactionType,
       amount: reconciliationTransactions.amount,
       currency: reconciliationTransactions.currency,
+      status: reconciliationTransactions.status,
+      statusProvided: reconciliationTransactions.statusProvided,
     })
     .from(reconciliationTransactions)
-    .where(
-      and(
-        eq(reconciliationTransactions.companyId, companyId),
-        eq(reconciliationTransactions.source, source)
-      )
-    )
+    .where(and(
+      eq(reconciliationTransactions.companyId, companyId),
+      eq(reconciliationTransactions.source, source),
+      eq(reconciliationTransactions.importId, importId)
+    ))
     .orderBy(reconciliationTransactions.id);
 
-  return rows.map((r) => ({
-    id: r.id,
-    companyId: r.companyId,
-    source: r.source as ReconciliationSource,
-    externalId: r.externalId,
-    reference: r.reference,
-    playerId: r.playerId,
-    transactionType: r.transactionType,
-    amount: String(r.amount),
-    currency: r.currency,
+  return rows.map((row) => ({
+    id: row.id,
+    companyId: row.companyId,
+    source: row.source as ReconciliationSource,
+    externalId: row.externalId,
+    reference: row.reference,
+    playerId: row.playerId,
+    transactionType: row.transactionType,
+    amount: String(row.amount),
+    currency: row.currency,
+    status: row.status,
+    statusProvided: row.statusProvided,
   }));
 }

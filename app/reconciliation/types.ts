@@ -5,11 +5,13 @@ export interface UiTransaction {
   source: ReconciliationSource;
   externalId: string | null;
   playerId: string | null;
+  reference: string | null;
   type: "deposit" | "withdrawal";
   amount: string;
   currency: string;
   eventDate: string | null;
   status: string | null;
+  statusProvided: boolean;
   matchStatus: MatchStatus;
   linkedTransactionId: number | null;
 }

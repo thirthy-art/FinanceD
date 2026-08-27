@@ -6,15 +6,18 @@ import type { Messages } from "@/src/i18n/types";
 import type { CoverageSummary } from "@/src/lib/reconciliation/coverage";
 import type { UiImport, UiTransaction } from "./types";
 import type { ReconciliationSource } from "@/src/lib/reconciliation/types";
+import { coverageDifferenceKind } from "@/src/lib/reconciliation/coverage";
+import { Decimal } from "@/src/lib/decimal";
 import { useI18n } from "@/src/i18n/context";
 
-const ACCEPT = ".csv,.xlsx,.xls";
+const ACCEPT = ".csv,.xlsx";
 
 function formatMoney(amount: string, currency: string): string {
-  const value = parseFloat(amount);
-  if (Number.isNaN(value)) return `${currency} ${amount}`;
-  const fixed = value === Math.round(value) ? String(value) : value.toFixed(2);
-  return `${currency} ${fixed}`;
+  try {
+    return `${currency} ${new Decimal(amount).toString()}`;
+  } catch {
+    return `${currency} ${amount}`;
+  }
 }
 
 function statusStyle(matchStatus: string) {
@@ -96,7 +99,7 @@ export default function ReconciliationClient({
   }
 
   const surplus = coverage.surplusOrShortfall;
-  const surplusPositive = surplus !== null && parseFloat(surplus) > 0;
+  const differenceKind = coverageDifferenceKind(surplus);
   const coverageValue = coverage.coveragePercent !== null ? `${coverage.coveragePercent}%` : t.notApplicable;
   const transactionById = new Map(transactions.map((tx) => [tx.id, tx]));
 
@@ -176,9 +179,9 @@ export default function ReconciliationClient({
               value={coverage.currency ? formatMoney(coverage.availableFunds, coverage.currency) : "—"}
             />
             <SummaryCard
-              label={surplusPositive ? t.surplus : t.shortfall}
+              label={differenceKind === "surplus" ? t.surplus : differenceKind === "shortfall" ? t.shortfall : t.balanced}
               value={coverage.currency && surplus !== null ? formatMoney(surplus, coverage.currency) : "—"}
-              accent={surplusPositive ? "#166534" : "#b91c1c"}
+              accent={differenceKind === "surplus" ? "#166534" : differenceKind === "shortfall" ? "#b91c1c" : "#475569"}
             />
             <SummaryCard label={t.coveragePercent} value={coverageValue} accent="#1e40af" />
           </div>

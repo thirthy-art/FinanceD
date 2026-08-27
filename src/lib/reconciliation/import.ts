@@ -100,7 +100,7 @@ function normalizeHeader(value: string): string {
 
 const EXTERNAL_ID_HEADERS = [
   "transactionid", "referenceid", "externaltxnid", "paymentid",
-  "paymentreference", "orderid", "psptransactionid", "pspreference",
+  "paymentreference", "orderid", "pspid", "psptransactionid", "pspreference",
   "transactionno", "transactionnumber", "id",
 ];
 const PLAYER_ID_HEADERS = ["playerid", "player", "userid", "username", "accountid", "customerid"];
@@ -169,14 +169,16 @@ function amountCell(value: unknown): string | null {
   if (value === null || value === undefined) return null;
   if (typeof value === "number") {
     if (!Number.isFinite(value)) return null;
-    return new Decimal(String(value)).toFixed(2);
+    const decimal = new Decimal(String(value));
+    return decimal.isFinite() ? decimal.abs().toFixed() : null;
   }
   const raw = textCell(value);
   if (!raw) return null;
   const normalized = raw.replace(",", ".");
-  if (normalized === "" || Number.isNaN(Number(normalized))) return null;
+  if (normalized === "") return null;
   try {
-    return new Decimal(normalized).toFixed();
+    const decimal = new Decimal(normalized);
+    return decimal.isFinite() ? decimal.abs().toFixed() : null;
   } catch {
     return null;
   }
@@ -228,6 +230,7 @@ function buildTransaction(
     eventDate: map.eventDate ? dateCell(row[map.eventDate]) : null,
     reference: map.reference ? textCell(row[map.reference]) : null,
     status: map.status ? textCell(row[map.status]) : null,
+    statusProvided: map.status !== null,
   };
 }
 
@@ -357,6 +360,7 @@ export function fingerprintTransactions(
         tx.eventDate,
         tx.reference,
         tx.status,
+        tx.statusProvided,
       ]
         .map((v) => (v === null || v === undefined ? "" : String(v)))
         .join("|")

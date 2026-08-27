@@ -16,6 +16,8 @@ function ledgerTx(partial: Partial<IndexedTransaction>): IndexedTransaction {
     transactionType: "deposit",
     amount: "100.00",
     currency: "EUR",
+    status: null,
+    statusProvided: false,
     ...partial,
   };
 }
@@ -31,6 +33,8 @@ function pspTx(partial: Partial<IndexedTransaction>): IndexedTransaction {
     transactionType: "deposit",
     amount: "100.00",
     currency: "EUR",
+    status: null,
+    statusProvided: false,
     ...partial,
   };
 }
@@ -69,12 +73,60 @@ describe("findMatchCandidates", () => {
     expect(candidates).toHaveLength(0);
   });
 
-  it("falls back to player id when external id is absent on both sides", () => {
+  it("does not use player id alone as an automatic-match identifier", () => {
     const candidates = findMatchCandidates(
       [ledgerTx({ id: 1, externalId: null, playerId: "user-7", amount: "20.00" })],
       [pspTx({ id: 11, externalId: null, playerId: "USER-7", amount: "20.00" })]
     );
-    expect(candidates).toHaveLength(1);
+    expect(candidates).toHaveLength(0);
+  });
+
+  it("does not match a player id to a PSP external id", () => {
+    const candidates = findMatchCandidates(
+      [ledgerTx({ id: 1, playerId: "COLLISION" })],
+      [pspTx({ id: 11, externalId: "COLLISION" })]
+    );
+    expect(candidates).toHaveLength(0);
+  });
+
+  it("matches a player external id to a PSP merchant reference", () => {
+    const candidates = findMatchCandidates(
+      [ledgerTx({ id: 1, externalId: "payment-7" })],
+      [pspTx({ id: 11, externalId: "provider-9", reference: "PAYMENT-7" })]
+    );
+    expect(candidates).toEqual([
+      { playerId: 1, pspId: 11, reason: "external id ↔ reference" },
+    ]);
+  });
+
+  it.each(["failed", "pending", "declined", "processing", "reversed", "unknown"])(
+    "does not match PSP status %s",
+    (status) => {
+      const candidates = findMatchCandidates(
+        [ledgerTx({ id: 1, externalId: "REF-1" })],
+        [pspTx({ id: 11, externalId: "REF-1", status, statusProvided: true })]
+      );
+      expect(candidates).toHaveLength(0);
+    }
+  );
+
+  it.each(["settled", "success", "successful", "completed", "captured", "paid", "approved"])(
+    "matches terminal-success PSP status %s",
+    (status) => {
+      const candidates = findMatchCandidates(
+        [ledgerTx({ id: 1, externalId: "REF-1" })],
+        [pspTx({ id: 11, externalId: "REF-1", status, statusProvided: true })]
+      );
+      expect(candidates).toHaveLength(1);
+    }
+  );
+
+  it("does not match a blank status when the PSP file had a status column", () => {
+    const candidates = findMatchCandidates(
+      [ledgerTx({ id: 1, externalId: "REF-1" })],
+      [pspTx({ id: 11, externalId: "REF-1", status: null, statusProvided: true })]
+    );
+    expect(candidates).toHaveLength(0);
   });
 });
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { computeCoverage } from "./coverage";
+import { computeCoverage, coverageDifferenceKind } from "./coverage";
+import { parseReconciliationCsv } from "./import";
 import type { ReconciliationTransaction } from "./types";
 
 function tx(partial: Partial<ReconciliationTransaction>): ReconciliationTransaction {
@@ -13,6 +14,7 @@ function tx(partial: Partial<ReconciliationTransaction>): ReconciliationTransact
     eventDate: null,
     reference: null,
     status: null,
+    statusProvided: false,
     ...partial,
   };
 }
@@ -64,5 +66,26 @@ describe("computeCoverage", () => {
     const summary = computeCoverage(ledger, psp);
     expect(summary.multiCurrency).toBe(true);
     expect(summary.coveragePercent).toBeNull();
+  });
+
+  it("remains correct when signed source amounts are normalized to magnitudes", () => {
+    const ledger = parseReconciliationCsv(
+      "player_ledger",
+      "transaction_id,type,amount,currency\nD-1,deposit,-100,EUR\nW-1,withdrawal,-40,EUR"
+    ).transactions;
+    const psp = parseReconciliationCsv(
+      "psp_transactions",
+      "psp_id,type,amount,currency\nP-1,deposit,-100,EUR\nP-2,withdrawal,-40,EUR"
+    ).transactions;
+    expect(computeCoverage(ledger, psp)).toMatchObject({
+      playerLiability: "60",
+      availableFunds: "60",
+      surplusOrShortfall: "0",
+    });
+  });
+
+  it("classifies a zero difference as balanced, not shortfall", () => {
+    expect(coverageDifferenceKind("0")).toBe("balanced");
+    expect(coverageDifferenceKind("0.0000")).toBe("balanced");
   });
 });

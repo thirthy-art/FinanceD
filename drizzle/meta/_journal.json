@@ -92,6 +92,13 @@
       "when": 1787825718270,
       "tag": "0012_client_funds_reconciliation_foundation",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1787830182886,
+      "tag": "0013_harden_client_funds_reconciliation_controls",
+      "breakpoints": true
     }
   ]
 }
