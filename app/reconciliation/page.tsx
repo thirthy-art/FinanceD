@@ -35,7 +35,7 @@ export default async function ReconciliationPage() {
     })
     .from(reconciliationImports)
     .where(eq(reconciliationImports.companyId, company.id))
-    .orderBy(desc(reconciliationImports.createdAt));
+    .orderBy(desc(reconciliationImports.createdAt), desc(reconciliationImports.id));
 
   const [latestRun] = await db
     .select({ id: reconciliationRuns.id })
@@ -141,6 +141,7 @@ export default async function ReconciliationPage() {
 
   return (
     <ReconciliationClient
+      key={company.id}
       transactions={transactions}
       imports={uiImports}
       coverage={coverage}

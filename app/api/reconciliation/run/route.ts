@@ -14,8 +14,8 @@ export async function POST(req: NextRequest) {
       playerLedgerImportId?: unknown;
       pspImportId?: unknown;
     };
-    const playerLedgerImportId = optionalPositiveInteger(body.playerLedgerImportId);
-    const pspImportId = optionalPositiveInteger(body.pspImportId);
+    const playerLedgerImportId = requiredPositiveInteger(body.playerLedgerImportId);
+    const pspImportId = requiredPositiveInteger(body.pspImportId);
     if (playerLedgerImportId === null || pspImportId === null) {
       return NextResponse.json({ error: "Invalid reconciliation import selection." }, { status: 400 });
     }
@@ -43,8 +43,7 @@ export async function POST(req: NextRequest) {
   }
 }
 
-function optionalPositiveInteger(value: unknown): number | undefined | null {
-  if (value === undefined) return undefined;
+function requiredPositiveInteger(value: unknown): number | null {
   if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) return null;
   return value;
 }

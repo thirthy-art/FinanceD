@@ -11,7 +11,7 @@ import type { MatchPair } from "./types";
  *     player withdrawal ↔ PSP withdrawal/payout);
  *   - exactly the same currency;
  *   - exactly the same amount;
- *   - a terminal-success PSP status, unless the PSP file had no status column.
+ *   - terminal-success source statuses, unless that source file had no status column.
  *
  * If more than one candidate would satisfy the rules, no auto-match is made
  * and the involved transactions are flagged ambiguous. The engine never
@@ -90,6 +90,23 @@ const SUCCESSFUL_PSP_STATUSES = new Set([
   "settled", "success", "successful", "completed", "captured", "paid", "approved",
 ]);
 
+const SUCCESSFUL_PLAYER_LEDGER_STATUSES = new Set([
+  "completed", "complete", "success", "successful", "approved", "processed", "settled", "paid",
+]);
+
+// When a status column exists, every value outside its source's success set is
+// ineligible—including failed, declined, rejected, cancelled/canceled,
+// pending, processing, reversed, void/voided, blank and unknown values.
+
+function hasEligibleStatus(
+  tx: Pick<IndexedTransaction, "status" | "statusProvided">,
+  successfulStatuses: ReadonlySet<string>
+): boolean {
+  if (!tx.statusProvided) return true;
+  const normalized = tx.status?.trim().toLowerCase() ?? "";
+  return successfulStatuses.has(normalized);
+}
+
 /**
  * PSP rows are eligible only with a recognized terminal-success status. The
  * sole conservative exception is a file that had no status column at all.
@@ -97,9 +114,17 @@ const SUCCESSFUL_PSP_STATUSES = new Set([
 export function isPspStatusEligible(
   tx: Pick<IndexedTransaction, "status" | "statusProvided">
 ): boolean {
-  if (!tx.statusProvided) return true;
-  const normalized = tx.status?.trim().toLowerCase() ?? "";
-  return SUCCESSFUL_PSP_STATUSES.has(normalized);
+  return hasEligibleStatus(tx, SUCCESSFUL_PSP_STATUSES);
+}
+
+/**
+ * Player-ledger rows follow the same conservative status-column policy: only
+ * recognized final-success values are eligible when the column exists.
+ */
+export function isPlayerLedgerStatusEligible(
+  tx: Pick<IndexedTransaction, "status" | "statusProvided">
+): boolean {
+  return hasEligibleStatus(tx, SUCCESSFUL_PLAYER_LEDGER_STATUSES);
 }
 
 /**
@@ -125,6 +150,7 @@ export function findMatchCandidates(
   const candidates: MatchCandidate[] = [];
   const seen = new Set<string>();
   for (const player of ledger) {
+    if (!isPlayerLedgerStatusEligible(player)) continue;
     for (const { value, label } of identifierValues(player)) {
       const potential = pspIndex.get(value) ?? [];
       for (const { tx: pspTx, label: pspLabel } of potential) {

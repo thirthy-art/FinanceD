@@ -483,6 +483,8 @@ export const en: Messages = {
     importPspDone: "PSP transactions imported",
     runTitle: "Run Reconciliation",
     runDescription: "Match imported transactions deterministically and compute the client-funds coverage summary.",
+    selectLedgerImport: "Player Ledger import",
+    selectPspImport: "PSP import",
     runButton: "Run reconciliation",
     running: "Running…",
     noDataToRun: "Import both a player ledger and PSP transactions to run reconciliation.",

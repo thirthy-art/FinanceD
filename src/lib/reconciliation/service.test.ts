@@ -203,6 +203,17 @@ describe("reconciliation persistence (DB)", () => {
       });
 
       expect(second.runId).not.toBe(first.runId);
+      const [persistedSecondRun] = await db
+        .select({
+          playerLedgerImportId: schema.reconciliationRuns.playerLedgerImportId,
+          pspImportId: schema.reconciliationRuns.pspImportId,
+        })
+        .from(schema.reconciliationRuns)
+        .where(eq(schema.reconciliationRuns.id, second.runId));
+      expect(persistedSecondRun).toEqual({
+        playerLedgerImportId: ledgerDay2.importId,
+        pspImportId: pspDay2.importId,
+      });
       const firstRunImports = await db
         .select({ importId: schema.reconciliationTransactions.importId })
         .from(schema.reconciliationRunItems)

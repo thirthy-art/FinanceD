@@ -128,6 +128,44 @@ describe("findMatchCandidates", () => {
     );
     expect(candidates).toHaveLength(0);
   });
+
+  it.each(["failed", "pending", "declined", "processing", "reversed", "unknown"])(
+    "does not match Player Ledger status %s",
+    (status) => {
+      const candidates = findMatchCandidates(
+        [ledgerTx({ id: 1, externalId: "REF-1", status, statusProvided: true })],
+        [pspTx({ id: 11, externalId: "REF-1", status: "settled", statusProvided: true })]
+      );
+      expect(candidates).toHaveLength(0);
+    }
+  );
+
+  it.each(["completed", "complete", "success", "successful", "approved", "processed", "settled", "paid"])(
+    "matches terminal-success Player Ledger status %s",
+    (status) => {
+      const candidates = findMatchCandidates(
+        [ledgerTx({ id: 1, externalId: "REF-1", status, statusProvided: true })],
+        [pspTx({ id: 11, externalId: "REF-1", status: "settled", statusProvided: true })]
+      );
+      expect(candidates).toHaveLength(1);
+    }
+  );
+
+  it("does not match a blank Player Ledger status when the column exists", () => {
+    const candidates = findMatchCandidates(
+      [ledgerTx({ id: 1, externalId: "REF-1", status: null, statusProvided: true })],
+      [pspTx({ id: 11, externalId: "REF-1", status: "settled", statusProvided: true })]
+    );
+    expect(candidates).toHaveLength(0);
+  });
+
+  it("keeps a Player Ledger row eligible when its file had no status column", () => {
+    const candidates = findMatchCandidates(
+      [ledgerTx({ id: 1, externalId: "REF-1", status: null, statusProvided: false })],
+      [pspTx({ id: 11, externalId: "REF-1", status: "settled", statusProvided: true })]
+    );
+    expect(candidates).toHaveLength(1);
+  });
 });
 
 describe("runDeterministicReconciliation", () => {

@@ -88,4 +88,21 @@ describe("computeCoverage", () => {
     expect(coverageDifferenceKind("0")).toBe("balanced");
     expect(coverageDifferenceKind("0.0000")).toBe("balanced");
   });
+
+  it("excludes failed, pending and unknown ledger statuses from player liability", () => {
+    const ledger = [
+      tx({ amount: "100", status: "completed", statusProvided: true }),
+      tx({ amount: "50", status: "failed", statusProvided: true }),
+      tx({ amount: "25", status: "pending", statusProvided: true }),
+      tx({ amount: "10", status: "unexpected", statusProvided: true }),
+    ];
+    const psp = [tx({ source: "psp_transactions", amount: "100" })];
+    expect(computeCoverage(ledger, psp).playerLiability).toBe("100");
+  });
+
+  it("includes ledger rows when the source file had no status column", () => {
+    const ledger = [tx({ amount: "125", status: null, statusProvided: false })];
+    const psp = [tx({ source: "psp_transactions", amount: "125" })];
+    expect(computeCoverage(ledger, psp).playerLiability).toBe("125");
+  });
 });

@@ -471,6 +471,8 @@ export const he: Messages = {
     importPspDone: "עסקאות PSP יובאו",
     runTitle: "הרצת התאמה",
     runDescription: "ותאו דטרמיניסטית בין עסקאות מיובאות וחשבו את סיכום הכיסוי של קופות הלקוחות.",
+    selectLedgerImport: "ייבוא רישום שחקן",
+    selectPspImport: "ייבוא PSP",
     runButton: "הרצת התאמה",
     running: "מתבצע…",
     noDataToRun: "כדי להריץ התאמה ייבואו גם רשומי שחקן וגם עסקאות PSP.",

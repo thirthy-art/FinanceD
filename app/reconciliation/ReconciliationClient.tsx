@@ -52,6 +52,12 @@ export default function ReconciliationClient({
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
   const [tab, setTab] = useState<ReconciliationSource>("player_ledger");
+  const ledgerImports = imports.filter((entry) => entry.source === "player_ledger");
+  const pspImports = imports.filter((entry) => entry.source === "psp_transactions");
+  const [playerLedgerImportId, setPlayerLedgerImportId] = useState<number | null>(
+    ledgerImports[0]?.id ?? null
+  );
+  const [pspImportId, setPspImportId] = useState<number | null>(pspImports[0]?.id ?? null);
 
   async function handleFile(source: ReconciliationSource, file: File) {
     if (uploadingSource) return;
@@ -62,15 +68,21 @@ export default function ReconciliationClient({
       form.append("file", file);
       form.append("source", source);
       const res = await fetch("/api/reconciliation/import", { method: "POST", body: form });
-      const result = await res.json().catch(() => ({})) as { error?: string; reused?: boolean };
+      const result = await res.json().catch(() => ({})) as {
+        error?: string;
+        importId?: number;
+        reused?: boolean;
+      };
       if (!res.ok) {
         setError(typeof result.error === "string" ? result.error : t.uploadError);
         return;
       }
       if (result.reused) {
+        if (typeof result.importId === "number") selectImport(source, result.importId);
         setError(t.duplicateFile);
         return;
       }
+      if (typeof result.importId === "number") selectImport(source, result.importId);
       router.refresh();
     } catch {
       setError(t.uploadError);
@@ -80,11 +92,15 @@ export default function ReconciliationClient({
   }
 
   async function handleRun() {
-    if (running) return;
+    if (running || playerLedgerImportId === null || pspImportId === null) return;
     setRunning(true);
     setError("");
     try {
-      const res = await fetch("/api/reconciliation/run", { method: "POST" });
+      const res = await fetch("/api/reconciliation/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ playerLedgerImportId, pspImportId }),
+      });
       const result = await res.json().catch(() => ({})) as { error?: string };
       if (!res.ok) {
         setError(typeof result.error === "string" ? result.error : t.uploadError);
@@ -96,6 +112,11 @@ export default function ReconciliationClient({
     } finally {
       setRunning(false);
     }
+  }
+
+  function selectImport(source: ReconciliationSource, importId: number) {
+    if (source === "player_ledger") setPlayerLedgerImportId(importId);
+    else setPspImportId(importId);
   }
 
   const surplus = coverage.surplusOrShortfall;
@@ -130,30 +151,44 @@ export default function ReconciliationClient({
 
       <section style={{ marginBottom: 24 }}>
         <SectionLabel>{t.runTitle}</SectionLabel>
-        <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: 16, display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
-          <div style={{ flex: 1, minWidth: 220 }}>
+        <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: 16 }}>
+          <div style={{ marginBottom: 14 }}>
             <p style={{ margin: 0, fontSize: 13, color: "#475569" }}>{t.runDescription}</p>
             {(!hasLedger || !hasPsp) && (
               <p style={{ margin: "6px 0 0", fontSize: 12, color: "#d97706" }}>{t.noDataToRun}</p>
             )}
           </div>
-          <button
-            type="button"
-            onClick={handleRun}
-            disabled={running || !hasLedger || !hasPsp}
-            style={{
-              background: hasLedger && hasPsp ? "#1e3a5f" : "#cbd5e1",
-              color: hasLedger && hasPsp ? "#fff" : "#64748b",
-              padding: "10px 18px",
-              border: "none",
-              borderRadius: 6,
-              fontSize: 14,
-              fontWeight: 600,
-              cursor: hasLedger && hasPsp ? "pointer" : "not-allowed",
-            }}
-          >
-            {running ? t.running : t.runButton}
-          </button>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-end" }}>
+            <ImportSelect
+              label={t.selectLedgerImport}
+              imports={ledgerImports}
+              value={playerLedgerImportId}
+              onChange={setPlayerLedgerImportId}
+            />
+            <ImportSelect
+              label={t.selectPspImport}
+              imports={pspImports}
+              value={pspImportId}
+              onChange={setPspImportId}
+            />
+            <button
+              type="button"
+              onClick={handleRun}
+              disabled={running || playerLedgerImportId === null || pspImportId === null}
+              style={{
+                background: playerLedgerImportId !== null && pspImportId !== null ? "#1e3a5f" : "#cbd5e1",
+                color: playerLedgerImportId !== null && pspImportId !== null ? "#fff" : "#64748b",
+                padding: "10px 18px",
+                border: "none",
+                borderRadius: 6,
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: playerLedgerImportId !== null && pspImportId !== null ? "pointer" : "not-allowed",
+              }}
+            >
+              {running ? t.running : t.runButton}
+            </button>
+          </div>
         </div>
       </section>
 
@@ -442,4 +477,44 @@ function MatchCell({
     return <span style={{ fontSize: 12, color: "#713f12", fontWeight: 600 }}>{t.statusAmbiguous}</span>;
   }
   return <span style={{ fontSize: 12, color: "#94a3b8" }}>{t.statusUnmatched}</span>;
+}
+
+function ImportSelect({
+  label,
+  imports,
+  value,
+  onChange,
+}: {
+  label: string;
+  imports: UiImport[];
+  value: number | null;
+  onChange: (value: number | null) => void;
+}) {
+  return (
+    <label style={{ flex: "1 1 280px", minWidth: 0, fontSize: 12, color: "#475569" }}>
+      <span style={{ display: "block", fontWeight: 600, marginBottom: 6 }}>{label}</span>
+      <select
+        value={value ?? ""}
+        onChange={(event) => onChange(event.target.value === "" ? null : Number(event.target.value))}
+        disabled={imports.length === 0}
+        style={{
+          width: "100%",
+          minWidth: 0,
+          padding: "9px 10px",
+          border: "1px solid #cbd5e1",
+          borderRadius: 6,
+          background: imports.length === 0 ? "#f1f5f9" : "#fff",
+          color: "#334155",
+          fontSize: 13,
+        }}
+      >
+        {imports.length === 0 && <option value="">—</option>}
+        {imports.map((entry) => (
+          <option key={entry.id} value={entry.id}>
+            {entry.originalFilename} · {entry.rowCount} rows · {new Date(entry.createdAt).toLocaleString()}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
 }

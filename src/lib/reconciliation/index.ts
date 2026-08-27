@@ -5,6 +5,7 @@ export {
   amountsEqual,
   isCompatibleDirection,
   isPspStatusEligible,
+  isPlayerLedgerStatusEligible,
   findMatchCandidates,
   runDeterministicReconciliation,
   runReconciliation,

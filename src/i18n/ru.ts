@@ -473,6 +473,8 @@ export const ru: Messages = {
     importPspDone: "Транзакции PSP импортированы",
     runTitle: "Запуск сверки",
     runDescription: "Детерминированно сопоставьте импортированные транзакции и рассчитайте сводку покрытия.",
+    selectLedgerImport: "Импорт игрового журнала",
+    selectPspImport: "Импорт PSP",
     runButton: "Запустить сверку",
     running: "Выполняется…",
     noDataToRun: "Чтобы запустить сверку, импортируйте игровой журнал и транзакции PSP.",

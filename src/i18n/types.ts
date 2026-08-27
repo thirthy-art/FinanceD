@@ -487,6 +487,8 @@ export interface Messages {
     importPspDone: string;
     runTitle: string;
     runDescription: string;
+    selectLedgerImport: string;
+    selectPspImport: string;
     runButton: string;
     running: string;
     noDataToRun: string;

@@ -1,6 +1,6 @@
 import { Decimal } from "@/src/lib/decimal";
 import type { ReconciliationTransaction } from "./types";
-import { isPspStatusEligible } from "./match";
+import { isPlayerLedgerStatusEligible, isPspStatusEligible } from "./match";
 
 /**
  * Client Funds coverage summary.
@@ -14,6 +14,9 @@ import { isPspStatusEligible } from "./match";
  *     player-ledger withdrawals (funds paid out to players).
  *   - Available client/PSP funds: sum of all PSP deposit transactions (money
  *     held for the client) minus all PSP withdrawal/payout transactions.
+ *   - On either source, rows from files with a status column contribute only
+ *     when their status is a recognized final-success value. Files with no
+ *     status column retain the explicit v1 eligibility exception.
  *
  * Both sides are summed per currency. Because the imported demo data is
  * expected to be single-currency, the primary displayed totals and the
@@ -66,8 +69,11 @@ export function computeCoverage(
   ledger: ReconciliationTransaction[],
   psp: ReconciliationTransaction[]
 ): CoverageSummary {
-  const playerDeposits = ledger.filter((tx) => tx.transactionType === "deposit");
-  const playerWithdrawals = ledger.filter((tx) => tx.transactionType === "withdrawal");
+  const eligibleLedger = ledger.filter((tx) =>
+    isPlayerLedgerStatusEligible({ status: tx.status, statusProvided: tx.statusProvided })
+  );
+  const playerDeposits = eligibleLedger.filter((tx) => tx.transactionType === "deposit");
+  const playerWithdrawals = eligibleLedger.filter((tx) => tx.transactionType === "withdrawal");
   const eligiblePsp = psp.filter((tx) =>
     isPspStatusEligible({ status: tx.status, statusProvided: tx.statusProvided })
   );

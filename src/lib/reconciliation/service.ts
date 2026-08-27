@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getDb, type Db } from "@/src/db";
 import {
   reconciliationImports,
@@ -118,25 +118,25 @@ export interface ReconciliationResult {
 
 /**
  * Reconcile exactly one player-ledger import against exactly one PSP import.
- * When ids are omitted, the latest import of each kind is selected. The pair
- * is persisted as an idempotent run; historical runs are never combined.
+ * Both ids are required explicitly. The pair is persisted as an idempotent
+ * run; historical imports are never selected or combined implicitly.
  */
 export async function runAndPersistReconciliation(
   companyId: number,
-  selected?: { playerLedgerImportId?: number; pspImportId?: number }
+  selected: { playerLedgerImportId: number; pspImportId: number }
 ): Promise<ReconciliationResult> {
   const db = getDb();
   const playerLedgerImportId = await resolveImportId(
     db,
     companyId,
     "player_ledger",
-    selected?.playerLedgerImportId
+    selected.playerLedgerImportId
   );
   const pspImportId = await resolveImportId(
     db,
     companyId,
     "psp_transactions",
-    selected?.pspImportId
+    selected.pspImportId
   );
   const runId = await getOrCreateRun(db, companyId, playerLedgerImportId, pspImportId);
   const ledger = await loadIndexed(db, companyId, "player_ledger", playerLedgerImportId);
@@ -206,19 +206,16 @@ async function resolveImportId(
   db: Db,
   companyId: number,
   source: ReconciliationSource,
-  requestedId?: number
+  requestedId: number
 ): Promise<number> {
-  const filters = [
-    eq(reconciliationImports.companyId, companyId),
-    eq(reconciliationImports.sourceKind, source),
-  ];
-  if (requestedId !== undefined) filters.push(eq(reconciliationImports.id, requestedId));
-
   const [row] = await db
     .select({ id: reconciliationImports.id })
     .from(reconciliationImports)
-    .where(and(...filters))
-    .orderBy(desc(reconciliationImports.createdAt), desc(reconciliationImports.id))
+    .where(and(
+      eq(reconciliationImports.companyId, companyId),
+      eq(reconciliationImports.sourceKind, source),
+      eq(reconciliationImports.id, requestedId)
+    ))
     .limit(1);
 
   if (!row) {
