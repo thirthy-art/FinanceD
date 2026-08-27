@@ -489,6 +489,8 @@ export const he: Messages = {
     coverageAllCurrencies: "הסכומים מוצגים לפי מטבע (בקרת מוצר בלבד).",
     notApplicable: "לא רלוונטי",
     resultsTitle: "תוצאות התאמה",
+    resultsFor: "תוצאות עבור",
+    selectedImportsNotReconciled: "הייבואים שנבחרו טרם הותאמו. הריצו התאמה כדי לעדכן את התוצאות המוצגות למטה.",
     resultsEmpty: "עדיין אין עסקאות מיובאות.",
     resultsLedgerTab: "רשומי שחקן",
     resultsPspTab: "עסקאות PSP",

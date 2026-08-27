@@ -4,11 +4,15 @@ import { useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import type { Messages } from "@/src/i18n/types";
 import type { CoverageSummary } from "@/src/lib/reconciliation/coverage";
-import type { UiImport, UiTransaction } from "./types";
+import type { DisplayedReconciliationRun, UiImport, UiTransaction } from "./types";
 import type { ReconciliationSource } from "@/src/lib/reconciliation/types";
 import { coverageDifferenceKind } from "@/src/lib/reconciliation/coverage";
 import { Decimal } from "@/src/lib/decimal";
 import { useI18n } from "@/src/i18n/context";
+import {
+  displayedRunPairLabel,
+  shouldShowStaleResultsWarning,
+} from "./result-ownership";
 
 const ACCEPT = ".csv,.xlsx";
 
@@ -29,6 +33,7 @@ function statusStyle(matchStatus: string) {
 export default function ReconciliationClient({
   transactions,
   imports,
+  displayedRun,
   coverage,
   matchedPairs,
   unmatchedCount,
@@ -38,6 +43,7 @@ export default function ReconciliationClient({
 }: {
   transactions: UiTransaction[];
   imports: UiImport[];
+  displayedRun: DisplayedReconciliationRun | null;
   coverage: CoverageSummary;
   matchedPairs: number;
   unmatchedCount: number;
@@ -123,6 +129,11 @@ export default function ReconciliationClient({
   const differenceKind = coverageDifferenceKind(surplus);
   const coverageValue = coverage.coveragePercent !== null ? `${coverage.coveragePercent}%` : t.notApplicable;
   const transactionById = new Map(transactions.map((tx) => [tx.id, tx]));
+  const showStaleResultsWarning = shouldShowStaleResultsWarning(
+    displayedRun,
+    playerLedgerImportId,
+    pspImportId
+  );
 
   return (
     <div>
@@ -196,6 +207,40 @@ export default function ReconciliationClient({
         <div style={{ background: "#fee2e2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 6, padding: "10px 14px", fontSize: 13, marginBottom: 16 }}>
           {error}
         </div>
+      )}
+
+      {displayedRun && (
+        <section style={{ marginBottom: 20 }}>
+          <div
+            style={{
+              background: "#f8fafc",
+              border: "1px solid #cbd5e1",
+              borderRadius: 8,
+              padding: "12px 14px",
+              color: "#334155",
+              fontSize: 13,
+            }}
+          >
+            <span style={{ fontWeight: 700 }}>{t.resultsFor}: </span>
+            <span>{displayedRunPairLabel(displayedRun)}</span>
+          </div>
+          {showStaleResultsWarning && (
+            <div
+              role="status"
+              style={{
+                background: "#fffbeb",
+                border: "1px solid #fde68a",
+                borderRadius: 8,
+                color: "#92400e",
+                fontSize: 13,
+                marginTop: 8,
+                padding: "10px 14px",
+              }}
+            >
+              {t.selectedImportsNotReconciled}
+            </div>
+          )}
+        </section>
       )}
 
       {(matchedPairs > 0 || unmatchedCount > 0 || ambiguousCount > 0) && (

@@ -14,7 +14,7 @@ import { computeCoverage } from "@/src/lib/reconciliation";
 import { resolveLocale } from "@/src/i18n/index";
 import { LOCALE_COOKIE } from "@/src/i18n/types";
 import ReconciliationClient from "./ReconciliationClient";
-import type { UiImport, UiTransaction } from "./types";
+import type { DisplayedReconciliationRun, UiImport, UiTransaction } from "./types";
 import type { ReconciliationTransaction } from "@/src/lib/reconciliation/types";
 
 export const dynamic = "force-dynamic";
@@ -38,7 +38,12 @@ export default async function ReconciliationPage() {
     .orderBy(desc(reconciliationImports.createdAt), desc(reconciliationImports.id));
 
   const [latestRun] = await db
-    .select({ id: reconciliationRuns.id })
+    .select({
+      id: reconciliationRuns.id,
+      playerLedgerImportId: reconciliationRuns.playerLedgerImportId,
+      pspImportId: reconciliationRuns.pspImportId,
+      updatedAt: reconciliationRuns.updatedAt,
+    })
     .from(reconciliationRuns)
     .where(and(
       eq(reconciliationRuns.companyId, company.id),
@@ -139,11 +144,30 @@ export default async function ReconciliationPage() {
     createdAt: row.createdAt.toISOString(),
   }));
 
+  const displayedRun: DisplayedReconciliationRun | null = latestRun
+    ? (() => {
+        const playerLedgerImport = imports.find(
+          (entry) => entry.id === latestRun.playerLedgerImportId
+        );
+        const pspImport = imports.find((entry) => entry.id === latestRun.pspImportId);
+        if (!playerLedgerImport || !pspImport) return null;
+        return {
+          id: latestRun.id,
+          playerLedgerImportId: latestRun.playerLedgerImportId,
+          pspImportId: latestRun.pspImportId,
+          playerLedgerFilename: playerLedgerImport.originalFilename,
+          pspFilename: pspImport.originalFilename,
+          updatedAt: latestRun.updatedAt.toISOString(),
+        };
+      })()
+    : null;
+
   return (
     <ReconciliationClient
       key={company.id}
       transactions={transactions}
       imports={uiImports}
+      displayedRun={displayedRun}
       coverage={coverage}
       matchedPairs={matchedPairs}
       unmatchedCount={unmatchedCount}

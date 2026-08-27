@@ -23,3 +23,12 @@ export interface UiImport {
   rowCount: number;
   createdAt: string;
 }
+
+export interface DisplayedReconciliationRun {
+  id: number;
+  playerLedgerImportId: number;
+  pspImportId: number;
+  playerLedgerFilename: string;
+  pspFilename: string;
+  updatedAt: string;
+}

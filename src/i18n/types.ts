@@ -505,6 +505,8 @@ export interface Messages {
     coverageAllCurrencies: string;
     notApplicable: string;
     resultsTitle: string;
+    resultsFor: string;
+    selectedImportsNotReconciled: string;
     resultsEmpty: string;
     resultsLedgerTab: string;
     resultsPspTab: string;

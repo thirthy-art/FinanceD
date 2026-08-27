@@ -501,6 +501,8 @@ export const en: Messages = {
     coverageAllCurrencies: "Totals shown per currency (product control only).",
     notApplicable: "n/a",
     resultsTitle: "Reconciliation Results",
+    resultsFor: "Results for",
+    selectedImportsNotReconciled: "Selected imports have not been reconciled yet. Run reconciliation to update the results shown below.",
     resultsEmpty: "No imported transactions yet.",
     resultsLedgerTab: "Player Ledger",
     resultsPspTab: "PSP Transactions",

@@ -491,6 +491,8 @@ export const ru: Messages = {
     coverageAllCurrencies: "Суммы показаны по каждой валюте (только контроль).",
     notApplicable: "н/д",
     resultsTitle: "Результаты сверки",
+    resultsFor: "Результаты для",
+    selectedImportsNotReconciled: "Выбранные импорты ещё не сверены. Запустите сверку, чтобы обновить результаты ниже.",
     resultsEmpty: "Импортированных транзакций пока нет.",
     resultsLedgerTab: "Игровой журнал",
     resultsPspTab: "Транзакции PSP",
