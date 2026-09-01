@@ -52,6 +52,7 @@ export async function persistNewVendorResolution(
     body: JSON.stringify({
       name: resolution.name,
       taxId: resolution.taxId || undefined,
+      creationSource: "ai_extraction",
     }),
   });
   const body = await response.json() as {
@@ -60,6 +61,7 @@ export async function persistNewVendorResolution(
     name?: string;
     taxId?: string | null;
     normalizedTaxId?: string | null;
+    vendorStatus?: "draft" | "active";
     candidates?: VendorIdentityCandidate[];
     matchedOn?: "taxId" | "name";
   };
@@ -78,6 +80,7 @@ export async function persistNewVendorResolution(
       name: body.name,
       taxId: body.taxId ?? null,
       normalizedTaxId: body.normalizedTaxId ?? null,
+      vendorStatus: body.vendorStatus,
       invoiceCount: 0,
     },
   };

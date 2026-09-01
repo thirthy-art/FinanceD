@@ -53,18 +53,102 @@ afterAll(async () => {
 
 describe("POST /api/settings/vendors invoice resolution", () => {
   it.skipIf(!HAS_DB)("creates one draft vendor for an unknown identity and reuses it on retry", async () => {
-    const body = { name: "Unknown Extraction Vendor", taxId: "CY-AUTO-100" };
+    const body = { name: "Unknown Extraction Vendor", taxId: "CY-AUTO-100", creationSource: "ai_extraction" };
     const first = await createVendor(companyRequest("http://localhost/api/settings/vendors", companyA, body));
     const second = await createVendor(companyRequest("http://localhost/api/settings/vendors", companyA, body));
-    const firstJson = await first.json() as { id: number };
-    const secondJson = await second.json() as { id: number; reused: boolean };
+    const firstJson = await first.json() as { id: number; vendorStatus: string };
+    const secondJson = await second.json() as { id: number; vendorStatus: string; reused: boolean };
 
     expect(first.status).toBe(201);
     expect(second.status).toBe(200);
-    expect(secondJson).toMatchObject({ id: firstJson.id, reused: true });
-    expect(await db.select().from(schema.vendors).where(and(
+    expect(firstJson.vendorStatus).toBe("draft");
+    expect(secondJson).toMatchObject({ id: firstJson.id, vendorStatus: "draft", reused: true });
+    const matches = await db.select().from(schema.vendors).where(and(
       eq(schema.vendors.companyId, companyA),
       eq(schema.vendors.normalizedTaxId, "CYAUTO100"),
+    ));
+    expect(matches).toHaveLength(1);
+    expect(matches[0].vendorStatus).toBe("draft");
+  });
+
+  it.skipIf(!HAS_DB)("keeps manually created vendors active", async () => {
+    const response = await createVendor(companyRequest("http://localhost/api/settings/vendors", companyA, {
+      name: "Manual Active Vendor",
+      taxId: "CY-MANUAL-200",
+    }));
+    const vendor = await response.json() as { id: number; vendorStatus: string };
+
+    expect(response.status).toBe(201);
+    expect(vendor.vendorStatus).toBe("active");
+    expect((await db.select().from(schema.vendors).where(eq(schema.vendors.id, vendor.id)))[0].vendorStatus).toBe("active");
+  });
+
+  it.skipIf(!HAS_DB)("reuses an existing active vendor by normalized Tax ID", async () => {
+    const existingResponse = await createVendor(companyRequest("http://localhost/api/settings/vendors", companyA, {
+      name: "Existing Active Tax Vendor",
+      taxId: "CY-ACTIVE-300",
+    }));
+    const existing = await existingResponse.json() as { id: number };
+    const response = await createVendor(companyRequest("http://localhost/api/settings/vendors", companyA, {
+      name: "Different Extracted Name",
+      taxId: " cy active 300 ",
+      creationSource: "ai_extraction",
+    }));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ id: existing.id, vendorStatus: "active", reused: true });
+  });
+
+  it.skipIf(!HAS_DB)("reuses an existing draft vendor by normalized Tax ID", async () => {
+    const firstResponse = await createVendor(companyRequest("http://localhost/api/settings/vendors", companyA, {
+      name: "Existing Draft Tax Vendor",
+      taxId: "CY-DRAFT-400",
+      creationSource: "ai_extraction",
+    }));
+    const first = await firstResponse.json() as { id: number };
+    const response = await createVendor(companyRequest("http://localhost/api/settings/vendors", companyA, {
+      name: "Different Draft Extracted Name",
+      taxId: "cy draft 400",
+      creationSource: "ai_extraction",
+    }));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ id: first.id, vendorStatus: "draft", reused: true });
+  });
+
+  it.skipIf(!HAS_DB)("reuses an existing draft vendor by normalized exact name", async () => {
+    const firstResponse = await createVendor(companyRequest("http://localhost/api/settings/vendors", companyA, {
+      name: "Draft Name Match Vendor",
+      creationSource: "ai_extraction",
+    }));
+    const first = await firstResponse.json() as { id: number };
+    const response = await createVendor(companyRequest("http://localhost/api/settings/vendors", companyA, {
+      name: "  draft   name match vendor  ",
+      creationSource: "ai_extraction",
+    }));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ id: first.id, vendorStatus: "draft", reused: true });
+  });
+
+  it.skipIf(!HAS_DB)("reuses the resulting draft vendor after a concurrent Tax ID conflict", async () => {
+    const body = {
+      name: "Concurrent AI Vendor",
+      taxId: "CY-CONCURRENT-600",
+      creationSource: "ai_extraction",
+    };
+    const responses = await Promise.all([
+      createVendor(companyRequest("http://localhost/api/settings/vendors", companyA, body)),
+      createVendor(companyRequest("http://localhost/api/settings/vendors", companyA, body)),
+    ]);
+    const vendors = await Promise.all(responses.map((response) => response.json() as Promise<{ id: number; vendorStatus: string }>));
+
+    expect(responses.map((response) => response.status).sort()).toEqual([200, 201]);
+    expect(vendors[0].id).toBe(vendors[1].id);
+    expect(vendors.every((vendor) => vendor.vendorStatus === "draft")).toBe(true);
+    expect(await db.select().from(schema.vendors).where(and(
+      eq(schema.vendors.companyId, companyA),
+      eq(schema.vendors.normalizedTaxId, "CYCONCURRENT600"),
     ))).toHaveLength(1);
   });
 
@@ -97,11 +181,13 @@ describe("POST /api/settings/vendors invoice resolution", () => {
     const response = await createVendor(companyRequest("http://localhost/api/settings/vendors", companyA, {
       name: "Company A Supplier",
       taxId,
+      creationSource: "ai_extraction",
     }));
-    const companyAVendor = await response.json() as { id: number };
+    const companyAVendor = await response.json() as { id: number; vendorStatus: string };
 
     expect(response.status).toBe(201);
     expect(companyAVendor.id).not.toBe(companyBVendor.id);
+    expect(companyAVendor.vendorStatus).toBe("draft");
     expect((await db.select().from(schema.vendors).where(eq(schema.vendors.id, companyAVendor.id)))[0].companyId).toBe(companyA);
   });
 
@@ -109,8 +195,10 @@ describe("POST /api/settings/vendors invoice resolution", () => {
     const vendorResponse = await createVendor(companyRequest("http://localhost/api/settings/vendors", companyA, {
       name: "Approval Flow Supplier",
       taxId: "CY-APPROVE-700",
+      creationSource: "ai_extraction",
     }));
-    const vendor = await vendorResponse.json() as { id: number };
+    const vendor = await vendorResponse.json() as { id: number; vendorStatus: string };
+    expect(vendor.vendorStatus).toBe("draft");
     const [invoice] = await db.insert(schema.supplierInvoices).values({
       companyId: companyA,
       invoiceNumber: "AUTO-APPROVE-1",
@@ -142,5 +230,9 @@ describe("POST /api/settings/vendors invoice resolution", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ vendorId: vendor.id, status: "approved" });
+    expect((await db.select().from(schema.supplierInvoices).where(eq(schema.supplierInvoices.id, invoice.id)))[0]).toMatchObject({
+      vendorId: vendor.id,
+      status: "approved",
+    });
   });
 });

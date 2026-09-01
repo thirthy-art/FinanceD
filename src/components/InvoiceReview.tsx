@@ -13,7 +13,7 @@ import { selectableExpenseAccounts, selectablePrepaidAssetAccounts } from "@/src
 import { useI18n } from "@/src/i18n/context";
 import { buildInvoiceDiagnosticsText, extractValidationErrorFields } from "@/src/lib/invoice-diagnostics";
 
-interface Vendor { id: number; name: string; taxId: string | null; normalizedTaxId?: string | null; invoiceCount?: number; }
+interface Vendor { id: number; name: string; taxId: string | null; normalizedTaxId?: string | null; vendorStatus?: "draft" | "active"; invoiceCount?: number; }
 interface CostCentre { id: number; code: string; name: string; }
 interface Account { id: number; code: string; name: string; type: string; parentId: number | null; isPosting: boolean; isActive: boolean; }
 interface Document { id: number; mimeType: string; originalFilename: string; ocrPerformed: boolean; }

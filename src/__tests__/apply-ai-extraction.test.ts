@@ -125,7 +125,7 @@ describe("applying AI extraction", () => {
     const request = vi.fn().mockResolvedValue({
       ok: true,
       status: 201,
-      json: async () => ({ id: 42, name: "New Supplier", taxId: "CY-42", normalizedTaxId: "CY42" }),
+      json: async () => ({ id: 42, name: "New Supplier", taxId: "CY-42", normalizedTaxId: "CY42", vendorStatus: "draft" }),
     });
 
     const result = await persistNewVendorResolution(
@@ -133,8 +133,14 @@ describe("applying AI extraction", () => {
       request,
     );
 
-    expect(result).toMatchObject({ kind: "selected", vendor: { id: 42, name: "New Supplier" } });
+    expect(result).toMatchObject({ kind: "selected", vendor: { id: 42, name: "New Supplier", vendorStatus: "draft" } });
     expect(request).toHaveBeenCalledWith("/api/settings/vendors", expect.objectContaining({ method: "POST" }));
+    const requestBody = JSON.parse(request.mock.calls[0][1].body as string) as Record<string, unknown>;
+    expect(requestBody).toMatchObject({
+      name: "New Supplier",
+      taxId: "CY-42",
+      creationSource: "ai_extraction",
+    });
   });
 
   it("keeps server-side ambiguity as a user choice instead of creating or guessing", async () => {
