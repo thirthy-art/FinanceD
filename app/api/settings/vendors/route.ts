@@ -63,7 +63,11 @@ export async function POST(req: NextRequest) {
   const match = findVendorIdentityMatches(parsed.data.name, parsed.data.taxId, existing);
   if (match.candidates.length > 1) {
     return NextResponse.json(
-      { error: "Multiple existing vendors match these details. Open a vendor and merge the duplicate records." },
+      {
+        error: "Multiple existing vendors match these details. Open a vendor and merge the duplicate records.",
+        candidates: match.candidates,
+        matchedOn: match.matchedOn,
+      },
       { status: 409 },
     );
   }
@@ -83,10 +87,19 @@ export async function POST(req: NextRequest) {
     .onConflictDoNothing()
     .returning();
   if (!created) {
-    return NextResponse.json(
-      { error: "A vendor with this VAT/Tax ID already exists. Refresh the vendor list and use that record." },
-      { status: 409 },
-    );
+    const afterConflict = await db
+      .select({ id: vendors.id, name: vendors.name, taxId: vendors.taxId, normalizedTaxId: vendors.normalizedTaxId })
+      .from(vendors)
+      .where(eq(vendors.companyId, company.id));
+    const conflictMatch = findVendorIdentityMatches(parsed.data.name, taxId, afterConflict);
+    if (conflictMatch.candidates.length === 1) {
+      return NextResponse.json({ ...conflictMatch.candidates[0], reused: true });
+    }
+    return NextResponse.json({
+      error: "Multiple existing vendors match these details. Open a vendor and merge the duplicate records.",
+      candidates: conflictMatch.candidates,
+      matchedOn: conflictMatch.matchedOn,
+    }, { status: 409 });
   }
   return NextResponse.json(created, { status: 201 });
 }

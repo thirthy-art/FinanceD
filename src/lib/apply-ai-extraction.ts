@@ -30,6 +30,59 @@ export interface ApplyExtractionResult<T extends ExtractionDraftFields> {
   vendorResolution: VendorApplyResolution;
 }
 
+type VendorResolutionRequest = (
+  input: string,
+  init: RequestInit,
+) => Promise<Pick<Response, "ok" | "status" | "json">>;
+
+/**
+ * Persists only vendor resolutions that identity matching has determined are new.
+ * The server repeats identity matching inside the active-company boundary before
+ * creating anything, so this remains safe when the browser's vendor list is stale.
+ */
+export async function persistNewVendorResolution(
+  resolution: VendorApplyResolution,
+  request: VendorResolutionRequest = fetch,
+): Promise<VendorApplyResolution> {
+  if (resolution.kind !== "new") return resolution;
+
+  const response = await request("/api/settings/vendors", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: resolution.name,
+      taxId: resolution.taxId || undefined,
+    }),
+  });
+  const body = await response.json() as {
+    error?: unknown;
+    id?: number;
+    name?: string;
+    taxId?: string | null;
+    normalizedTaxId?: string | null;
+    candidates?: VendorIdentityCandidate[];
+    matchedOn?: "taxId" | "name";
+  };
+
+  if (response.status === 409 && body.candidates?.length && body.matchedOn) {
+    return { kind: "ambiguous", candidates: body.candidates, matchedOn: body.matchedOn };
+  }
+  if (!response.ok || !body.id || !body.name) {
+    throw new Error(typeof body.error === "string" ? body.error : "Vendor could not be resolved.");
+  }
+
+  return {
+    kind: "selected",
+    vendor: {
+      id: body.id,
+      name: body.name,
+      taxId: body.taxId ?? null,
+      normalizedTaxId: body.normalizedTaxId ?? null,
+      invoiceCount: 0,
+    },
+  };
+}
+
 export function applyExtractionToDraft<T extends ExtractionDraftFields>(
   current: T,
   extraction: AiInvoiceExtraction,
