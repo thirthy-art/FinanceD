@@ -7,13 +7,13 @@ import type { AiInvoiceReconciliationInfo } from "@/src/lib/ai-invoice-reconcili
 import type { EditableInvoiceLine } from "@/src/lib/invoice-lines";
 import { editableLineToInput, applyAutoCalcToLine, isCompletelyEmptyLine, parsePageInput, checkLineTotalsForApproval, fillMissingLineNumbers } from "@/src/lib/invoice-lines";
 import { buildTextExtractionFallbackLine } from "@/src/lib/local-invoice-parser";
-import { applyExtractionLines, applyExtractionToDraft, extractionLinesToEditable, invoiceLinesSignature, persistNewVendorResolution } from "@/src/lib/apply-ai-extraction";
+import { applyExtractionLines, applyExtractionToDraft, extractionLinesToEditable, invoiceLinesSignature } from "@/src/lib/apply-ai-extraction";
 import InvoiceLinesEditor from "@/src/components/InvoiceLinesEditor";
 import { selectableExpenseAccounts, selectablePrepaidAssetAccounts } from "@/src/lib/coa-hierarchy";
 import { useI18n } from "@/src/i18n/context";
 import { buildInvoiceDiagnosticsText, extractValidationErrorFields } from "@/src/lib/invoice-diagnostics";
 
-interface Vendor { id: number; name: string; taxId: string | null; normalizedTaxId?: string | null; vendorStatus?: "draft" | "active"; invoiceCount?: number; }
+interface Vendor { id: number; name: string; taxId: string | null; normalizedTaxId?: string | null; invoiceCount?: number; }
 interface CostCentre { id: number; code: string; name: string; }
 interface Account { id: number; code: string; name: string; type: string; parentId: number | null; isPosting: boolean; isActive: boolean; }
 interface Document { id: number; mimeType: string; originalFilename: string; ocrPerformed: boolean; }
@@ -292,7 +292,6 @@ export default function InvoiceReview({ invoice, documents, initialLinesAreDeter
   const [vendorOptions, setVendorOptions] = useState(vendors);
   const [vendorCandidates, setVendorCandidates] = useState<Vendor[]>([]);
   const [extracting, setExtracting] = useState(false);
-  const [applyingExtraction, setApplyingExtraction] = useState(false);
   const [extractionError, setExtractionError] = useState("");
   const [aiExtraction, setAiExtraction] = useState<AiInvoiceExtraction | null>(null);
   const [aiReconciliation, setAiReconciliation] = useState<AiInvoiceReconciliationInfo | null>(null);
@@ -479,10 +478,8 @@ export default function InvoiceReview({ invoice, documents, initialLinesAreDeter
     }
   }
 
-  async function applyAiExtraction() {
+  function applyAiExtraction() {
     if (!aiExtraction) return;
-    setApplyingExtraction(true);
-    setExtractionError("");
     const draftResult = applyExtractionToDraft(form, aiExtraction, vendorOptions);
     const lineResult = applyExtractionLines(
       editableLines,
@@ -491,16 +488,7 @@ export default function InvoiceReview({ invoice, documents, initialLinesAreDeter
       deterministicInitialLineSignature,
     );
 
-    let vendorResolution = draftResult.vendorResolution;
-    try {
-      vendorResolution = await persistNewVendorResolution(vendorResolution);
-    } catch (error: unknown) {
-      setExtractionError(error instanceof Error ? error.message : "Vendor could not be resolved.");
-      setApplyingExtraction(false);
-      return;
-    }
-
-    const applied = draftResult.appliedFields.map((field) => field === "Vendor draft" ? "Vendor" : field);
+    const applied = [...draftResult.appliedFields];
     const skipped = draftResult.skippedFields.filter((f) => !f.includes("(unrecognized date)"));
     const warnings = draftResult.skippedFields.filter((f) => f.includes("(unrecognized date)"));
     if (aiExtraction.lines.length > 0) {
@@ -510,8 +498,11 @@ export default function InvoiceReview({ invoice, documents, initialLinesAreDeter
 
     setForm((current) => {
       const next = { ...current, ...draftResult.draft };
-      if (vendorResolution.kind === "selected") {
-        next.vendorId = String(vendorResolution.vendor.id);
+      if (draftResult.vendorResolution.kind === "new") {
+        next.vendorId = "";
+        next.newVendorName = draftResult.vendorResolution.name;
+        next.newVendorTaxId = draftResult.vendorResolution.taxId;
+      } else if (draftResult.vendorResolution.kind === "selected") {
         next.newVendorName = "";
         next.newVendorTaxId = "";
       }
@@ -522,16 +513,10 @@ export default function InvoiceReview({ invoice, documents, initialLinesAreDeter
     });
     setEditableLines(lineResult.lines);
     setLastAppliedLineSignature(lineResult.signature);
-    setAddVendor(false);
-    setVendorCandidates(vendorResolution.kind === "ambiguous" ? vendorResolution.candidates : []);
-    if (vendorResolution.kind === "selected") {
-      setVendorOptions((current) => current.some((vendor) => vendor.id === vendorResolution.vendor.id)
-        ? current
-        : [...current, vendorResolution.vendor].sort((left, right) => left.name.localeCompare(right.name)));
-    }
+    setAddVendor(draftResult.vendorResolution.kind === "new");
+    setVendorCandidates(draftResult.vendorResolution.kind === "ambiguous" ? draftResult.vendorResolution.candidates : []);
     setApplyNotice({ applied, skipped, warnings });
     setSaved(false);
-    setApplyingExtraction(false);
   }
 
   async function deleteInvoice() {
@@ -808,8 +793,7 @@ export default function InvoiceReview({ invoice, documents, initialLinesAreDeter
               <button
                 type="button"
                 onClick={applyAiExtraction}
-                disabled={applyingExtraction}
-                style={{ padding: "9px 14px", border: "none", borderRadius: 6, background: applyingExtraction ? "#94a3b8" : "#16a34a", color: "#fff", cursor: applyingExtraction ? "default" : "pointer", fontSize: 13, fontWeight: 700 }}
+                style={{ padding: "9px 14px", border: "none", borderRadius: 6, background: "#16a34a", color: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 700 }}
               >
                 {ir.applyAiExtraction}
               </button>
@@ -855,7 +839,7 @@ export default function InvoiceReview({ invoice, documents, initialLinesAreDeter
                   }}
                   style={{ display: "block", width: "100%", textAlign: "left", marginTop: 5, padding: "7px 9px", border: "1px solid #fde68a", borderRadius: 5, background: "#fff", cursor: "pointer" }}
                 >
-                  {candidate.name} {candidate.taxId ? `· ${candidate.taxId}` : ""} · {candidate.invoiceCount ?? 0} invoice{candidate.invoiceCount === 1 ? "" : "s"}
+                  {candidate.name} {candidate.taxId ? `· ${candidate.taxId}` : ""} · {candidate.invoiceCount} invoice{candidate.invoiceCount === 1 ? "" : "s"}
                 </button>
               ))}
             </div>
@@ -999,7 +983,7 @@ export default function InvoiceReview({ invoice, documents, initialLinesAreDeter
             <>
               {!addVendor ? (
                 <div style={{ display: "flex", gap: 8 }}>
-                  <select disabled={applyingExtraction} style={{ ...inputStyle, flex: 1 }} value={form.vendorId} onChange={(event) => {
+                  <select style={{ ...inputStyle, flex: 1 }} value={form.vendorId} onChange={(event) => {
                     set("vendorId")(event);
                     setVendorCandidates([]);
                   }}>
@@ -1009,13 +993,12 @@ export default function InvoiceReview({ invoice, documents, initialLinesAreDeter
                     ))}
                   </select>
                   <button
-                    disabled={applyingExtraction}
                     onClick={() => {
                       setAddVendor(true);
                       setVendorCandidates([]);
                       setForm((current) => ({ ...current, vendorId: "" }));
                     }}
-                    style={{ padding: "8px 12px", border: "1px solid #e2e8f0", borderRadius: 6, background: "#f8fafc", cursor: applyingExtraction ? "default" : "pointer", fontSize: 13 }}
+                    style={{ padding: "8px 12px", border: "1px solid #e2e8f0", borderRadius: 6, background: "#f8fafc", cursor: "pointer", fontSize: 13 }}
                     type="button"
                   >
                     {ir.newVendorBtn}

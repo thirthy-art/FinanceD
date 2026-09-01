@@ -1,5 +1,5 @@
 {
-  "id": "11d91fdc-fad0-4374-a246-569a32b5df95",
+  "id": "c41bc0a5-2e2f-4af0-a0cc-cd0215d36b44",
   "prevId": "22ea6095-914c-45cb-a0bc-16c3c9e74cae",
   "version": "7",
   "dialect": "postgresql",
@@ -745,6 +745,358 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.reconciliation_imports": {
+      "name": "reconciliation_imports",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "company_id": {
+          "name": "company_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_kind": {
+          "name": "source_kind",
+          "type": "reconciliation_source",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "original_filename": {
+          "name": "original_filename",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content_hash": {
+          "name": "content_hash",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "row_count": {
+          "name": "row_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "status": {
+          "name": "status",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'parsed'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "reconciliation_imports_company_id_companies_id_fk": {
+          "name": "reconciliation_imports_company_id_companies_id_fk",
+          "tableFrom": "reconciliation_imports",
+          "tableTo": "companies",
+          "columnsFrom": [
+            "company_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "uq_reconciliation_import_company_source_hash": {
+          "name": "uq_reconciliation_import_company_source_hash",
+          "nullsNotDistinct": false,
+          "columns": [
+            "company_id",
+            "source_kind",
+            "content_hash"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.reconciliation_matches": {
+      "name": "reconciliation_matches",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "company_id": {
+          "name": "company_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "player_transaction_id": {
+          "name": "player_transaction_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "psp_transaction_id": {
+          "name": "psp_transaction_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "confirmed": {
+          "name": "confirmed",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "match_player_psp_unique": {
+          "name": "match_player_psp_unique",
+          "columns": [
+            {
+              "expression": "company_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "player_transaction_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "psp_transaction_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "reconciliation_matches_company_id_companies_id_fk": {
+          "name": "reconciliation_matches_company_id_companies_id_fk",
+          "tableFrom": "reconciliation_matches",
+          "tableTo": "companies",
+          "columnsFrom": [
+            "company_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "reconciliation_matches_player_transaction_id_reconciliation_transactions_id_fk": {
+          "name": "reconciliation_matches_player_transaction_id_reconciliation_transactions_id_fk",
+          "tableFrom": "reconciliation_matches",
+          "tableTo": "reconciliation_transactions",
+          "columnsFrom": [
+            "player_transaction_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "reconciliation_matches_psp_transaction_id_reconciliation_transactions_id_fk": {
+          "name": "reconciliation_matches_psp_transaction_id_reconciliation_transactions_id_fk",
+          "tableFrom": "reconciliation_matches",
+          "tableTo": "reconciliation_transactions",
+          "columnsFrom": [
+            "psp_transaction_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "match_player_transaction_unique": {
+          "name": "match_player_transaction_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "player_transaction_id"
+          ]
+        },
+        "match_psp_transaction_unique": {
+          "name": "match_psp_transaction_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "psp_transaction_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.reconciliation_transactions": {
+      "name": "reconciliation_transactions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "company_id": {
+          "name": "company_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "import_id": {
+          "name": "import_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source": {
+          "name": "source",
+          "type": "reconciliation_source",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "external_id": {
+          "name": "external_id",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "player_id": {
+          "name": "player_id",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "transaction_type": {
+          "name": "transaction_type",
+          "type": "reconciliation_transaction_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount": {
+          "name": "amount",
+          "type": "numeric(38, 18)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "currency": {
+          "name": "currency",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "event_date": {
+          "name": "event_date",
+          "type": "varchar(10)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reference": {
+          "name": "reference",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "varchar(50)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "match_status": {
+          "name": "match_status",
+          "type": "reconciliation_match_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'unmatched'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "reconciliation_transactions_company_id_companies_id_fk": {
+          "name": "reconciliation_transactions_company_id_companies_id_fk",
+          "tableFrom": "reconciliation_transactions",
+          "tableTo": "companies",
+          "columnsFrom": [
+            "company_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "reconciliation_transactions_import_id_reconciliation_imports_id_fk": {
+          "name": "reconciliation_transactions_import_id_reconciliation_imports_id_fk",
+          "tableFrom": "reconciliation_transactions",
+          "tableTo": "reconciliation_imports",
+          "columnsFrom": [
+            "import_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.supplier_invoice_documents": {
       "name": "supplier_invoice_documents",
       "schema": "",
@@ -1295,14 +1647,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "vendor_status": {
-          "name": "vendor_status",
-          "type": "vendor_status",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'active'"
-        },
         "is_active": {
           "name": "is_active",
           "type": "boolean",
@@ -1415,12 +1759,29 @@
         "Prepaid"
       ]
     },
-    "public.vendor_status": {
-      "name": "vendor_status",
+    "public.reconciliation_match_status": {
+      "name": "reconciliation_match_status",
       "schema": "public",
       "values": [
-        "draft",
-        "active"
+        "matched",
+        "unmatched",
+        "ambiguous"
+      ]
+    },
+    "public.reconciliation_source": {
+      "name": "reconciliation_source",
+      "schema": "public",
+      "values": [
+        "player_ledger",
+        "psp_transactions"
+      ]
+    },
+    "public.reconciliation_transaction_type": {
+      "name": "reconciliation_transaction_type",
+      "schema": "public",
+      "values": [
+        "deposit",
+        "withdrawal"
       ]
     }
   },

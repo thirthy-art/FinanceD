@@ -61,11 +61,6 @@ export const reconciliationMatchStatusEnum = pgEnum("reconciliation_match_status
   "ambiguous",
 ]);
 
-export const vendorStatusEnum = pgEnum("vendor_status", [
-  "draft",
-  "active",
-]);
-
 // ─── Companies ────────────────────────────────────────────────────────────────
 
 export const companies = pgTable("companies", {
@@ -140,7 +135,6 @@ export const vendors = pgTable("vendors", {
   address: text("address"),
   defaultCurrency: varchar("default_currency", { length: 10 }),
   externalVendorNumber: varchar("external_vendor_number", { length: 100 }),
-  vendorStatus: vendorStatusEnum("vendor_status").notNull().default("active"),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

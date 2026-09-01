@@ -3,7 +3,6 @@ export interface VendorIdentityCandidate {
   name: string;
   taxId: string | null;
   normalizedTaxId?: string | null;
-  vendorStatus?: "draft" | "active";
   invoiceCount?: number;
 }
 

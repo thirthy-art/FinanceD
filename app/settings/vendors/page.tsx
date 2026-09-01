@@ -11,7 +11,6 @@ interface Vendor {
   taxId: string | null;
   address: string | null;
   defaultCurrency: string | null;
-  vendorStatus: "draft" | "active";
   isActive: boolean;
   invoiceCount: number;
   possibleDuplicate: boolean;

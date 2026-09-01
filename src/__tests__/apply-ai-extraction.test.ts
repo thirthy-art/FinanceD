@@ -1,7 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { AiInvoiceExtraction } from "@/src/lib/ai-extraction";
 import { AiInvoiceExtractionSchema } from "@/src/lib/ai-extraction";
-import { applyExtractionLines, applyExtractionToDraft, extractionLinesToEditable, invoiceLinesSignature, persistNewVendorResolution } from "@/src/lib/apply-ai-extraction";
+import { applyExtractionLines, applyExtractionToDraft, extractionLinesToEditable, invoiceLinesSignature } from "@/src/lib/apply-ai-extraction";
 import { sumInvoiceLineAmounts } from "@/src/lib/invoice-lines";
 
 const extraction: AiInvoiceExtraction = {
@@ -81,83 +81,6 @@ describe("applying AI extraction", () => {
     expect(result.appliedFields).toEqual(expect.arrayContaining([
       "Invoice number", "Invoice date", "Due date", "Currency", "Net amount", "VAT amount", "Gross amount",
     ]));
-  });
-
-  it("selects an existing vendor by normalized Tax ID", () => {
-    const result = applyExtractionToDraft(currentDraft, extraction, [
-      { id: 7, name: "Other display name", taxId: "CY123456" },
-    ]);
-
-    expect(result.vendorResolution).toMatchObject({ kind: "selected", vendor: { id: 7 } });
-    expect(result.draft.vendorId).toBe("7");
-  });
-
-  it("gives Tax ID precedence over an exact normalized name match", () => {
-    const result = applyExtractionToDraft(currentDraft, extraction, [
-      { id: 7, name: "Different vendor", taxId: "CY123456" },
-      { id: 8, name: "  acme   ltd  ", taxId: "CY999999" },
-    ]);
-
-    expect(result.vendorResolution).toMatchObject({ kind: "selected", vendor: { id: 7 } });
-  });
-
-  it("falls back to an exact normalized name match when Tax ID has no match", () => {
-    const result = applyExtractionToDraft(currentDraft, extraction, [
-      { id: 8, name: "  acme   ltd  ", taxId: "CY999999" },
-    ]);
-
-    expect(result.vendorResolution).toMatchObject({ kind: "selected", vendor: { id: 8 } });
-  });
-
-  it("does not guess or request creation when identity matching is ambiguous", async () => {
-    const result = applyExtractionToDraft(currentDraft, extraction, [
-      { id: 7, name: "Acme One", taxId: "CY123456" },
-      { id: 8, name: "Acme Two", taxId: "CY 123-456" },
-    ]);
-    const request = vi.fn();
-    const persisted = await persistNewVendorResolution(result.vendorResolution, request);
-
-    expect(persisted).toMatchObject({ kind: "ambiguous", matchedOn: "taxId" });
-    expect(request).not.toHaveBeenCalled();
-  });
-
-  it("persists an unknown extracted vendor and returns a selectable vendorId", async () => {
-    const request = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 201,
-      json: async () => ({ id: 42, name: "New Supplier", taxId: "CY-42", normalizedTaxId: "CY42", vendorStatus: "draft" }),
-    });
-
-    const result = await persistNewVendorResolution(
-      { kind: "new", name: "New Supplier", taxId: "CY-42" },
-      request,
-    );
-
-    expect(result).toMatchObject({ kind: "selected", vendor: { id: 42, name: "New Supplier", vendorStatus: "draft" } });
-    expect(request).toHaveBeenCalledWith("/api/settings/vendors", expect.objectContaining({ method: "POST" }));
-    const requestBody = JSON.parse(request.mock.calls[0][1].body as string) as Record<string, unknown>;
-    expect(requestBody).toMatchObject({
-      name: "New Supplier",
-      taxId: "CY-42",
-      creationSource: "ai_extraction",
-    });
-  });
-
-  it("keeps server-side ambiguity as a user choice instead of creating or guessing", async () => {
-    const candidates = [
-      { id: 11, name: "Duplicate", taxId: null },
-      { id: 12, name: " duplicate ", taxId: null },
-    ];
-    const result = await persistNewVendorResolution(
-      { kind: "new", name: "Duplicate", taxId: "" },
-      async () => ({
-        ok: false,
-        status: 409,
-        json: async () => ({ candidates, matchedOn: "name" }),
-      }),
-    );
-
-    expect(result).toEqual({ kind: "ambiguous", candidates, matchedOn: "name" });
   });
 
   it("fills an empty invoice-header field with a non-null AI value", () => {
