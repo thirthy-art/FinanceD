@@ -1,6 +1,6 @@
 {
-  "id": "e8bc264a-e217-44dc-8672-d5b7e7e3570e",
-  "prevId": "c41bc0a5-2e2f-4af0-a0cc-cd0215d36b44",
+  "id": "95d585d5-14ef-4b52-b369-94bbab72cd90",
+  "prevId": "11d91fdc-fad0-4374-a246-569a32b5df95",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1895,6 +1895,14 @@
           "primaryKey": false,
           "notNull": false
         },
+        "vendor_status": {
+          "name": "vendor_status",
+          "type": "vendor_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'active'"
+        },
         "is_active": {
           "name": "is_active",
           "type": "boolean",
@@ -2030,6 +2038,14 @@
       "values": [
         "deposit",
         "withdrawal"
+      ]
+    },
+    "public.vendor_status": {
+      "name": "vendor_status",
+      "schema": "public",
+      "values": [
+        "draft",
+        "active"
       ]
     }
   },
