@@ -7,7 +7,7 @@ import { isValidDateOnly } from "./validation";
 export class PaymentImportError extends Error {}
 
 export interface ImportedPaymentEvent {
-  sourceRowNumber: number; sourceRowId: string | null; providerEventId: string | null; relatedProviderEventId: string | null; externalId: string | null; reference: string | null;
+  sourceRowNumber: number; sourceRowId: string | null; providerEventId: string | null; relatedProviderEventId: string | null; relatedPaymentAccountId: number | null; externalId: string | null; reference: string | null;
   eventDate: string; eventType: PaymentEventType; balanceDirection: BalanceDirection; balanceAmount: string;
   balanceAssetCode: string; balanceAssetType: AssetType; sourceAmount: string | null; sourceAssetCode: string | null;
   sourceAssetType: AssetType | null; actualFeeAmount: string | null; actualFeeAssetCode: string | null;
@@ -23,6 +23,7 @@ export interface ParsedPaymentImport { events: ImportedPaymentEvent[]; contentHa
 const ALIASES = {
   sourceRowId: ["source_row_id", "row_id"], providerEventId: ["provider_event_id", "source_event_id", "transaction_id"],
   relatedProviderEventId: ["related_provider_event_id", "related_transaction_id"], externalId: ["external_id", "payment_id", "psp_id"],
+  relatedPaymentAccountId: ["related_payment_account_id", "source_payment_account_id"],
   reference: ["reference", "merchant_reference", "external_reference"], eventDate: ["event_date", "date", "transaction_date", "posting_date"],
   eventType: ["event_type", "transaction_type", "type", "operation"], direction: ["balance_direction", "economic_direction", "direction"],
   balanceAmount: ["balance_amount", "credited_amount", "debited_amount", "account_amount", "amount", "net_amount"],
@@ -88,6 +89,7 @@ function normalize(rows: unknown[][]): ParsedPaymentImport {
     if (!type) throw new PaymentImportError(`Row ${index + 2}: event type is missing or ambiguous; classify it explicitly.`);
     const direction = defaultDirection(type, get("direction"));
     if (!direction) throw new PaymentImportError(`Row ${index + 2}: balance direction is required for ${type}.`);
+    if ((type === "deposit" && direction !== "credit") || (type === "withdrawal" && direction !== "debit")) throw new PaymentImportError(`Row ${index + 2}: ${type} has a contradictory balance direction.`);
     const amount = decimal(get("balanceAmount")); const balanceAsset = asset(get("balanceAssetCode")); const balanceType = assetType(get("balanceAssetType"));
     const date = cell(get("eventDate"));
     if (!date || !isValidDateOnly(date)) throw new PaymentImportError(`Row ${index + 2}: event date must be a real date in YYYY-MM-DD format.`);
@@ -103,7 +105,7 @@ function normalize(rows: unknown[][]): ParsedPaymentImport {
     const expectedReleaseDate = cell(get("expectedReleaseDate"));
     if (expectedReleaseDate !== null && !isValidDateOnly(expectedReleaseDate)) throw new PaymentImportError(`Row ${index + 2}: expected release date must be a real date in YYYY-MM-DD format.`);
     const providerEventId = cell(get("providerEventId"));
-    return { sourceRowNumber: index + 2, sourceRowId: cell(get("sourceRowId")), providerEventId, relatedProviderEventId: cell(get("relatedProviderEventId")), externalId: cell(get("externalId")) ?? providerEventId, reference: cell(get("reference")), eventDate: date,
+    return { sourceRowNumber: index + 2, sourceRowId: cell(get("sourceRowId")), providerEventId, relatedProviderEventId: cell(get("relatedProviderEventId")), relatedPaymentAccountId: integer(get("relatedPaymentAccountId")), externalId: cell(get("externalId")) ?? providerEventId, reference: cell(get("reference")), eventDate: date,
       eventType: type, balanceDirection: direction, balanceAmount: amount, balanceAssetCode: balanceAsset, balanceAssetType: balanceType,
       sourceAmount, sourceAssetCode: sourceAsset, sourceAssetType: sourceType, actualFeeAmount, actualFeeAssetCode: actualFeeAsset,
       expectedFxRate: decimal(get("expectedFxRate")), reportedAvailableBalance: signedDecimal(get("reportedAvailableBalance")), reportedReserveBalance: signedDecimal(get("reportedReserveBalance")),

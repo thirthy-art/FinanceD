@@ -543,5 +543,11 @@ export const he: Messages = {
     expectedFee: "עמלה צפויה", actualFee: "עמלה בפועל", feeVariance: "סטיית עמלה", impliedFx: "שער בפועל", expectedFx: "שער צפוי", fxVariance: "סטיית מט״ח", providerCost: "עלות / השפעת ספק",
     unavailable: "לא זמין", accountCreated: "החשבון נוצר.", imported: "קובץ התשלום יובא.", duplicate: "הקובץ כבר יובא; לא נוצרו אירועים כפולים.", overlapWarning: "הקובץ יובא, אך לא ניתן למנוע בבטחה כפילויות בין קבצים חופפים בשורות ללא מזהה אירוע ספק.", saveAsset: "שמירת יתרת פתיחה",
     expectedRelease: "שחרור צפוי", actualReleased: "שוחרר בפועל", actualReleaseDate: "תאריך שחרור בפועל", unlinkedReleases: "שחרורים לא מקושרים (לא הוקצו לאצוות רזרבה)", outstanding: "יתרה פתוחה", exposureNote: "רזרבות וכספים במעבר הם חשיפת נזילות ולא עלות ספק.", error: "לא ניתן להשלים את הפעולה.",
+    clientFundsEligible: "כשיר לכספי לקוחות", providerEventId: "מזהה אירוע ספק", relatedProviderEventId: "מזהה אירוע ספק מקושר",
+    currentCalculatedAvailable: "מחושב נוכחי", calculatedAtReported: "מחושב למועד הדיווח", reportedAsOf: "דווח למועד",
+    sourceAmountBasis: "סכום מקור", balanceAmountBasis: "סכום יתרה", basisAssetOptional: "נכס בסיס (אופציונלי)", feeAsset: "נכס עמלה", days: "ימים",
+    accountTypeLabels: { psp: "PSP", wallet: "ארנק", exchange: "בורסה", bank: "בנק", other: "אחר" },
+    eventTypeLabels: { deposit: "הפקדה", withdrawal: "משיכה", refund: "החזר", chargeback: "הכחשת עסקה", fee: "עמלה", adjustment: "התאמה", settlement: "סליקה", transfer: "העברה", reserve_hold: "החזקת רזרבה", reserve_release: "שחרור רזרבה", conversion: "המרה", unknown: "לא ידוע" },
+    directionLabels: { credit: "זיכוי", debit: "חיוב", none: "ללא תנועה" },
   },
 };

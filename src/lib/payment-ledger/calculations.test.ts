@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { calculateBalances, calculateFundsInTransit, calculateProcessedVolumeCorridors, calculateReserveLots, expectedFee, expectedReserveReleaseDate, feeVariance, fxVariance, groupOwnedFundsByAsset, impliedFx, providerCostImpact, toReconciliationCandidate } from "./calculations";
+import { calculateBalances, calculateFundsInTransit, calculateProcessedVolumeCorridors, calculateReserveLots, expectedFee, expectedReserveReleaseDate, feeVariance, fxVariance, groupOwnedFundsByAsset, impliedFx, providerCostFacts, providerCostImpact, toReconciliationCandidate } from "./calculations";
 import type { PaymentEvent } from "./types";
 
 const event = (overrides: Partial<PaymentEvent> = {}): PaymentEvent => ({
-  id: 1, companyId: 7, paymentAccountId: 10, importId: 20, sourceRowNumber: 2, sourceRowId: null, providerEventId: "provider-1", relatedProviderEventId: null,
+  id: 1, companyId: 7, paymentAccountId: 10, importId: 20, sourceRowNumber: 2, sourceRowId: null, providerEventId: "provider-1", relatedProviderEventId: null, relatedPaymentAccountId: null,
   externalId: "tx-1", reference: "ref-1", eventDate: "2026-01-01", eventType: "deposit",
   balanceDirection: "credit", balanceAmount: "100", balanceAssetCode: "EUR", balanceAssetType: "fiat",
   sourceAmount: "100", sourceAssetCode: "EUR", sourceAssetType: "fiat", actualFeeAmount: null,
@@ -48,7 +48,14 @@ describe("canonical payment-ledger calculations", () => {
       { paymentAccountId: 10, assetCode: "EUR", assetType: "fiat", reportedAvailableBalance: "1090", reportedReserveBalance: "50", asOf: new Date("2026-01-02") },
       { paymentAccountId: 10, assetCode: "EUR", assetType: "fiat", reportedAvailableBalance: "1088", reportedReserveBalance: "49", asOf: new Date("2026-01-03") },
     ]);
-    expect(position).toMatchObject({ available: "1100", reportedAvailable: "1088", availableDifference: "12" });
+    expect(position).toMatchObject({ available: "1100", calculatedAvailableAtReported: "1100", reportedAvailable: "1088", availableDifference: "12" });
+  });
+
+  it("compares a reported snapshot with the calculated balance through that date while retaining current balance", () => {
+    const [position] = calculateBalances(opening, [event({ eventDate: "2026-01-02", balanceAmount: "100" }), event({ id: 2, eventDate: "2026-01-03", balanceAmount: "50" })], [
+      { paymentAccountId: 10, assetCode: "EUR", assetType: "fiat", reportedAvailableBalance: "1100", reportedReserveBalance: "50", asOf: new Date("2026-01-02T00:00:00Z") },
+    ]);
+    expect(position).toMatchObject({ available: "1150", calculatedAvailableAtReported: "1100", reportedAvailable: "1100", availableDifference: "0" });
   });
 
   it("keeps stablecoin snapshots in their actual asset", () => {
@@ -77,15 +84,15 @@ describe("canonical payment-ledger calculations", () => {
   it("creates and clears same-asset funds in transit", () => {
     const sent = event({ id: 5, eventType: "settlement", balanceDirection: "debit", balanceAmount: "80000", destinationAccountId: 11 });
     expect(calculateFundsInTransit([sent])[0].outstandingAmount).toBe("80000");
-    const receipt = event({ id: 6, paymentAccountId: 11, eventType: "deposit", balanceAmount: "80000", relatedEventId: 5, destinationAmount: "80000", destinationAssetCode: "EUR", destinationAssetType: "fiat" });
+    const receipt = event({ id: 6, paymentAccountId: 11, eventType: "deposit", balanceAmount: "80000", relatedEventId: 5, relatedPaymentAccountId: 10, destinationAmount: "80000", destinationAssetCode: "EUR", destinationAssetType: "fiat" });
     expect(calculateFundsInTransit([sent, receipt])).toEqual([]);
   });
 
   it("reduces same-asset transit with partial receipts", () => {
     const sent = event({ id: 5, eventType: "transfer", balanceDirection: "debit", balanceAmount: "80000" });
-    const first = event({ id: 6, balanceAmount: "30000", relatedEventId: 5 });
+    const first = event({ id: 6, balanceAmount: "30000", relatedEventId: 5, relatedPaymentAccountId: 10 });
     expect(calculateFundsInTransit([sent, first])[0].outstandingAmount).toBe("50000");
-    const second = event({ id: 7, balanceAmount: "50000", relatedEventId: 5 });
+    const second = event({ id: 7, balanceAmount: "50000", relatedEventId: 5, relatedPaymentAccountId: 10 });
     expect(calculateFundsInTransit([sent, first, second])).toEqual([]);
   });
 
@@ -93,9 +100,18 @@ describe("canonical payment-ledger calculations", () => {
     const sent = event({ id: 5, eventType: "settlement", balanceDirection: "debit", balanceAmount: "80000", balanceAssetCode: "USD", destinationAmount: "68200", destinationAssetCode: "EUR", destinationAssetType: "fiat" });
     expect(calculateFundsInTransit([sent])[0]).toMatchObject({ sourceAssetCode: "USD", sourceAmount: "80000" });
     expect(impliedFx(sent.balanceAmount, sent.destinationAmount)).toBe("0.8525");
-    const receipt = event({ id: 6, paymentAccountId: 11, balanceAmount: "68200", balanceAssetCode: "EUR", relatedEventId: 5, destinationAmount: "68200", destinationAssetCode: "EUR", destinationAssetType: "fiat" });
+    const receipt = event({ id: 6, paymentAccountId: 11, balanceAmount: "68200", balanceAssetCode: "EUR", relatedEventId: 5, relatedPaymentAccountId: 10, destinationAmount: "68200", destinationAssetCode: "EUR", destinationAssetType: "fiat" });
     expect(calculateFundsInTransit([sent, receipt])[0].outstandingAmount).toBe("80000");
     expect(calculateFundsInTransit([sent, { ...receipt, finalReceipt: true }])).toEqual([]);
+  });
+
+  it("accepts only eligible linked credit deposits into transit", () => {
+    const sent = event({ id: 20, eventType: "settlement", balanceDirection: "debit", destinationAccountId: 11, balanceAmount: "80" });
+    const linked = { relatedEventId: 20, relatedPaymentAccountId: 10, paymentAccountId: 11, balanceAmount: "30" };
+    expect(calculateFundsInTransit([sent, event({ id: 21, ...linked, eventType: "fee", balanceDirection: "debit" }), event({ id: 22, ...linked, eventType: "adjustment", balanceDirection: "credit" })])[0].outstandingAmount).toBe("80");
+    expect(calculateFundsInTransit([sent, event({ id: 23, ...linked, paymentAccountId: 12 })])[0].outstandingAmount).toBe("80");
+    expect(calculateFundsInTransit([sent, event({ id: 24, ...linked, companyId: 8 })])[0].outstandingAmount).toBe("80");
+    expect(calculateFundsInTransit([sent, event({ id: 25, ...linked })])[0].outstandingAmount).toBe("50");
   });
 
   it("uses target units per one source unit for actual FX", () => expect(impliedFx("1000", "852")).toBe("0.852"));
@@ -107,7 +123,7 @@ describe("canonical payment-ledger calculations", () => {
   it("calculates dated percentage plus fixed expected fee and actual-minus-expected variance", () => {
     const payment = event({ sourceAmount: "1000", actualFeeAmount: "27", actualFeeAssetCode: "EUR" });
     const rules = [feeRule()];
-    expect(expectedFee(payment, rules)).toBe("26"); expect(feeVariance(payment, rules)).toBe("1");
+    expect(expectedFee(payment, rules)).toEqual({ amount: "26", assetCode: "EUR" }); expect(feeVariance(payment, rules)).toBe("1");
   });
 
   it("returns unavailable when no fee rule exists or fee assets differ", () => {
@@ -119,7 +135,7 @@ describe("canonical payment-ledger calculations", () => {
   it("supports balance-amount fees across a USD to EUR corridor", () => {
     const payment = event({ sourceAmount: "1000", sourceAssetCode: "USD", balanceAmount: "852", balanceAssetCode: "EUR", actualFeeAmount: "18", actualFeeAssetCode: "EUR" });
     const rules = [feeRule({ feeBasis: "balance_amount", percentageRate: "2", fixedAmount: "0.20" })];
-    expect(expectedFee(payment, rules)).toBe("17.24");
+    expect(expectedFee(payment, rules)).toEqual({ amount: "17.24", assetCode: "EUR" });
     expect(feeVariance(payment, rules)).toBe("0.76");
   });
 
@@ -129,19 +145,42 @@ describe("canonical payment-ledger calculations", () => {
     expect(expectedFee(event(), [feeRule(), feeRule({ percentageRate: "3" })])).toBeNull();
   });
 
+  it("preserves the expected fee asset and compares variance only in that asset", () => {
+    const usdFee = [feeRule({ assetCode: "USD", feeAssetCode: "USD", fixedAssetCode: "USD", percentageRate: "1", fixedAmount: "2" })];
+    const payment = event({ sourceAmount: "100", sourceAssetCode: "USD", balanceAmount: "90", balanceAssetCode: "EUR", actualFeeAmount: "3", actualFeeAssetCode: "USD" });
+    expect(expectedFee(payment, usdFee)).toEqual({ amount: "3", assetCode: "USD" });
+    expect(feeVariance(payment, usdFee)).toBe("0");
+    expect(feeVariance({ ...payment, actualFeeAssetCode: "EUR" }, usdFee)).toBeNull();
+  });
+
+  it("collects standalone and settlement fees once and FX from settlement/conversion without changing volume", () => {
+    const standalone = event({ eventType: "fee", balanceDirection: "debit", balanceAmount: "7", actualFeeAmount: null, actualFeeAssetCode: null });
+    expect(providerCostFacts(standalone, []).actualFee).toEqual({ amount: "7", assetCode: "EUR" });
+    expect(providerCostFacts({ ...standalone, actualFeeAmount: "6", actualFeeAssetCode: "EUR" }, []).actualFee).toEqual({ amount: "6", assetCode: "EUR" });
+    for (const eventType of ["settlement", "transfer"] as const) expect(providerCostFacts(event({ eventType, actualFeeAmount: "2", actualFeeAssetCode: "EUR" }), []).actualFee?.amount).toBe("2");
+    for (const eventType of ["settlement", "conversion"] as const) {
+      expect(providerCostFacts(event({ eventType, balanceAmount: "100", destinationAmount: "85", destinationAssetCode: "EUR", expectedDestinationRate: "0.9" }), []).fxVariance).toEqual({ amount: "-5", assetCode: "EUR" });
+    }
+    expect(calculateProcessedVolumeCorridors([standalone, event({ id: 2, eventType: "settlement" }), event({ id: 3, eventType: "reserve_hold" })])).toEqual([]);
+  });
+
   it("groups balances by actual asset without treating stablecoin as fiat", () => {
     const positions = calculateBalances([], [event({ balanceAssetCode: "EUR" }), event({ id: 2, balanceAssetCode: "USD" }), event({ id: 3, balanceAssetCode: "USDC", balanceAssetType: "crypto" }), event({ id: 4, balanceAssetCode: "BTC", balanceAssetType: "crypto" })]);
     expect(groupOwnedFundsByAsset(positions, []).map((row) => row.assetCode)).toEqual(["EUR", "USD", "USDC", "BTC"]);
   });
 
   it("admits only player-facing deposit and withdrawal events to Client Funds", () => {
-    expect(toReconciliationCandidate(event({ eventType: "deposit" }))).not.toBeNull();
+    expect(toReconciliationCandidate(event({ eventType: "deposit", balanceDirection: "credit" }))).not.toBeNull();
+    expect(toReconciliationCandidate(event({ eventType: "withdrawal", balanceDirection: "debit" }))).not.toBeNull();
+    expect(toReconciliationCandidate(event({ eventType: "deposit", balanceDirection: "debit" }))).toBeNull();
+    expect(toReconciliationCandidate(event({ eventType: "withdrawal", balanceDirection: "credit" }))).toBeNull();
     for (const eventType of ["fee", "reserve_hold", "reserve_release", "settlement", "adjustment"] as const) expect(toReconciliationCandidate(event({ eventType }))).toBeNull();
   });
 
   it("keeps reserve and transit exposure out of provider cost", () => {
     expect(providerCostImpact("12", "EUR", "-8", "EUR")).toBe("20");
     expect(providerCostImpact("12", "USD", "-8", "EUR")).toBe("8");
+    expect(providerCostFacts(event({ eventType: "reserve_hold", actualFeeAmount: "12", actualFeeAssetCode: "EUR" }), []).actualFee).toBeNull();
   });
 
   it("counts only deposit and withdrawal volume and keeps currency corridors separate", () => {

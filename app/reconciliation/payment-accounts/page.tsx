@@ -6,7 +6,7 @@ import { getActiveCompanyForPage } from "@/src/lib/active-company-page";
 import CompanySelectionRequired from "@/src/components/CompanySelectionRequired";
 import { resolveLocale } from "@/src/i18n";
 import { LOCALE_COOKIE } from "@/src/i18n/types";
-import { calculateBalances, calculateFundsInTransit, calculateReserveLots, expectedFee, feeVariance, fxVariance, groupOwnedFundsByAsset, impliedFx, type PaymentEvent } from "@/src/lib/payment-ledger";
+import { calculateBalances, calculateFundsInTransit, calculateReserveLots, fxVariance, groupOwnedFundsByAsset, impliedFx, providerCostFacts, type PaymentEvent } from "@/src/lib/payment-ledger";
 import PaymentAccountsClient from "./PaymentAccountsClient";
 
 export const dynamic = "force-dynamic";
@@ -34,7 +34,7 @@ export default async function PaymentAccountsPage() {
     const fxSource = settlementConversion ? event.balanceAmount : event.sourceAmount;
     const fxTarget = settlementConversion ? event.destinationAmount : event.balanceAmount;
     const fxExpected = settlementConversion ? event.expectedDestinationRate : event.expectedFxRate;
-    return { ...event, impliedFx: impliedFx(fxSource, fxTarget), fx: fxVariance(fxSource, fxTarget, fxExpected), expectedFee: expectedFee(event, normalizedFeeRules), feeVariance: feeVariance(event, normalizedFeeRules) };
+    return { ...event, impliedFx: impliedFx(fxSource, fxTarget), fx: fxVariance(fxSource, fxTarget, fxExpected), costFacts: providerCostFacts(event, normalizedFeeRules) };
   });
   const reserveLots = calculateReserveLots(events, normalizedReserveRules);
   const unlinkedReserveReleases = events.filter((event) => event.eventType === "reserve_release" && event.relatedEventId === null).map((event) => ({ id: event.id, paymentAccountId: event.paymentAccountId, assetCode: event.balanceAssetCode, eventDate: event.eventDate, amount: event.balanceAmount, relatedProviderEventId: event.relatedProviderEventId }));

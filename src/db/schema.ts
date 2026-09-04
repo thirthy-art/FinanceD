@@ -75,7 +75,7 @@ export const paymentBalanceDirectionEnum = pgEnum("payment_balance_direction", [
 ]);
 
 export const paymentIngestionSourceEnum = pgEnum("payment_ingestion_source", [
-  "csv", "xlsx", "api",
+  "csv", "xlsx", "api", "manual",
 ]);
 
 export const paymentFeeBasisEnum = pgEnum("payment_fee_basis", [
@@ -463,6 +463,7 @@ export const paymentEvents = pgTable("payment_events", {
   sourceRowId: varchar("source_row_id", { length: 255 }),
   providerEventId: varchar("provider_event_id", { length: 255 }),
   relatedProviderEventId: varchar("related_provider_event_id", { length: 255 }),
+  relatedPaymentAccountId: integer("related_payment_account_id").references(() => paymentAccounts.id),
   externalId: varchar("external_id", { length: 255 }),
   reference: text("reference"),
   eventDate: varchar("event_date", { length: 10 }).notNull(),
@@ -502,6 +503,19 @@ export const paymentEvents = pgTable("payment_events", {
   feeNonnegative: check("payment_event_fee_nonnegative", sql`${table.actualFeeAmount} is null or ${table.actualFeeAmount} >= 0`),
 }));
 
+/** Additive membership: canonical events may be represented by multiple overlapping imports. */
+export const paymentImportEvents = pgTable("payment_import_events", {
+  id: serial("id").primaryKey(),
+  companyId: integer("company_id").notNull().references(() => companies.id),
+  importId: integer("import_id").notNull().references(() => reconciliationImports.id),
+  paymentEventId: integer("payment_event_id").notNull().references(() => paymentEvents.id),
+  sourceRowNumber: integer("source_row_number").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  importEventUnique: unique("uq_payment_import_event").on(table.importId, table.paymentEventId),
+  importRowUnique: unique("uq_payment_import_source_row").on(table.importId, table.sourceRowNumber),
+}));
+
 /** Provider-reported source facts. Calculated balances are never persisted here. */
 export const paymentBalanceSnapshots = pgTable("payment_balance_snapshots", {
   id: serial("id").primaryKey(),
@@ -517,7 +531,7 @@ export const paymentBalanceSnapshots = pgTable("payment_balance_snapshots", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => ({
   providerSnapshotUnique: uniqueIndex("uq_payment_balance_snapshot_provider_id")
-    .on(table.companyId, table.paymentAccountId, table.providerSnapshotId)
+    .on(table.companyId, table.paymentAccountId, table.assetCode, table.providerSnapshotId)
     .where(sql`${table.providerSnapshotId} is not null`),
 }));
 

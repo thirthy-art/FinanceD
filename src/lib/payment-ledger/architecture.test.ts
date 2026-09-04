@@ -6,7 +6,10 @@ const reconciliationService = readFileSync(new URL("../reconciliation/service.ts
 const paymentImportRoute = readFileSync(new URL("../../../app/api/payment-accounts/import/route.ts", import.meta.url), "utf8");
 const legacyImportRoute = readFileSync(new URL("../../../app/api/reconciliation/import/route.ts", import.meta.url), "utf8");
 const reconciliationPage = readFileSync(new URL("../../../app/reconciliation/page.tsx", import.meta.url), "utf8");
+const paymentAccountsClient = readFileSync(new URL("../../../app/reconciliation/payment-accounts/PaymentAccountsClient.tsx", import.meta.url), "utf8");
+const snapshotRoute = readFileSync(new URL("../../../app/api/payment-accounts/balance-snapshots/route.ts", import.meta.url), "utf8");
 const migration = readFileSync(new URL("../../../drizzle/0016_boring_amazoness.sql", import.meta.url), "utf8");
+const fixMigration = readFileSync(new URL("../../../drizzle/0017_silent_gorilla_man.sql", import.meta.url), "utf8");
 
 describe("payment-ledger architectural invariants", () => {
   it("persists a PSP upload once as shared provenance plus canonical payment events", () => {
@@ -22,7 +25,30 @@ describe("payment-ledger architectural invariants", () => {
     expect(migration).toContain("uq_payment_event_account_provider_id");
     expect(migration).toContain('"company_id","payment_account_id","provider_event_id"');
     expect(paymentService).toContain("relatedProviderEventId");
-    expect(paymentService).toContain("candidates.length === 1");
+    expect(paymentService).toContain("relatedPaymentAccountId");
+    expect(paymentService).toContain("`${target.paymentAccountId}:${target.providerEventId}`");
+  });
+
+  it("backfills additive import membership without changing canonical provenance", () => {
+    expect(fixMigration).toContain('INSERT INTO "payment_import_events"');
+    expect(fixMigration).toContain('SELECT "company_id", "import_id", "id", "source_row_number"');
+    expect(paymentService).toContain("tx.insert(paymentImportEvents)");
+    expect(reconciliationService).toContain("innerJoin(paymentEvents");
+  });
+
+  it("uses asset-scoped snapshot identity and manual provenance", () => {
+    expect(fixMigration).toContain('"company_id","payment_account_id","asset_code","provider_snapshot_id"');
+    expect(fixMigration).toContain("ADD VALUE 'manual'");
+    expect(snapshotRoute).toContain('ingestionSource: "manual"');
+  });
+
+  it("uses localized PSP and Wallets labels", () => {
+    expect(paymentAccountsClient).toContain("t.clientFundsEligible");
+    expect(paymentAccountsClient).toContain("t.providerEventId");
+    expect(paymentAccountsClient).toContain("t.relatedProviderEventId");
+    expect(paymentAccountsClient).not.toContain("> Client Funds eligible<");
+    expect(paymentAccountsClient).not.toContain('"providerEventId"');
+    expect(paymentAccountsClient).not.toContain('"relatedProviderEventId"');
   });
 
   it("filters canonical Client Funds imports in UI and service while retaining null-account legacy imports", () => {

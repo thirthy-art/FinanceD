@@ -12,6 +12,9 @@ export interface BalancePosition {
   available: string;
   reserve: string;
   totalOwned: string;
+  calculatedAvailableAtReported: string | null;
+  calculatedReserveAtReported: string | null;
+  reportedAsOf: string | null;
   reportedAvailable: string | null;
   reportedReserve: string | null;
   availableDifference: string | null;
@@ -64,18 +67,41 @@ export function calculateBalances(openings: AccountAssetOpening[], events: Payme
     position.reportedAvailable = snapshot.reportedAvailableBalance;
     position.reportedReserve = snapshot.reportedReserveBalance;
   }
-  return [...positions.values()].map((position) => ({
+  return [...positions.values()].map((position) => {
+    const snapshot = latestSnapshots.get(keyOf(position.accountId, position.asset));
+    let calculatedAvailableAtReported: Decimal | null = null;
+    let calculatedReserveAtReported: Decimal | null = null;
+    if (snapshot) {
+      const opening = openings.find((candidate) => candidate.paymentAccountId === position.accountId && candidate.assetCode.toUpperCase() === position.asset);
+      calculatedAvailableAtReported = new Decimal(opening?.openingAvailableBalance ?? "0");
+      calculatedReserveAtReported = new Decimal(opening?.openingReserveBalance ?? "0");
+      // Canonical events are date-only. A snapshot therefore includes the full UTC calendar day named by its as-of timestamp.
+      const asOfDate = snapshot.asOf.toISOString().slice(0, 10);
+      for (const event of ordered) {
+        if (event.paymentAccountId !== position.accountId || event.balanceAssetCode.toUpperCase() !== position.asset || event.eventDate > asOfDate) continue;
+        if (opening?.openingBalanceDate && event.eventDate < opening.openingBalanceDate) continue;
+        const amount = new Decimal(event.balanceAmount);
+        if (event.eventType === "reserve_hold") { calculatedAvailableAtReported = calculatedAvailableAtReported.minus(amount); calculatedReserveAtReported = calculatedReserveAtReported.plus(amount); }
+        else if (event.eventType === "reserve_release") { calculatedReserveAtReported = calculatedReserveAtReported.minus(amount); calculatedAvailableAtReported = calculatedAvailableAtReported.plus(amount); }
+        else if (event.balanceDirection === "credit") calculatedAvailableAtReported = calculatedAvailableAtReported.plus(amount);
+        else if (event.balanceDirection === "debit") calculatedAvailableAtReported = calculatedAvailableAtReported.minus(amount);
+      }
+    }
+    return {
     paymentAccountId: position.accountId,
     assetCode: position.asset,
     assetType: position.type,
     available: position.available.toFixed(),
     reserve: position.reserve.toFixed(),
     totalOwned: position.available.plus(position.reserve).toFixed(),
+    calculatedAvailableAtReported: calculatedAvailableAtReported?.toFixed() ?? null,
+    calculatedReserveAtReported: calculatedReserveAtReported?.toFixed() ?? null,
+    reportedAsOf: snapshot?.asOf.toISOString() ?? null,
     reportedAvailable: position.reportedAvailable,
     reportedReserve: position.reportedReserve,
-    availableDifference: position.reportedAvailable === null ? null : position.available.minus(position.reportedAvailable).toFixed(),
-    reserveDifference: position.reportedReserve === null ? null : position.reserve.minus(position.reportedReserve).toFixed(),
-  }));
+    availableDifference: position.reportedAvailable === null ? null : (calculatedAvailableAtReported ?? position.available).minus(position.reportedAvailable).toFixed(),
+    reserveDifference: position.reportedReserve === null ? null : (calculatedReserveAtReported ?? position.reserve).minus(position.reportedReserve).toFixed(),
+  }; });
 }
 
 export function impliedFx(sourceAmount: string | null, targetAmount: string | null): string | null {
@@ -106,7 +132,8 @@ function applicableFeeRules(event: PaymentEvent, rules: FeeRule[]) {
   });
 }
 
-export function expectedFee(event: PaymentEvent, rules: FeeRule[]): string | null {
+export interface ExpectedFee { amount: string; assetCode: string; }
+export function expectedFee(event: PaymentEvent, rules: FeeRule[]): ExpectedFee | null {
   const matches = applicableFeeRules(event, rules);
   if (matches.length !== 1) return null;
   const rule = matches[0];
@@ -114,17 +141,14 @@ export function expectedFee(event: PaymentEvent, rules: FeeRule[]): string | nul
   const basisAsset = rule.feeBasis === "source_amount" ? event.sourceAssetCode : event.balanceAssetCode;
   const feeAsset = (rule.feeAssetCode ?? rule.fixedAssetCode ?? basisAsset)?.toUpperCase() ?? null;
   if (basisAmount === null || basisAsset === null || feeAsset !== basisAsset.toUpperCase()) return null;
-  return new Decimal(basisAmount).times(rule.percentageRate).div(100).plus(rule.fixedAmount).toFixed();
+  return { amount: new Decimal(basisAmount).times(rule.percentageRate).div(100).plus(rule.fixedAmount).toFixed(), assetCode: feeAsset };
 }
 
 export function feeVariance(event: PaymentEvent, rules: FeeRule[]): string | null {
   const expected = expectedFee(event, rules);
   if (expected === null || event.actualFeeAmount === null || event.actualFeeAssetCode === null) return null;
-  const matches = applicableFeeRules(event, rules);
-  if (matches.length !== 1) return null;
-  const basisAsset = matches[0].feeBasis === "source_amount" ? event.sourceAssetCode : event.balanceAssetCode;
-  if (event.actualFeeAssetCode.toUpperCase() !== (matches[0].feeAssetCode ?? matches[0].fixedAssetCode ?? basisAsset)?.toUpperCase()) return null;
-  return new Decimal(event.actualFeeAmount).minus(expected).toFixed();
+  if (event.actualFeeAssetCode.toUpperCase() !== expected.assetCode) return null;
+  return new Decimal(event.actualFeeAmount).minus(expected.amount).toFixed();
 }
 
 export function expectedReserveReleaseDate(event: PaymentEvent, rules: ReserveRule[]): string | null {
@@ -147,7 +171,12 @@ export function calculateFundsInTransit(events: PaymentEvent[]): TransitPosition
   return events
     .filter((event) => (event.eventType === "settlement" || event.eventType === "transfer") && event.balanceDirection === "debit")
     .map((event) => {
-      const relatedReceipts = events.filter((receipt) => receipt.relatedEventId === event.id);
+      const relatedReceipts = events.filter((receipt) => receipt.relatedEventId === event.id
+        && receipt.companyId === event.companyId
+        && receipt.relatedPaymentAccountId === event.paymentAccountId
+        && receipt.eventType === "deposit"
+        && receipt.balanceDirection === "credit"
+        && (event.destinationAccountId === null || receipt.paymentAccountId === event.destinationAccountId));
       const crossAssetReceipt = relatedReceipts.some((receipt) => receipt.balanceAssetCode.toUpperCase() !== event.balanceAssetCode.toUpperCase());
       const received = crossAssetReceipt
         ? (relatedReceipts.some((receipt) => receipt.finalReceipt) ? new Decimal(event.balanceAmount) : zero())
@@ -193,9 +222,44 @@ export function calculateProcessedVolumeCorridors(events: PaymentEvent[]): Proce
   return [...grouped].map(([corridor, row]) => ({ corridor, sourceAssetCode: row.source, balanceAssetCode: row.target, volume: row.volume.toFixed() }));
 }
 
+export interface ProviderCostFacts {
+  expectedFee: ExpectedFee | null;
+  actualFee: { amount: string; assetCode: string } | null;
+  feeVariance: { amount: string; assetCode: string } | null;
+  fxVariance: { amount: string; assetCode: string } | null;
+}
+
+/** Cost facts are independent of processed volume. Explicit fee columns win over a standalone fee debit. */
+export function providerCostFacts(event: PaymentEvent, rules: FeeRule[]): ProviderCostFacts {
+  const expected = expectedFee(event, rules);
+  const supportsExplicitFee = ["deposit", "withdrawal", "settlement", "transfer", "conversion", "fee"].includes(event.eventType);
+  const actual = supportsExplicitFee && event.actualFeeAmount !== null && event.actualFeeAssetCode !== null
+    ? { amount: event.actualFeeAmount, assetCode: event.actualFeeAssetCode.toUpperCase() }
+    : event.eventType === "fee" && event.balanceDirection === "debit"
+      ? { amount: event.balanceAmount, assetCode: event.balanceAssetCode.toUpperCase() }
+      : null;
+  const variance = expected !== null && actual !== null && expected.assetCode === actual.assetCode
+    ? { amount: new Decimal(actual.amount).minus(expected.amount).toFixed(), assetCode: actual.assetCode }
+    : null;
+  const supportsFx = ["deposit", "withdrawal", "settlement", "transfer", "conversion"].includes(event.eventType);
+  const usesDestination = event.destinationAmount !== null && event.destinationAssetCode !== null;
+  const fx = supportsFx ? fxVariance(
+    usesDestination ? event.balanceAmount : event.sourceAmount,
+    usesDestination ? event.destinationAmount : event.balanceAmount,
+    usesDestination ? event.expectedDestinationRate : event.expectedFxRate
+  ) : null;
+  return {
+    expectedFee: expected,
+    actualFee: actual,
+    feeVariance: variance,
+    fxVariance: fx === null ? null : { amount: fx.variance, assetCode: (usesDestination ? event.destinationAssetCode! : event.balanceAssetCode).toUpperCase() },
+  };
+}
+
 /** Only player-facing deposits/withdrawals enter Client Funds matching. */
-export function toReconciliationCandidate(event: Pick<PaymentEvent, "id" | "companyId" | "eventType" | "externalId" | "reference" | "sourceAmount" | "balanceAmount" | "sourceAssetCode" | "balanceAssetCode" | "status" | "statusProvided">): IndexedTransaction | null {
+export function toReconciliationCandidate(event: Pick<PaymentEvent, "id" | "companyId" | "eventType" | "balanceDirection" | "externalId" | "reference" | "sourceAmount" | "balanceAmount" | "sourceAssetCode" | "balanceAssetCode" | "status" | "statusProvided">): IndexedTransaction | null {
   if (event.eventType !== "deposit" && event.eventType !== "withdrawal") return null;
+  if ((event.eventType === "deposit" && event.balanceDirection !== "credit") || (event.eventType === "withdrawal" && event.balanceDirection !== "debit")) return null;
   return {
     id: -event.id, companyId: event.companyId, source: "psp_transactions", externalId: event.externalId,
     reference: event.reference, playerId: null, transactionType: event.eventType,

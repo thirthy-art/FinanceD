@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getDb } from "@/src/db";
 import * as schema from "@/src/db/schema";
 import type { ImportedPaymentEvent } from "./import";
-import { createPaymentAccount, persistCanonicalPaymentImport } from "./service";
+import { createPaymentAccount, createReportedBalanceSnapshot, persistCanonicalPaymentImport } from "./service";
 
 const HAS_DB = Boolean(process.env.DATABASE_URL);
 const db = getDb();
 
 const paymentEvent = (overrides: Partial<ImportedPaymentEvent> = {}): ImportedPaymentEvent => ({
-  sourceRowNumber: 2, sourceRowId: null, providerEventId: "event-1", relatedProviderEventId: null, externalId: "external-1", reference: null,
+  sourceRowNumber: 2, sourceRowId: null, providerEventId: "event-1", relatedProviderEventId: null, relatedPaymentAccountId: null, externalId: "external-1", reference: null,
   eventDate: "2026-01-01", eventType: "deposit", balanceDirection: "credit", balanceAmount: "100", balanceAssetCode: "EUR", balanceAssetType: "fiat",
   sourceAmount: "100", sourceAssetCode: "EUR", sourceAssetType: "fiat", actualFeeAmount: null, actualFeeAssetCode: null, expectedFxRate: null,
   reportedAvailableBalance: null, reportedReserveBalance: null, expectedReleaseDate: null, destinationAccountId: null, destinationAmount: null,
@@ -24,6 +24,7 @@ async function freshCompany() {
 
 async function cleanup(companyId: number) {
   await db.delete(schema.paymentBalanceSnapshots).where(eq(schema.paymentBalanceSnapshots.companyId, companyId));
+  await db.delete(schema.paymentImportEvents).where(eq(schema.paymentImportEvents.companyId, companyId));
   await db.delete(schema.paymentEvents).where(eq(schema.paymentEvents.companyId, companyId));
   await db.delete(schema.reconciliationImports).where(eq(schema.reconciliationImports.companyId, companyId));
   await db.delete(schema.paymentAccountAssets).where(eq(schema.paymentAccountAssets.companyId, companyId));
@@ -74,15 +75,64 @@ describe("canonical payment persistence (DB)", () => {
     } finally { await cleanup(companyId); await cleanup(otherCompanyId); }
   });
 
-  it.skipIf(!HAS_DB)("leaves company-wide ambiguous provider relationships unresolved", async () => {
+  it.skipIf(!HAS_DB)("scopes provider relationships to the explicit source account and keeps resolved links stable", async () => {
     const companyId = await freshCompany();
     try {
-      const a = await account(companyId, "PSP A"); const b = await account(companyId, "PSP B"); const c = await account(companyId, "PSP C");
-      await persist(companyId, a.id, "a", [paymentEvent({ providerEventId: "shared" })]);
-      await persist(companyId, b.id, "b", [paymentEvent({ providerEventId: "shared" })]);
-      await persist(companyId, c.id, "c", [paymentEvent({ providerEventId: "receipt", relatedProviderEventId: "shared" })]);
+      const a = await account(companyId, "PSP A"); const bank = await account(companyId, "Bank A"); const b = await account(companyId, "PSP B");
+      await persist(companyId, a.id, "a", [paymentEvent({ providerEventId: "shared", eventType: "settlement", balanceDirection: "debit" })]);
+      await persist(companyId, bank.id, "receipt", [paymentEvent({ providerEventId: "receipt", relatedProviderEventId: "shared", relatedPaymentAccountId: a.id })]);
       const [receipt] = await db.select().from(schema.paymentEvents).where(eq(schema.paymentEvents.providerEventId, "receipt"));
-      expect(receipt.relatedEventId).toBeNull();
+      const [source] = await db.select().from(schema.paymentEvents).where(and(eq(schema.paymentEvents.paymentAccountId, a.id), eq(schema.paymentEvents.providerEventId, "shared")));
+      expect(receipt.relatedPaymentAccountId).toBe(a.id); expect(receipt.relatedEventId).toBe(source.id);
+      await expect(persist(companyId, bank.id, "wrong-account", [paymentEvent({ providerEventId: "bad-direct", relatedEventId: source.id, relatedPaymentAccountId: b.id })])).rejects.toThrow(/does not belong/);
+      await persist(companyId, b.id, "b", [paymentEvent({ providerEventId: "shared" })]);
+      const [stillResolved] = await db.select().from(schema.paymentEvents).where(eq(schema.paymentEvents.id, receipt.id));
+      expect(stillResolved.relatedEventId).toBe(source.id);
+    } finally { await cleanup(companyId); }
+  });
+
+  it.skipIf(!HAS_DB)("rejects a relationship account owned by another company", async () => {
+    const companyId = await freshCompany(); const otherCompanyId = await freshCompany();
+    try {
+      const local = await account(companyId, "Local PSP"); const foreign = await account(otherCompanyId, "Foreign PSP");
+      await expect(persist(companyId, local.id, "cross-company", [paymentEvent({ relatedProviderEventId: "foreign", relatedPaymentAccountId: foreign.id })])).rejects.toThrow(/valid payment account/);
+    } finally { await cleanup(companyId); await cleanup(otherCompanyId); }
+  });
+
+  it.skipIf(!HAS_DB)("does not guess the source account for a cross-account receipt", async () => {
+    const companyId = await freshCompany();
+    try {
+      const bank = await account(companyId, "Receipt bank");
+      await expect(persist(companyId, bank.id, "missing-source", [paymentEvent({ providerEventId: "receipt", relatedProviderEventId: "settlement" })])).rejects.toThrow(/Related payment account is required/);
+    } finally { await cleanup(companyId); }
+  });
+
+  it.skipIf(!HAS_DB)("retains complete membership across overlapping canonical imports", async () => {
+    const companyId = await freshCompany();
+    try {
+      const a = await account(companyId, "Overlap PSP");
+      const rows = (ids: string[]) => ids.map((id, index) => paymentEvent({ sourceRowNumber: index + 2, providerEventId: id, externalId: id }));
+      const first = await persist(companyId, a.id, "abc", rows(["A", "B", "C"]));
+      const second = await persist(companyId, a.id, "abcde", rows(["A", "B", "C", "D", "E"]));
+      const canonical = await db.select().from(schema.paymentEvents).where(eq(schema.paymentEvents.companyId, companyId));
+      const firstMembership = await db.select().from(schema.paymentImportEvents).where(eq(schema.paymentImportEvents.importId, first.importId));
+      const secondMembership = await db.select().from(schema.paymentImportEvents).where(eq(schema.paymentImportEvents.importId, second.importId));
+      expect(first.eventIds).toHaveLength(3); expect(second.eventIds).toHaveLength(2); expect(canonical).toHaveLength(5);
+      expect(firstMembership).toHaveLength(3); expect(secondMembership).toHaveLength(5);
+      expect(firstMembership.some((row) => secondMembership.some((candidate) => candidate.paymentEventId === row.paymentEventId))).toBe(true);
+    } finally { await cleanup(companyId); }
+  });
+
+  it.skipIf(!HAS_DB)("stores multi-asset provider snapshots idempotently with manual provenance", async () => {
+    const companyId = await freshCompany();
+    try {
+      const a = await account(companyId, "Snapshot PSP");
+      const base = { paymentAccountId: a.id, assetType: "fiat" as const, reportedAvailableBalance: "10", asOf: "2026-01-01", ingestionSource: "manual" as const, providerSnapshotId: "batch-1" };
+      expect(await createReportedBalanceSnapshot(companyId, { ...base, assetCode: "EUR" })).not.toBeNull();
+      expect(await createReportedBalanceSnapshot(companyId, { ...base, assetCode: "USD" })).not.toBeNull();
+      expect(await createReportedBalanceSnapshot(companyId, { ...base, assetCode: "EUR" })).toBeNull();
+      const snapshots = await db.select().from(schema.paymentBalanceSnapshots).where(eq(schema.paymentBalanceSnapshots.companyId, companyId));
+      expect(snapshots.map((row) => [row.assetCode, row.ingestionSource])).toEqual([["EUR", "manual"], ["USD", "manual"]]);
     } finally { await cleanup(companyId); }
   });
 });

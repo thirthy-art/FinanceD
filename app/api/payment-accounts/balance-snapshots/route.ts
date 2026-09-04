@@ -7,7 +7,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json() as Record<string, unknown>;
     if (typeof body.paymentAccountId !== "number" || !Number.isInteger(body.paymentAccountId) || typeof body.assetCode !== "string" || (body.assetType !== "fiat" && body.assetType !== "crypto") || typeof body.reportedAvailableBalance !== "string" || typeof body.asOf !== "string") return NextResponse.json({ error: "Valid account, asset, reported balance, and as-of date are required." }, { status: 400 });
-    const snapshot = await createReportedBalanceSnapshot(company.id, { paymentAccountId: body.paymentAccountId, assetCode: body.assetCode, assetType: body.assetType, reportedAvailableBalance: body.reportedAvailableBalance, reportedReserveBalance: typeof body.reportedReserveBalance === "string" && body.reportedReserveBalance !== "" ? body.reportedReserveBalance : null, asOf: body.asOf, ingestionSource: "api", providerSnapshotId: typeof body.providerSnapshotId === "string" ? body.providerSnapshotId : null });
+    const snapshot = await createReportedBalanceSnapshot(company.id, { paymentAccountId: body.paymentAccountId, assetCode: body.assetCode, assetType: body.assetType, reportedAvailableBalance: body.reportedAvailableBalance, reportedReserveBalance: typeof body.reportedReserveBalance === "string" && body.reportedReserveBalance !== "" ? body.reportedReserveBalance : null, asOf: body.asOf, ingestionSource: "manual", providerSnapshotId: typeof body.providerSnapshotId === "string" ? body.providerSnapshotId : null });
     return NextResponse.json({ snapshot });
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Balance snapshot could not be saved." }, { status: 400 }); }
 }

@@ -8,6 +8,8 @@ import {
   runAndPersistReconciliation,
 } from "./service";
 import type { ReconciliationTransaction } from "./types";
+import type { ImportedPaymentEvent } from "@/src/lib/payment-ledger/import";
+import { createPaymentAccount, persistCanonicalPaymentImport } from "@/src/lib/payment-ledger/service";
 
 const HAS_DB = Boolean(process.env.DATABASE_URL);
 
@@ -20,6 +22,7 @@ async function cleanupCompany(companyId: number) {
   await db.delete(schema.reconciliationRunItems).where(eq(schema.reconciliationRunItems.companyId, companyId));
   await db.delete(schema.reconciliationRuns).where(eq(schema.reconciliationRuns.companyId, companyId));
   await db.delete(schema.reconciliationTransactions).where(eq(schema.reconciliationTransactions.companyId, companyId));
+  await db.delete(schema.paymentImportEvents).where(eq(schema.paymentImportEvents.companyId, companyId));
   await db.delete(schema.paymentEvents).where(eq(schema.paymentEvents.companyId, companyId));
   await db.delete(schema.reconciliationImports).where(eq(schema.reconciliationImports.companyId, companyId));
   await db.delete(schema.paymentAccounts).where(eq(schema.paymentAccounts.companyId, companyId));
@@ -89,6 +92,29 @@ const PSP_TXS: ReconciliationTransaction[] = [
 ];
 
 describe("reconciliation persistence (DB)", () => {
+  it.skipIf(!HAS_DB)("loads every canonical member represented by an overlapping selected import", async () => {
+    const companyId = await freshCompany();
+    try {
+      const account = await createPaymentAccount(companyId, { name: "Overlapping PSP", accountType: "psp" });
+      const canonical = (ids: string[]): ImportedPaymentEvent[] => ids.map((id, index) => ({
+        sourceRowNumber: index + 2, sourceRowId: null, providerEventId: id, relatedProviderEventId: null, relatedPaymentAccountId: null,
+        externalId: `P-${id}`, reference: `L-${id}`, eventDate: "2026-01-01", eventType: "deposit", balanceDirection: "credit",
+        balanceAmount: "10", balanceAssetCode: "EUR", balanceAssetType: "fiat", sourceAmount: "10", sourceAssetCode: "EUR", sourceAssetType: "fiat",
+        actualFeeAmount: null, actualFeeAssetCode: null, expectedFxRate: null, reportedAvailableBalance: null, reportedReserveBalance: null,
+        expectedReleaseDate: null, destinationAccountId: null, destinationAmount: null, destinationAssetCode: null, destinationAssetType: null,
+        expectedDestinationAmount: null, expectedDestinationRate: null, relatedEventId: null, finalReceipt: false, status: "settled", statusProvided: true, rawIdentifiers: "{}",
+      }));
+      await persistCanonicalPaymentImport(companyId, account.id, { ingestionSource: "csv", sourceIdentity: "august.csv", contentHash: "overlap-abc", events: canonical(["A", "B", "C"]) });
+      const second = await persistCanonicalPaymentImport(companyId, account.id, { ingestionSource: "csv", sourceIdentity: "august-september.csv", contentHash: "overlap-abcde", events: canonical(["A", "B", "C", "D", "E"]) });
+      const ledgerRows: ReconciliationTransaction[] = ["A", "B", "C", "D", "E"].map((id) => ({ source: "player_ledger", externalId: `L-${id}`, playerId: id, transactionType: "deposit", amount: "10", currency: "EUR", eventDate: "2026-01-01", reference: null, status: "settled", statusProvided: true }));
+      const ledger = await createImport(companyId, "player_ledger", "ledger.csv", ledgerRows, "overlap-ledger");
+      const result = await runAndPersistReconciliation(companyId, { playerLedgerImportId: ledger.importId, pspImportId: second.importId });
+      expect(result.matches).toHaveLength(5);
+      const canonicalRows = await db.select().from(schema.paymentEvents).where(eq(schema.paymentEvents.companyId, companyId));
+      expect(canonicalRows).toHaveLength(5);
+    } finally { await cleanupCompany(companyId); }
+  });
+
   it.skipIf(!HAS_DB)("rejects a duplicate import for the same company and source", async () => {
     const companyId = await freshCompany();
     try {

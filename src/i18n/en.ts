@@ -556,5 +556,11 @@ export const en: Messages = {
     expectedFee: "Expected fee", actualFee: "Actual fee", feeVariance: "Fee variance", impliedFx: "Actual implied FX", expectedFx: "Expected FX", fxVariance: "FX variance", providerCost: "Provider cost / impact",
     unavailable: "Unavailable", accountCreated: "Account created.", imported: "Payment file imported.", duplicate: "This payment file was already imported; no events were duplicated.", overlapWarning: "Imported, but rows without provider event IDs cannot be safely deduplicated across overlapping files.", saveAsset: "Save opening balance",
     expectedRelease: "Expected release", actualReleased: "Actual released", actualReleaseDate: "Actual release date", unlinkedReleases: "Unlinked releases (not allocated to a reserve lot)", outstanding: "Outstanding", exposureNote: "Reserves and funds in transit are liquidity exposure, not provider cost.", error: "The operation could not be completed.",
+    clientFundsEligible: "Client Funds eligible", providerEventId: "Provider event ID", relatedProviderEventId: "Related provider event ID",
+    currentCalculatedAvailable: "Current calculated", calculatedAtReported: "Calculated as of report", reportedAsOf: "Reported as of",
+    sourceAmountBasis: "Source amount", balanceAmountBasis: "Balance amount", basisAssetOptional: "Basis asset (optional)", feeAsset: "Fee asset", days: "Days",
+    accountTypeLabels: { psp: "PSP", wallet: "Wallet", exchange: "Exchange", bank: "Bank", other: "Other" },
+    eventTypeLabels: { deposit: "Deposit", withdrawal: "Withdrawal", refund: "Refund", chargeback: "Chargeback", fee: "Fee", adjustment: "Adjustment", settlement: "Settlement", transfer: "Transfer", reserve_hold: "Reserve hold", reserve_release: "Reserve release", conversion: "Conversion", unknown: "Unknown" },
+    directionLabels: { credit: "Credit", debit: "Debit", none: "None" },
   },
 };

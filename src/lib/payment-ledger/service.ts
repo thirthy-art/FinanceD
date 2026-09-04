@@ -1,6 +1,6 @@
 import { and, eq, isNotNull } from "drizzle-orm";
 import { getDb, type Db } from "@/src/db";
-import { paymentAccountAssets, paymentAccounts, paymentBalanceSnapshots, paymentEvents, paymentFeeRules, paymentReserveRules, reconciliationImports } from "@/src/db/schema";
+import { paymentAccountAssets, paymentAccounts, paymentBalanceSnapshots, paymentEvents, paymentFeeRules, paymentImportEvents, paymentReserveRules, reconciliationImports } from "@/src/db/schema";
 import type { AssetType, FeeBasis, PaymentAccountType, PaymentEventType, PaymentIngestionSource } from "./types";
 import { Decimal } from "@/src/lib/decimal";
 import type { ImportedPaymentEvent } from "./import";
@@ -51,8 +51,11 @@ export async function persistCanonicalPaymentImport(companyId: number, paymentAc
   const overlapWarning = input.events.some((event) => !event.providerEventId);
   for (const event of input.events) {
     if (event.destinationAccountId !== null) await requireOwnedAccount(db, companyId, event.destinationAccountId);
+    if (event.relatedPaymentAccountId !== null) await requireOwnedAccount(db, companyId, event.relatedPaymentAccountId);
+    if (event.relatedProviderEventId?.trim() && event.relatedPaymentAccountId === null && event.eventType !== "reserve_release") throw new Error("Related payment account is required for this provider relationship.");
     if (event.relatedEventId !== null) {
-      const [related] = await db.select({ id: paymentEvents.id }).from(paymentEvents).where(and(eq(paymentEvents.id, event.relatedEventId), eq(paymentEvents.companyId, companyId))).limit(1);
+      const relationshipAccountId = event.relatedPaymentAccountId ?? paymentAccountId;
+      const [related] = await db.select({ id: paymentEvents.id }).from(paymentEvents).where(and(eq(paymentEvents.id, event.relatedEventId), eq(paymentEvents.companyId, companyId), eq(paymentEvents.paymentAccountId, relationshipAccountId))).limit(1);
       if (!related) throw new Error("A related payment event does not belong to the active company.");
     }
   }
@@ -66,8 +69,19 @@ export async function persistCanonicalPaymentImport(companyId: number, paymentAc
       const providerEventId = event.providerEventId?.trim() || null;
       if (providerEventId !== null && seen.has(providerEventId)) { skippedProviderDuplicates++; continue; }
       if (providerEventId !== null) seen.add(providerEventId);
-      const [inserted] = await tx.insert(paymentEvents).values({ ...event, providerEventId, relatedProviderEventId: event.relatedProviderEventId?.trim() || null, companyId, paymentAccountId, importId: importRow.id }).onConflictDoNothing().returning({ id: paymentEvents.id });
-      if (inserted) eventIds.push(inserted.id); else if (providerEventId !== null) skippedProviderDuplicates++;
+      const relatedProviderEventId = event.relatedProviderEventId?.trim() || null;
+      const relatedPaymentAccountId = relatedProviderEventId !== null && event.eventType === "reserve_release"
+        ? (event.relatedPaymentAccountId ?? paymentAccountId)
+        : event.relatedPaymentAccountId;
+      const [inserted] = await tx.insert(paymentEvents).values({ ...event, providerEventId, relatedProviderEventId, relatedPaymentAccountId, companyId, paymentAccountId, importId: importRow.id }).onConflictDoNothing().returning({ id: paymentEvents.id });
+      let paymentEventId = inserted?.id;
+      if (inserted) eventIds.push(inserted.id);
+      else if (providerEventId !== null) {
+        skippedProviderDuplicates++;
+        const [canonical] = await tx.select({ id: paymentEvents.id }).from(paymentEvents).where(and(eq(paymentEvents.companyId, companyId), eq(paymentEvents.paymentAccountId, paymentAccountId), eq(paymentEvents.providerEventId, providerEventId))).limit(1);
+        paymentEventId = canonical?.id;
+      }
+      if (paymentEventId !== undefined) await tx.insert(paymentImportEvents).values({ companyId, importId: importRow.id, paymentEventId, sourceRowNumber: event.sourceRowNumber }).onConflictDoNothing();
     }
     await resolveProviderRelationships(tx as unknown as Db, companyId);
     return { importId: importRow.id, eventIds, skippedProviderDuplicates };
@@ -76,21 +90,21 @@ export async function persistCanonicalPaymentImport(companyId: number, paymentAc
 }
 
 /** Compatibility wrapper retained for file-route callers. */
-export async function createPaymentImport(companyId: number, paymentAccountId: number, originalFilename: string, events: ImportedPaymentEvent[], contentHash: string, ingestionSource: Exclude<PaymentIngestionSource, "api"> = "csv") {
+export async function createPaymentImport(companyId: number, paymentAccountId: number, originalFilename: string, events: ImportedPaymentEvent[], contentHash: string, ingestionSource: "csv" | "xlsx" = "csv") {
   return persistCanonicalPaymentImport(companyId, paymentAccountId, { ingestionSource, sourceIdentity: originalFilename, events, contentHash });
 }
 
 async function resolveProviderRelationships(db: Db, companyId: number): Promise<void> {
   const [unresolved, targets] = await Promise.all([
-    db.select({ id: paymentEvents.id, relatedProviderEventId: paymentEvents.relatedProviderEventId }).from(paymentEvents).where(and(eq(paymentEvents.companyId, companyId), isNotNull(paymentEvents.relatedProviderEventId))),
-    db.select({ id: paymentEvents.id, providerEventId: paymentEvents.providerEventId }).from(paymentEvents).where(and(eq(paymentEvents.companyId, companyId), isNotNull(paymentEvents.providerEventId))),
+    db.select({ id: paymentEvents.id, relatedPaymentAccountId: paymentEvents.relatedPaymentAccountId, relatedProviderEventId: paymentEvents.relatedProviderEventId, relatedEventId: paymentEvents.relatedEventId }).from(paymentEvents).where(and(eq(paymentEvents.companyId, companyId), isNotNull(paymentEvents.relatedProviderEventId))),
+    db.select({ id: paymentEvents.id, paymentAccountId: paymentEvents.paymentAccountId, providerEventId: paymentEvents.providerEventId }).from(paymentEvents).where(and(eq(paymentEvents.companyId, companyId), isNotNull(paymentEvents.providerEventId))),
   ]);
-  const byProvider = new Map<string, number[]>();
-  for (const target of targets) if (target.providerEventId !== null) byProvider.set(target.providerEventId, [...(byProvider.get(target.providerEventId) ?? []), target.id]);
+  const byProvider = new Map<string, number>();
+  for (const target of targets) if (target.providerEventId !== null) byProvider.set(`${target.paymentAccountId}:${target.providerEventId}`, target.id);
   for (const row of unresolved) {
-    if (row.relatedProviderEventId === null) continue;
-    const candidates = byProvider.get(row.relatedProviderEventId) ?? [];
-    await db.update(paymentEvents).set({ relatedEventId: candidates.length === 1 ? candidates[0] : null }).where(and(eq(paymentEvents.id, row.id), eq(paymentEvents.companyId, companyId)));
+    if (row.relatedProviderEventId === null || row.relatedPaymentAccountId === null) continue;
+    const targetId = byProvider.get(`${row.relatedPaymentAccountId}:${row.relatedProviderEventId}`) ?? null;
+    if (targetId !== null && row.relatedEventId !== targetId) await db.update(paymentEvents).set({ relatedEventId: targetId }).where(and(eq(paymentEvents.id, row.id), eq(paymentEvents.companyId, companyId)));
   }
 }
 
@@ -100,7 +114,11 @@ export async function createReportedBalanceSnapshot(companyId: number, input: { 
   if (typeof input.asOf === "string" && /^\d{4}-\d{2}-\d{2}$/.test(input.asOf) && !isValidDateOnly(input.asOf)) throw new Error("Snapshot as-of must be a real timestamp or date.");
   const asOf = input.asOf instanceof Date ? input.asOf : new Date(input.asOf);
   if (Number.isNaN(asOf.getTime())) throw new Error("Snapshot as-of must be a real timestamp or date.");
-  const [row] = await db.insert(paymentBalanceSnapshots).values({ companyId, paymentAccountId: input.paymentAccountId, assetCode: normalizeAssetCode(input.assetCode), assetType: input.assetType, reportedAvailableBalance: input.reportedAvailableBalance, reportedReserveBalance: input.reportedReserveBalance ?? null, asOf, ingestionSource: input.ingestionSource, providerSnapshotId: input.providerSnapshotId?.trim() || null }).onConflictDoNothing().returning();
+  const assetCode = normalizeAssetCode(input.assetCode);
+  const [knownAsset] = await db.select({ assetType: paymentAccountAssets.assetType }).from(paymentAccountAssets).where(and(eq(paymentAccountAssets.companyId, companyId), eq(paymentAccountAssets.paymentAccountId, input.paymentAccountId), eq(paymentAccountAssets.assetCode, assetCode))).limit(1);
+  const [knownSnapshot] = await db.select({ assetType: paymentBalanceSnapshots.assetType }).from(paymentBalanceSnapshots).where(and(eq(paymentBalanceSnapshots.companyId, companyId), eq(paymentBalanceSnapshots.paymentAccountId, input.paymentAccountId), eq(paymentBalanceSnapshots.assetCode, assetCode))).limit(1);
+  if ((knownAsset && knownAsset.assetType !== input.assetType) || (knownSnapshot && knownSnapshot.assetType !== input.assetType)) throw new Error("Snapshot asset type conflicts with the existing account asset.");
+  const [row] = await db.insert(paymentBalanceSnapshots).values({ companyId, paymentAccountId: input.paymentAccountId, assetCode, assetType: input.assetType, reportedAvailableBalance: input.reportedAvailableBalance, reportedReserveBalance: input.reportedReserveBalance ?? null, asOf, ingestionSource: input.ingestionSource, providerSnapshotId: input.providerSnapshotId?.trim() || null }).onConflictDoNothing().returning();
   return row ?? null;
 }
 

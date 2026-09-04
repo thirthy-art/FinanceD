@@ -10,6 +10,7 @@ import {
   reconciliationTransactions,
   paymentEvents,
   paymentAccounts,
+  paymentImportEvents,
 } from "@/src/db/schema";
 import { type IndexedTransaction, runReconciliation } from "./match";
 import type {
@@ -257,10 +258,10 @@ async function isCanonicalPaymentImport(db: Db, companyId: number, importId: num
 async function loadCanonicalPaymentEvents(db: Db, companyId: number, importId: number): Promise<IndexedTransaction[]> {
   const rows = await db.select({
     id: paymentEvents.id, companyId: paymentEvents.companyId, externalId: paymentEvents.externalId,
-    reference: paymentEvents.reference, eventType: paymentEvents.eventType, balanceAmount: paymentEvents.balanceAmount,
+    reference: paymentEvents.reference, eventType: paymentEvents.eventType, balanceDirection: paymentEvents.balanceDirection, balanceAmount: paymentEvents.balanceAmount,
     balanceAssetCode: paymentEvents.balanceAssetCode, sourceAmount: paymentEvents.sourceAmount,
     sourceAssetCode: paymentEvents.sourceAssetCode, status: paymentEvents.status, statusProvided: paymentEvents.statusProvided,
-  }).from(paymentEvents).where(and(eq(paymentEvents.companyId, companyId), eq(paymentEvents.importId, importId))).orderBy(paymentEvents.id);
+  }).from(paymentImportEvents).innerJoin(paymentEvents, eq(paymentImportEvents.paymentEventId, paymentEvents.id)).where(and(eq(paymentImportEvents.companyId, companyId), eq(paymentImportEvents.importId, importId), eq(paymentEvents.companyId, companyId))).orderBy(paymentImportEvents.sourceRowNumber);
   return rows.map((row) => toReconciliationCandidate({ ...row,
     balanceAmount: String(row.balanceAmount), sourceAmount: row.sourceAmount === null ? null : String(row.sourceAmount),
   })).filter((row): row is IndexedTransaction => row !== null);

@@ -4,7 +4,7 @@ export type PaymentEventType =
   | "deposit" | "withdrawal" | "refund" | "chargeback" | "fee" | "adjustment"
   | "settlement" | "transfer" | "reserve_hold" | "reserve_release" | "conversion" | "unknown";
 export type BalanceDirection = "credit" | "debit" | "none";
-export type PaymentIngestionSource = "csv" | "xlsx" | "api";
+export type PaymentIngestionSource = "csv" | "xlsx" | "api" | "manual";
 export type FeeBasis = "source_amount" | "balance_amount";
 
 export interface PaymentEvent {
@@ -16,6 +16,7 @@ export interface PaymentEvent {
   sourceRowId: string | null;
   providerEventId: string | null;
   relatedProviderEventId: string | null;
+  relatedPaymentAccountId: number | null;
   externalId: string | null;
   reference: string | null;
   eventDate: string;

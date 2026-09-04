@@ -545,5 +545,11 @@ export const ru: Messages = {
     expectedFee: "Ожидаемая комиссия", actualFee: "Фактическая комиссия", feeVariance: "Отклонение комиссии", impliedFx: "Фактический FX", expectedFx: "Ожидаемый FX", fxVariance: "Отклонение FX", providerCost: "Стоимость / влияние провайдера",
     unavailable: "Недоступно", accountCreated: "Счёт создан.", imported: "Платёжный файл импортирован.", duplicate: "Этот файл уже импортирован; события не дублировались.", overlapWarning: "Файл импортирован, но строки без ID события провайдера нельзя безопасно дедуплицировать между перекрывающимися файлами.", saveAsset: "Сохранить начальный остаток",
     expectedRelease: "Ожидаемое высвобождение", actualReleased: "Фактически высвобождено", actualReleaseDate: "Фактическая дата высвобождения", unlinkedReleases: "Непривязанные высвобождения (не распределены по резервам)", outstanding: "Остаток", exposureNote: "Резервы и средства в пути — это ликвидностная экспозиция, а не стоимость провайдера.", error: "Операцию выполнить не удалось.",
+    clientFundsEligible: "Подходит для средств клиентов", providerEventId: "ID события провайдера", relatedProviderEventId: "ID связанного события провайдера",
+    currentCalculatedAvailable: "Текущий расчётный", calculatedAtReported: "Расчётный на дату отчёта", reportedAsOf: "Отчёт на дату",
+    sourceAmountBasis: "Исходная сумма", balanceAmountBasis: "Сумма остатка", basisAssetOptional: "Актив базы (необязательно)", feeAsset: "Актив комиссии", days: "Дни",
+    accountTypeLabels: { psp: "PSP", wallet: "Кошелёк", exchange: "Биржа", bank: "Банк", other: "Другое" },
+    eventTypeLabels: { deposit: "Депозит", withdrawal: "Вывод", refund: "Возврат", chargeback: "Чарджбэк", fee: "Комиссия", adjustment: "Корректировка", settlement: "Расчёт", transfer: "Перевод", reserve_hold: "Удержание резерва", reserve_release: "Высвобождение резерва", conversion: "Конвертация", unknown: "Неизвестно" },
+    directionLabels: { credit: "Кредит", debit: "Дебет", none: "Без движения" },
   },
 };
