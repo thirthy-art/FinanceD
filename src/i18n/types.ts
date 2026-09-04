@@ -558,6 +558,6 @@ export interface Messages {
     eventDate: string; eventType: string; amount: string; direction: string; source: string; fee: string;
     expectedFee: string; actualFee: string; feeVariance: string; impliedFx: string; expectedFx: string; fxVariance: string; providerCost: string;
     unavailable: string; accountCreated: string; imported: string; duplicate: string; saveAsset: string;
-    expectedRelease: string; outstanding: string; exposureNote: string; error: string;
+    expectedRelease: string; actualReleased: string; outstanding: string; exposureNote: string; error: string;
   };
 }

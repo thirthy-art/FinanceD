@@ -555,6 +555,6 @@ export const en: Messages = {
     eventDate: "Date", eventType: "Event", amount: "Balance effect", direction: "Direction", source: "Source amount", fee: "Fee",
     expectedFee: "Expected fee", actualFee: "Actual fee", feeVariance: "Fee variance", impliedFx: "Actual implied FX", expectedFx: "Expected FX", fxVariance: "FX variance", providerCost: "Provider cost / impact",
     unavailable: "Unavailable", accountCreated: "Account created.", imported: "Payment file imported.", duplicate: "This payment file was already imported; no events were duplicated.", saveAsset: "Save opening balance",
-    expectedRelease: "Expected release", outstanding: "Outstanding", exposureNote: "Reserves and funds in transit are liquidity exposure, not provider cost.", error: "The operation could not be completed.",
+    expectedRelease: "Expected release", actualReleased: "Actual released", outstanding: "Outstanding", exposureNote: "Reserves and funds in transit are liquidity exposure, not provider cost.", error: "The operation could not be completed.",
   },
 };

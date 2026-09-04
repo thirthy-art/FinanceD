@@ -542,6 +542,6 @@ export const he: Messages = {
     eventDate: "תאריך", eventType: "אירוע", amount: "השפעה על יתרה", direction: "כיוון", source: "סכום מקור", fee: "עמלה",
     expectedFee: "עמלה צפויה", actualFee: "עמלה בפועל", feeVariance: "סטיית עמלה", impliedFx: "שער בפועל", expectedFx: "שער צפוי", fxVariance: "סטיית מט״ח", providerCost: "עלות / השפעת ספק",
     unavailable: "לא זמין", accountCreated: "החשבון נוצר.", imported: "קובץ התשלום יובא.", duplicate: "הקובץ כבר יובא; לא נוצרו אירועים כפולים.", saveAsset: "שמירת יתרת פתיחה",
-    expectedRelease: "שחרור צפוי", outstanding: "יתרה פתוחה", exposureNote: "רזרבות וכספים במעבר הם חשיפת נזילות ולא עלות ספק.", error: "לא ניתן להשלים את הפעולה.",
+    expectedRelease: "שחרור צפוי", actualReleased: "שוחרר בפועל", outstanding: "יתרה פתוחה", exposureNote: "רזרבות וכספים במעבר הם חשיפת נזילות ולא עלות ספק.", error: "לא ניתן להשלים את הפעולה.",
   },
 };
