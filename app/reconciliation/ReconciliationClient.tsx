@@ -2,6 +2,7 @@
 
 import { useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import type { Messages } from "@/src/i18n/types";
 import type { CoverageSummary } from "@/src/lib/reconciliation/coverage";
 import type { DisplayedReconciliationRun, UiImport, UiTransaction } from "./types";
@@ -137,6 +138,10 @@ export default function ReconciliationClient({
 
   return (
     <div>
+      <nav style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 18 }}>
+        <span style={{ padding: "8px 12px", borderRadius: 6, fontSize: 13, fontWeight: 600, color: "#fff", background: "#1e3a5f" }}>{messages.paymentAccounts.topClientFunds}</span>
+        <Link href="/reconciliation/payment-accounts" style={{ padding: "8px 12px", borderRadius: 6, fontSize: 13, fontWeight: 600, color: "#334155", background: "#fff", border: "1px solid #cbd5e1", textDecoration: "none" }}>{messages.paymentAccounts.topPayments}</Link>
+      </nav>
       <Header t={t} />
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginBottom: 24 }}>
@@ -149,15 +154,13 @@ export default function ReconciliationClient({
           loading={uploadingSource === "player_ledger"}
           onFile={(f) => handleFile("player_ledger", f)}
         />
-        <UploadCard
-          title={t.importPspTitle}
-          desc={t.importPspDesc}
-          buttonLabel={t.importPspButton}
-          doneLabel={t.importPspDone}
-          loaded={hasPsp}
-          loading={uploadingSource === "psp_transactions"}
-          onFile={(f) => handleFile("psp_transactions", f)}
-        />
+        <div style={{ flex: "1 1 260px", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "16px 18px" }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: "#1e3a5f", marginBottom: 4 }}>{t.importPspTitle}</div>
+          <div style={{ fontSize: 12, color: "#64748b", marginBottom: 12 }}>{t.importPspDesc}</div>
+          <Link href="/reconciliation/payment-accounts" style={{ display: "inline-block", padding: "8px 14px", borderRadius: 6, fontSize: 13, fontWeight: 600, background: hasPsp ? "#dcfce7" : "#eff6ff", color: hasPsp ? "#166534" : "#1e40af", textDecoration: "none" }}>
+            {hasPsp ? t.importPspDone : t.importPspButton}
+          </Link>
+        </div>
       </div>
 
       <section style={{ marginBottom: 24 }}>

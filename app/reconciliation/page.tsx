@@ -4,9 +4,12 @@ import { getDb } from "@/src/db";
 import {
   reconciliationImports,
   reconciliationMatches,
+  reconciliationPaymentMatches,
+  reconciliationPaymentRunItems,
   reconciliationRunItems,
   reconciliationRuns,
   reconciliationTransactions,
+  paymentEvents,
 } from "@/src/db/schema";
 import { getActiveCompanyForPage } from "@/src/lib/active-company-page";
 import CompanySelectionRequired from "@/src/components/CompanySelectionRequired";
@@ -93,10 +96,30 @@ export default async function ReconciliationPage() {
           eq(reconciliationMatches.runId, latestRun.id)
         ))
     : [];
+  const paymentTxRows = latestRun
+    ? await db.select({
+        id: paymentEvents.id, externalId: paymentEvents.externalId, reference: paymentEvents.reference,
+        eventType: paymentEvents.eventType, balanceAmount: paymentEvents.balanceAmount,
+        balanceAssetCode: paymentEvents.balanceAssetCode, sourceAmount: paymentEvents.sourceAmount,
+        sourceAssetCode: paymentEvents.sourceAssetCode, eventDate: paymentEvents.eventDate,
+        status: paymentEvents.status, statusProvided: paymentEvents.statusProvided,
+        matchStatus: reconciliationPaymentRunItems.matchStatus,
+      }).from(reconciliationPaymentRunItems).innerJoin(paymentEvents, eq(reconciliationPaymentRunItems.paymentEventId, paymentEvents.id)).where(and(
+        eq(reconciliationPaymentRunItems.companyId, company.id), eq(reconciliationPaymentRunItems.runId, latestRun.id), eq(paymentEvents.companyId, company.id)
+      )).orderBy(paymentEvents.id)
+    : [];
+  const paymentMatchRows = latestRun
+    ? await db.select({ playerTransactionId: reconciliationPaymentMatches.playerTransactionId, paymentEventId: reconciliationPaymentMatches.paymentEventId })
+        .from(reconciliationPaymentMatches).where(and(eq(reconciliationPaymentMatches.companyId, company.id), eq(reconciliationPaymentMatches.runId, latestRun.id)))
+    : [];
   const matchByTx = new Map<number, number>();
   for (const m of matchRows) {
     matchByTx.set(m.playerTransactionId, m.pspTransactionId);
     matchByTx.set(m.pspTransactionId, m.playerTransactionId);
+  }
+  for (const m of paymentMatchRows) {
+    matchByTx.set(m.playerTransactionId, -m.paymentEventId);
+    matchByTx.set(-m.paymentEventId, m.playerTransactionId);
   }
 
   const transactions: UiTransaction[] = txRows.map((r) => ({
@@ -113,7 +136,13 @@ export default async function ReconciliationPage() {
     statusProvided: r.statusProvided,
     matchStatus: r.matchStatus,
     linkedTransactionId: matchByTx.get(r.id) ?? null,
-  }));
+  })).concat(paymentTxRows.map((r) => ({
+    id: -r.id, source: "psp_transactions" as const, externalId: r.externalId, playerId: null,
+    reference: r.reference, type: r.eventType as "deposit" | "withdrawal",
+    amount: String(r.sourceAmount ?? r.balanceAmount), currency: String(r.sourceAssetCode ?? r.balanceAssetCode),
+    eventDate: r.eventDate, status: r.status, statusProvided: r.statusProvided,
+    matchStatus: r.matchStatus, linkedTransactionId: matchByTx.get(-r.id) ?? null,
+  })));
 
   const canonical: ReconciliationTransaction[] = transactions.map((tx) => ({
     source: tx.source,
@@ -132,7 +161,7 @@ export default async function ReconciliationPage() {
     canonical.filter((tx) => tx.source === "psp_transactions")
   );
 
-  const matchedPairs = matchRows.length;
+  const matchedPairs = matchRows.length + paymentMatchRows.length;
   const unmatchedCount = transactions.filter((tx) => tx.matchStatus === "unmatched").length;
   const ambiguousCount = transactions.filter((tx) => tx.matchStatus === "ambiguous").length;
 

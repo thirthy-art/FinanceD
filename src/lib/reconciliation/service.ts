@@ -3,9 +3,12 @@ import { getDb, type Db } from "@/src/db";
 import {
   reconciliationImports,
   reconciliationMatches,
+  reconciliationPaymentMatches,
+  reconciliationPaymentRunItems,
   reconciliationRunItems,
   reconciliationRuns,
   reconciliationTransactions,
+  paymentEvents,
 } from "@/src/db/schema";
 import { type IndexedTransaction, runReconciliation } from "./match";
 import type {
@@ -13,6 +16,7 @@ import type {
   ReconciliationSource,
   ReconciliationTransaction,
 } from "./types";
+import { toReconciliationCandidate } from "@/src/lib/payment-ledger/calculations";
 
 export interface ImportPersistedResult {
   importId: number;
@@ -140,10 +144,50 @@ export async function runAndPersistReconciliation(
   );
   const runId = await getOrCreateRun(db, companyId, playerLedgerImportId, pspImportId);
   const ledger = await loadIndexed(db, companyId, "player_ledger", playerLedgerImportId);
-  const psp = await loadIndexed(db, companyId, "psp_transactions", pspImportId);
+  const canonicalPsp = await isCanonicalPaymentImport(db, companyId, pspImportId);
+  const psp = canonicalPsp
+    ? await loadCanonicalPaymentEvents(db, companyId, pspImportId)
+    : await loadIndexed(db, companyId, "psp_transactions", pspImportId);
   const { matches, ambiguousIds } = runReconciliation(ledger, psp);
 
   await db.transaction(async (tx) => {
+    if (canonicalPsp) {
+      await tx.delete(reconciliationPaymentMatches).where(and(
+        eq(reconciliationPaymentMatches.companyId, companyId),
+        eq(reconciliationPaymentMatches.runId, runId)
+      ));
+      await tx.delete(reconciliationPaymentRunItems).where(and(
+        eq(reconciliationPaymentRunItems.companyId, companyId),
+        eq(reconciliationPaymentRunItems.runId, runId)
+      ));
+      await tx.delete(reconciliationRunItems).where(and(
+        eq(reconciliationRunItems.companyId, companyId),
+        eq(reconciliationRunItems.runId, runId)
+      ));
+
+      const matchedPlayerIds = new Set(matches.map((match) => match.playerTransactionId));
+      const matchedEventIds = new Set(matches.map((match) => -match.pspTransactionId));
+      const ambiguousIdSet = new Set(ambiguousIds);
+      if (ledger.length > 0) {
+        await tx.insert(reconciliationRunItems).values(ledger.map((transaction) => ({
+          companyId, runId, transactionId: transaction.id,
+          matchStatus: matchedPlayerIds.has(transaction.id) ? "matched" as const : ambiguousIdSet.has(transaction.id) ? "ambiguous" as const : "unmatched" as const,
+        })));
+      }
+      if (psp.length > 0) {
+        await tx.insert(reconciliationPaymentRunItems).values(psp.map((transaction) => ({
+          companyId, runId, paymentEventId: -transaction.id,
+          matchStatus: matchedEventIds.has(-transaction.id) ? "matched" as const : ambiguousIdSet.has(transaction.id) ? "ambiguous" as const : "unmatched" as const,
+        })));
+      }
+      if (matches.length > 0) {
+        await tx.insert(reconciliationPaymentMatches).values(matches.map((match) => ({
+          companyId, runId, playerTransactionId: match.playerTransactionId, paymentEventId: -match.pspTransactionId, matchReason: match.matchedOn,
+        })));
+      }
+      await tx.update(reconciliationRuns).set({ status: "completed", updatedAt: new Date() }).where(and(eq(reconciliationRuns.id, runId), eq(reconciliationRuns.companyId, companyId)));
+      return;
+    }
     await tx.delete(reconciliationMatches).where(and(
       eq(reconciliationMatches.companyId, companyId),
       eq(reconciliationMatches.runId, runId)
@@ -198,8 +242,27 @@ export async function runAndPersistReconciliation(
     matches,
     ambiguousIds,
     matchedPlayerIds: matches.map((match) => match.playerTransactionId),
-    matchedPspIds: matches.map((match) => match.pspTransactionId),
+    matchedPspIds: matches.map((match) => canonicalPsp ? -match.pspTransactionId : match.pspTransactionId),
   };
+}
+
+async function isCanonicalPaymentImport(db: Db, companyId: number, importId: number) {
+  const [row] = await db.select({ paymentAccountId: reconciliationImports.paymentAccountId }).from(reconciliationImports).where(and(
+    eq(reconciliationImports.id, importId), eq(reconciliationImports.companyId, companyId), eq(reconciliationImports.sourceKind, "psp_transactions")
+  )).limit(1);
+  return row?.paymentAccountId != null;
+}
+
+async function loadCanonicalPaymentEvents(db: Db, companyId: number, importId: number): Promise<IndexedTransaction[]> {
+  const rows = await db.select({
+    id: paymentEvents.id, companyId: paymentEvents.companyId, externalId: paymentEvents.externalId,
+    reference: paymentEvents.reference, eventType: paymentEvents.eventType, balanceAmount: paymentEvents.balanceAmount,
+    balanceAssetCode: paymentEvents.balanceAssetCode, sourceAmount: paymentEvents.sourceAmount,
+    sourceAssetCode: paymentEvents.sourceAssetCode, status: paymentEvents.status, statusProvided: paymentEvents.statusProvided,
+  }).from(paymentEvents).where(and(eq(paymentEvents.companyId, companyId), eq(paymentEvents.importId, importId))).orderBy(paymentEvents.id);
+  return rows.map((row) => toReconciliationCandidate({ ...row,
+    balanceAmount: String(row.balanceAmount), sourceAmount: row.sourceAmount === null ? null : String(row.sourceAmount),
+  })).filter((row): row is IndexedTransaction => row !== null);
 }
 
 async function resolveImportId(
