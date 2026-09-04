@@ -301,6 +301,19 @@ export interface Messages {
     statusApproved: string;
     statusDraft: string;
   };
+  cashForecast: {
+    tabCurrent: string; tabForecast: string; title: string; manualNotice: string;
+    openingCash: string; week13Closing: string; lowestCash: string; minimumBuffer: string;
+    bufferWarning: string; missingDueWarning: string; missingBaseWarning: string;
+    settingsTitle: string; saveSettings: string; addItem: string; editItem: string;
+    date: string; description: string; direction: string; category: string; amount: string;
+    inflow: string; outflow: string; save: string; cancel: string; edit: string; delete: string;
+    week: string; manualInflows: string; apOutflows: string; manualOutflows: string;
+    netMovement: string; closingCash: string; details: string; noItems: string; plannedItems: string; noPlannedItems: string;
+    customerReceipts: string; financingInflow: string; otherInflow: string;
+    payroll: string; taxVat: string; rent: string; debtService: string; otherOutflow: string;
+    saveFailed: string; deleteFailed: string;
+  };
   budget: {
     title: string;
     tabBudget: string;
