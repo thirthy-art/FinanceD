@@ -113,6 +113,13 @@
       "when": 1788518765005,
       "tag": "0015_elite_scourge",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1788521733734,
+      "tag": "0016_boring_amazoness",
+      "breakpoints": true
     }
   ]
 }

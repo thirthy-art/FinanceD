@@ -2,25 +2,27 @@ import { createHash } from "node:crypto";
 import ExcelJS from "exceljs";
 import { Decimal } from "@/src/lib/decimal";
 import type { AssetType, BalanceDirection, PaymentEventType } from "./types";
+import { isValidDateOnly } from "./validation";
 
 export class PaymentImportError extends Error {}
 
 export interface ImportedPaymentEvent {
-  sourceRowNumber: number; sourceRowId: string | null; externalId: string | null; reference: string | null;
+  sourceRowNumber: number; sourceRowId: string | null; providerEventId: string | null; relatedProviderEventId: string | null; externalId: string | null; reference: string | null;
   eventDate: string; eventType: PaymentEventType; balanceDirection: BalanceDirection; balanceAmount: string;
   balanceAssetCode: string; balanceAssetType: AssetType; sourceAmount: string | null; sourceAssetCode: string | null;
   sourceAssetType: AssetType | null; actualFeeAmount: string | null; actualFeeAssetCode: string | null;
   expectedFxRate: string | null; reportedAvailableBalance: string | null; reportedReserveBalance: string | null;
   expectedReleaseDate: string | null; destinationAccountId: number | null; destinationAmount: string | null;
   destinationAssetCode: string | null; destinationAssetType: AssetType | null; expectedDestinationAmount: string | null;
-  expectedDestinationRate: string | null; relatedEventId: number | null; status: string | null; statusProvided: boolean;
+  expectedDestinationRate: string | null; relatedEventId: number | null; finalReceipt: boolean; status: string | null; statusProvided: boolean;
   rawIdentifiers: string;
 }
 
 export interface ParsedPaymentImport { events: ImportedPaymentEvent[]; contentHash: string; rowCount: number; }
 
 const ALIASES = {
-  sourceRowId: ["source_row_id", "row_id"], externalId: ["external_id", "transaction_id", "payment_id", "psp_id"],
+  sourceRowId: ["source_row_id", "row_id"], providerEventId: ["provider_event_id", "source_event_id", "transaction_id"],
+  relatedProviderEventId: ["related_provider_event_id", "related_transaction_id"], externalId: ["external_id", "payment_id", "psp_id"],
   reference: ["reference", "merchant_reference", "external_reference"], eventDate: ["event_date", "date", "transaction_date", "posting_date"],
   eventType: ["event_type", "transaction_type", "type", "operation"], direction: ["balance_direction", "economic_direction", "direction"],
   balanceAmount: ["balance_amount", "credited_amount", "debited_amount", "account_amount", "amount", "net_amount"],
@@ -32,7 +34,7 @@ const ALIASES = {
   expectedReleaseDate: ["expected_release_date", "reserve_release_date"], destinationAccountId: ["destination_account_id"],
   destinationAmount: ["destination_amount", "received_amount"], destinationAssetCode: ["destination_asset", "destination_currency", "received_currency"],
   destinationAssetType: ["destination_asset_type"], expectedDestinationAmount: ["expected_destination_amount", "expected_received_amount"],
-  expectedDestinationRate: ["expected_destination_rate", "expected_settlement_rate"], relatedEventId: ["related_event_id", "source_event_id"],
+  expectedDestinationRate: ["expected_destination_rate", "expected_settlement_rate"], finalReceipt: ["final_receipt", "receipt_completes_transfer"],
   status: ["status", "transaction_status"],
 } as const;
 
@@ -51,13 +53,13 @@ const signedDecimal = (value: unknown) => {
 };
 const integer = (value: unknown) => { const raw = cell(value); return raw && /^\d+$/.test(raw) ? Number(raw) : null; };
 const assetType = (value: unknown): AssetType | null => { const raw = cell(value)?.toLowerCase(); return raw === "fiat" || raw === "crypto" ? raw : null; };
+const booleanValue = (value: unknown) => { const raw = cell(value)?.toLowerCase(); return raw === "true" || raw === "yes" || raw === "1"; };
 
 const EVENT_TYPES = new Set<PaymentEventType>(["deposit", "withdrawal", "refund", "chargeback", "fee", "adjustment", "settlement", "transfer", "reserve_hold", "reserve_release", "conversion"]);
 function eventType(value: unknown): PaymentEventType | null {
   const normalized = cell(value)?.toLowerCase().replace(/[\s-]+/g, "_") as PaymentEventType | undefined;
-  const aliases: Record<string, PaymentEventType> = { credit: "deposit", capture: "deposit", payout: "withdrawal", reservehold: "reserve_hold", reserverelease: "reserve_release" };
   if (!normalized) return null;
-  return EVENT_TYPES.has(normalized) ? normalized : aliases[normalized.replaceAll("_", "")] ?? null;
+  return EVENT_TYPES.has(normalized) ? normalized : null;
 }
 function defaultDirection(type: PaymentEventType, raw: unknown): BalanceDirection | null {
   const explicit = cell(raw)?.toLowerCase();
@@ -88,7 +90,7 @@ function normalize(rows: unknown[][]): ParsedPaymentImport {
     if (!direction) throw new PaymentImportError(`Row ${index + 2}: balance direction is required for ${type}.`);
     const amount = decimal(get("balanceAmount")); const balanceAsset = asset(get("balanceAssetCode")); const balanceType = assetType(get("balanceAssetType"));
     const date = cell(get("eventDate"));
-    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new PaymentImportError(`Row ${index + 2}: event date must be YYYY-MM-DD.`);
+    if (!date || !isValidDateOnly(date)) throw new PaymentImportError(`Row ${index + 2}: event date must be a real date in YYYY-MM-DD format.`);
     if (amount === null) throw new PaymentImportError(`Row ${index + 2}: balance amount must be a valid positive magnitude.`);
     if (!balanceAsset || !balanceType) throw new PaymentImportError(`Row ${index + 2}: balance asset code and fiat/crypto asset type are required.`);
     const sourceAmount = decimal(get("sourceAmount")); const sourceAsset = asset(get("sourceAssetCode")); const sourceType = assetType(get("sourceAssetType"));
@@ -98,13 +100,16 @@ function normalize(rows: unknown[][]): ParsedPaymentImport {
     const actualFeeAmount = decimal(get("actualFeeAmount")); const actualFeeAsset = asset(get("actualFeeAssetCode"));
     if ((actualFeeAmount === null) !== (actualFeeAsset === null)) throw new PaymentImportError(`Row ${index + 2}: actual fee amount and asset must be supplied together.`);
     const rawIdentifiers = JSON.stringify(Object.fromEntries(headers.map((header, column) => [header, cell(row[column])])));
-    return { sourceRowNumber: index + 2, sourceRowId: cell(get("sourceRowId")), externalId: cell(get("externalId")), reference: cell(get("reference")), eventDate: date,
+    const expectedReleaseDate = cell(get("expectedReleaseDate"));
+    if (expectedReleaseDate !== null && !isValidDateOnly(expectedReleaseDate)) throw new PaymentImportError(`Row ${index + 2}: expected release date must be a real date in YYYY-MM-DD format.`);
+    const providerEventId = cell(get("providerEventId"));
+    return { sourceRowNumber: index + 2, sourceRowId: cell(get("sourceRowId")), providerEventId, relatedProviderEventId: cell(get("relatedProviderEventId")), externalId: cell(get("externalId")) ?? providerEventId, reference: cell(get("reference")), eventDate: date,
       eventType: type, balanceDirection: direction, balanceAmount: amount, balanceAssetCode: balanceAsset, balanceAssetType: balanceType,
       sourceAmount, sourceAssetCode: sourceAsset, sourceAssetType: sourceType, actualFeeAmount, actualFeeAssetCode: actualFeeAsset,
       expectedFxRate: decimal(get("expectedFxRate")), reportedAvailableBalance: signedDecimal(get("reportedAvailableBalance")), reportedReserveBalance: signedDecimal(get("reportedReserveBalance")),
-      expectedReleaseDate: cell(get("expectedReleaseDate")), destinationAccountId: integer(get("destinationAccountId")), destinationAmount, destinationAssetCode: destinationAsset,
+      expectedReleaseDate, destinationAccountId: integer(get("destinationAccountId")), destinationAmount, destinationAssetCode: destinationAsset,
       destinationAssetType: destinationType, expectedDestinationAmount: decimal(get("expectedDestinationAmount")), expectedDestinationRate: decimal(get("expectedDestinationRate")),
-      relatedEventId: integer(get("relatedEventId")), status: cell(get("status")), statusProvided: columns.status !== null, rawIdentifiers };
+      relatedEventId: null, finalReceipt: booleanValue(get("finalReceipt")), status: cell(get("status")), statusProvided: columns.status !== null, rawIdentifiers };
   });
   if (events.length === 0) throw new PaymentImportError("The payment transaction file contains no data rows.");
   const contentHash = createHash("sha256").update(events.map((event) => JSON.stringify(event)).join("\n")).digest("hex");

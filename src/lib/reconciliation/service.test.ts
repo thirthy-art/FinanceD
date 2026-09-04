@@ -14,11 +14,15 @@ const HAS_DB = Boolean(process.env.DATABASE_URL);
 const db = getDb();
 
 async function cleanupCompany(companyId: number) {
+  await db.delete(schema.reconciliationPaymentMatches).where(eq(schema.reconciliationPaymentMatches.companyId, companyId));
+  await db.delete(schema.reconciliationPaymentRunItems).where(eq(schema.reconciliationPaymentRunItems.companyId, companyId));
   await db.delete(schema.reconciliationMatches).where(eq(schema.reconciliationMatches.companyId, companyId));
   await db.delete(schema.reconciliationRunItems).where(eq(schema.reconciliationRunItems.companyId, companyId));
   await db.delete(schema.reconciliationRuns).where(eq(schema.reconciliationRuns.companyId, companyId));
   await db.delete(schema.reconciliationTransactions).where(eq(schema.reconciliationTransactions.companyId, companyId));
+  await db.delete(schema.paymentEvents).where(eq(schema.paymentEvents.companyId, companyId));
   await db.delete(schema.reconciliationImports).where(eq(schema.reconciliationImports.companyId, companyId));
+  await db.delete(schema.paymentAccounts).where(eq(schema.paymentAccounts.companyId, companyId));
   await db.delete(schema.companies).where(eq(schema.companies.id, companyId));
 }
 
@@ -172,6 +176,16 @@ describe("reconciliation persistence (DB)", () => {
       await cleanupCompany(companyA);
       await cleanupCompany(companyB);
     }
+  });
+
+  it.skipIf(!HAS_DB)("rejects an ineligible canonical payment account selected by direct service request", async () => {
+    const companyId = await freshCompany();
+    try {
+      const ledger = await createImport(companyId, "player_ledger", "ledger.csv", LEDGER_TXS, "eligible-ledger");
+      const [account] = await db.insert(schema.paymentAccounts).values({ companyId, name: "Bank", accountType: "bank", clientFundsEligible: false }).returning();
+      const [canonicalImport] = await db.insert(schema.reconciliationImports).values({ companyId, sourceKind: "psp_transactions", paymentAccountId: account.id, ingestionSource: "csv", originalFilename: "bank.csv", contentHash: "bank-canonical", rowCount: 0 }).returning();
+      await expect(runAndPersistReconciliation(companyId, { playerLedgerImportId: ledger.importId, pspImportId: canonicalImport.id })).rejects.toThrow(/not eligible/);
+    } finally { await cleanupCompany(companyId); }
   });
 
   it.skipIf(!HAS_DB)("keeps separate daily import pairs isolated and reruns idempotently", async () => {

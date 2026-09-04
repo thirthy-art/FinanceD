@@ -74,6 +74,14 @@ export const paymentBalanceDirectionEnum = pgEnum("payment_balance_direction", [
   "credit", "debit", "none",
 ]);
 
+export const paymentIngestionSourceEnum = pgEnum("payment_ingestion_source", [
+  "csv", "xlsx", "api",
+]);
+
+export const paymentFeeBasisEnum = pgEnum("payment_fee_basis", [
+  "source_amount", "balance_amount",
+]);
+
 export const vendorStatusEnum = pgEnum("vendor_status", [
   "draft",
   "active",
@@ -368,6 +376,7 @@ export const paymentAccounts = pgTable("payment_accounts", {
   name: varchar("name", { length: 255 }).notNull(),
   providerName: varchar("provider_name", { length: 255 }),
   accountType: paymentAccountTypeEnum("account_type").notNull(),
+  clientFundsEligible: boolean("client_funds_eligible").notNull().default(false),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -395,7 +404,9 @@ export const paymentFeeRules = pgTable("payment_fee_rules", {
   companyId: integer("company_id").notNull().references(() => companies.id),
   paymentAccountId: integer("payment_account_id").notNull().references(() => paymentAccounts.id),
   eventType: paymentEventTypeEnum("event_type").notNull(),
+  feeBasis: paymentFeeBasisEnum("fee_basis").notNull().default("source_amount"),
   assetCode: varchar("asset_code", { length: 20 }),
+  feeAssetCode: varchar("fee_asset_code", { length: 20 }),
   percentageRate: numeric("percentage_rate", { precision: 38, scale: 18 }).notNull().default("0"),
   fixedAmount: numeric("fixed_amount", { precision: 38, scale: 18 }).notNull().default("0"),
   fixedAssetCode: varchar("fixed_asset_code", { length: 20 }),
@@ -427,15 +438,19 @@ export const reconciliationImports = pgTable("reconciliation_imports", {
     .references(() => companies.id),
   sourceKind: reconciliationSourceEnum("source_kind").notNull(),
   paymentAccountId: integer("payment_account_id").references(() => paymentAccounts.id),
+  ingestionSource: paymentIngestionSourceEnum("ingestion_source"),
   originalFilename: varchar("original_filename", { length: 255 }).notNull(),
   contentHash: varchar("content_hash", { length: 64 }).notNull(),
   rowCount: integer("row_count").notNull().default(0),
   status: varchar("status", { length: 20 }).notNull().default("parsed"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => ({
-  companySourceHashUnique: unique(
-    "uq_reconciliation_import_company_source_hash"
-  ).on(table.companyId, table.sourceKind, table.contentHash),
+  legacyCompanySourceHashUnique: uniqueIndex("uq_reconciliation_import_legacy_hash")
+    .on(table.companyId, table.sourceKind, table.contentHash)
+    .where(sql`${table.paymentAccountId} is null`),
+  accountSourceHashUnique: uniqueIndex("uq_reconciliation_import_account_hash")
+    .on(table.companyId, table.sourceKind, table.paymentAccountId, table.contentHash)
+    .where(sql`${table.paymentAccountId} is not null`),
 }));
 
 /** Canonical source facts for every new PSP/wallet/payment-account import. */
@@ -446,6 +461,8 @@ export const paymentEvents = pgTable("payment_events", {
   importId: integer("import_id").notNull().references(() => reconciliationImports.id),
   sourceRowNumber: integer("source_row_number").notNull(),
   sourceRowId: varchar("source_row_id", { length: 255 }),
+  providerEventId: varchar("provider_event_id", { length: 255 }),
+  relatedProviderEventId: varchar("related_provider_event_id", { length: 255 }),
   externalId: varchar("external_id", { length: 255 }),
   reference: text("reference"),
   eventDate: varchar("event_date", { length: 10 }).notNull(),
@@ -470,15 +487,38 @@ export const paymentEvents = pgTable("payment_events", {
   expectedDestinationAmount: numeric("expected_destination_amount", { precision: 38, scale: 18 }),
   expectedDestinationRate: numeric("expected_destination_rate", { precision: 38, scale: 18 }),
   relatedEventId: integer("related_event_id").references((): AnyPgColumn => paymentEvents.id),
+  finalReceipt: boolean("final_receipt").notNull().default(false),
   status: varchar("status", { length: 50 }),
   statusProvided: boolean("status_provided").notNull().default(false),
   rawIdentifiers: text("raw_identifiers"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => ({
   importRowUnique: unique("uq_payment_event_import_row").on(table.importId, table.sourceRowNumber),
+  providerEventUnique: uniqueIndex("uq_payment_event_account_provider_id")
+    .on(table.companyId, table.paymentAccountId, table.providerEventId)
+    .where(sql`${table.providerEventId} is not null`),
   magnitudeNonnegative: check("payment_event_magnitude_nonnegative", sql`${table.balanceAmount} >= 0`),
   sourceNonnegative: check("payment_event_source_nonnegative", sql`${table.sourceAmount} is null or ${table.sourceAmount} >= 0`),
   feeNonnegative: check("payment_event_fee_nonnegative", sql`${table.actualFeeAmount} is null or ${table.actualFeeAmount} >= 0`),
+}));
+
+/** Provider-reported source facts. Calculated balances are never persisted here. */
+export const paymentBalanceSnapshots = pgTable("payment_balance_snapshots", {
+  id: serial("id").primaryKey(),
+  companyId: integer("company_id").notNull().references(() => companies.id),
+  paymentAccountId: integer("payment_account_id").notNull().references(() => paymentAccounts.id),
+  assetCode: varchar("asset_code", { length: 20 }).notNull(),
+  assetType: currencyTypeEnum("asset_type").notNull(),
+  reportedAvailableBalance: numeric("reported_available_balance", { precision: 38, scale: 18 }).notNull(),
+  reportedReserveBalance: numeric("reported_reserve_balance", { precision: 38, scale: 18 }),
+  asOf: timestamp("as_of").notNull(),
+  ingestionSource: paymentIngestionSourceEnum("ingestion_source").notNull(),
+  providerSnapshotId: varchar("provider_snapshot_id", { length: 255 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  providerSnapshotUnique: uniqueIndex("uq_payment_balance_snapshot_provider_id")
+    .on(table.companyId, table.paymentAccountId, table.providerSnapshotId)
+    .where(sql`${table.providerSnapshotId} is not null`),
 }));
 
 // One deterministic run owns exactly one player-ledger import and one PSP

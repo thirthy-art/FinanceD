@@ -4,6 +4,8 @@ export type PaymentEventType =
   | "deposit" | "withdrawal" | "refund" | "chargeback" | "fee" | "adjustment"
   | "settlement" | "transfer" | "reserve_hold" | "reserve_release" | "conversion" | "unknown";
 export type BalanceDirection = "credit" | "debit" | "none";
+export type PaymentIngestionSource = "csv" | "xlsx" | "api";
+export type FeeBasis = "source_amount" | "balance_amount";
 
 export interface PaymentEvent {
   id: number;
@@ -12,6 +14,8 @@ export interface PaymentEvent {
   importId: number;
   sourceRowNumber: number;
   sourceRowId: string | null;
+  providerEventId: string | null;
+  relatedProviderEventId: string | null;
   externalId: string | null;
   reference: string | null;
   eventDate: string;
@@ -36,6 +40,7 @@ export interface PaymentEvent {
   expectedDestinationAmount: string | null;
   expectedDestinationRate: string | null;
   relatedEventId: number | null;
+  finalReceipt: boolean;
   status: string | null;
   statusProvided: boolean;
   rawIdentifiers: string | null;
@@ -47,12 +52,24 @@ export interface AccountAssetOpening {
   assetType: AssetType;
   openingAvailableBalance: string;
   openingReserveBalance: string;
+  openingBalanceDate: string | null;
+}
+
+export interface ReportedBalanceSnapshot {
+  paymentAccountId: number;
+  assetCode: string;
+  assetType: AssetType;
+  reportedAvailableBalance: string;
+  reportedReserveBalance: string | null;
+  asOf: Date;
 }
 
 export interface FeeRule {
   paymentAccountId: number;
   eventType: PaymentEventType;
+  feeBasis: FeeBasis;
   assetCode: string | null;
+  feeAssetCode: string | null;
   percentageRate: string;
   fixedAmount: string;
   fixedAssetCode: string | null;

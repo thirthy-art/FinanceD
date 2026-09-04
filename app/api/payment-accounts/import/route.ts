@@ -10,10 +10,11 @@ export async function POST(req: NextRequest) {
     if (!(file instanceof File) || typeof rawAccountId !== "string" || !/^[1-9]\d*$/.test(rawAccountId)) return NextResponse.json({ error: "Select a payment account and file." }, { status: 400 });
     if (file.size > MAX_UPLOAD_BYTES) return NextResponse.json({ error: "Payment file exceeds the 25 MB upload limit." }, { status: 413 });
     const bytes = Buffer.from(await file.arrayBuffer()); const lower = file.name.toLowerCase();
-    const parsed = lower.endsWith(".csv") ? parsePaymentCsv(bytes.toString("utf8")) : lower.endsWith(".xlsx") ? await parsePaymentXlsx(bytes) : null;
+    const ingestionSource = lower.endsWith(".csv") ? "csv" as const : lower.endsWith(".xlsx") ? "xlsx" as const : null;
+    const parsed = ingestionSource === "csv" ? parsePaymentCsv(bytes.toString("utf8")) : ingestionSource === "xlsx" ? await parsePaymentXlsx(bytes) : null;
     if (!parsed) return NextResponse.json({ error: "Upload a CSV or XLSX file." }, { status: 400 });
-    const result = await createPaymentImport(company.id, Number(rawAccountId), file.name, parsed.events, parsed.contentHash);
-    return NextResponse.json({ importId: result.importId, eventCount: result.eventIds.length, reused: result.reused });
+    const result = await createPaymentImport(company.id, Number(rawAccountId), file.name, parsed.events, parsed.contentHash, ingestionSource!);
+    return NextResponse.json({ importId: result.importId, eventCount: result.eventIds.length, reused: result.reused, skippedProviderDuplicates: result.skippedProviderDuplicates, overlapWarning: result.overlapWarning });
   } catch (error) {
     const status = error instanceof PaymentImportError ? 422 : 400;
     return NextResponse.json({ error: error instanceof Error ? error.message : "Payment import could not be stored." }, { status });

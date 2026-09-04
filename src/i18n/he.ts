@@ -541,7 +541,7 @@ export const he: Messages = {
     totalFunds: "סך כספים בבעלות", immediatelyAvailable: "זמין מיידית", fundsInTransit: "כספים במעבר", rollingReserve: "רזרבה מתגלגלת",
     eventDate: "תאריך", eventType: "אירוע", amount: "השפעה על יתרה", direction: "כיוון", source: "סכום מקור", fee: "עמלה",
     expectedFee: "עמלה צפויה", actualFee: "עמלה בפועל", feeVariance: "סטיית עמלה", impliedFx: "שער בפועל", expectedFx: "שער צפוי", fxVariance: "סטיית מט״ח", providerCost: "עלות / השפעת ספק",
-    unavailable: "לא זמין", accountCreated: "החשבון נוצר.", imported: "קובץ התשלום יובא.", duplicate: "הקובץ כבר יובא; לא נוצרו אירועים כפולים.", saveAsset: "שמירת יתרת פתיחה",
-    expectedRelease: "שחרור צפוי", actualReleased: "שוחרר בפועל", outstanding: "יתרה פתוחה", exposureNote: "רזרבות וכספים במעבר הם חשיפת נזילות ולא עלות ספק.", error: "לא ניתן להשלים את הפעולה.",
+    unavailable: "לא זמין", accountCreated: "החשבון נוצר.", imported: "קובץ התשלום יובא.", duplicate: "הקובץ כבר יובא; לא נוצרו אירועים כפולים.", overlapWarning: "הקובץ יובא, אך לא ניתן למנוע בבטחה כפילויות בין קבצים חופפים בשורות ללא מזהה אירוע ספק.", saveAsset: "שמירת יתרת פתיחה",
+    expectedRelease: "שחרור צפוי", actualReleased: "שוחרר בפועל", actualReleaseDate: "תאריך שחרור בפועל", unlinkedReleases: "שחרורים לא מקושרים (לא הוקצו לאצוות רזרבה)", outstanding: "יתרה פתוחה", exposureNote: "רזרבות וכספים במעבר הם חשיפת נזילות ולא עלות ספק.", error: "לא ניתן להשלים את הפעולה.",
   },
 };

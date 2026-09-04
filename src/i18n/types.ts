@@ -557,7 +557,7 @@ export interface Messages {
     totalFunds: string; immediatelyAvailable: string; fundsInTransit: string; rollingReserve: string;
     eventDate: string; eventType: string; amount: string; direction: string; source: string; fee: string;
     expectedFee: string; actualFee: string; feeVariance: string; impliedFx: string; expectedFx: string; fxVariance: string; providerCost: string;
-    unavailable: string; accountCreated: string; imported: string; duplicate: string; saveAsset: string;
-    expectedRelease: string; actualReleased: string; outstanding: string; exposureNote: string; error: string;
+    unavailable: string; accountCreated: string; imported: string; duplicate: string; overlapWarning: string; saveAsset: string;
+    expectedRelease: string; actualReleased: string; actualReleaseDate: string; unlinkedReleases: string; outstanding: string; exposureNote: string; error: string;
   };
 }

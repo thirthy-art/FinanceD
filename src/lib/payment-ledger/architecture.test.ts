@@ -5,6 +5,8 @@ const paymentService = readFileSync(new URL("./service.ts", import.meta.url), "u
 const reconciliationService = readFileSync(new URL("../reconciliation/service.ts", import.meta.url), "utf8");
 const paymentImportRoute = readFileSync(new URL("../../../app/api/payment-accounts/import/route.ts", import.meta.url), "utf8");
 const legacyImportRoute = readFileSync(new URL("../../../app/api/reconciliation/import/route.ts", import.meta.url), "utf8");
+const reconciliationPage = readFileSync(new URL("../../../app/reconciliation/page.tsx", import.meta.url), "utf8");
+const migration = readFileSync(new URL("../../../drizzle/0016_boring_amazoness.sql", import.meta.url), "utf8");
 
 describe("payment-ledger architectural invariants", () => {
   it("persists a PSP upload once as shared provenance plus canonical payment events", () => {
@@ -12,6 +14,22 @@ describe("payment-ledger architectural invariants", () => {
     expect(paymentService).toContain("tx.insert(paymentEvents)");
     expect(paymentService).not.toContain("insert(reconciliationTransactions)");
     expect(paymentService).toContain("reused: true");
+    expect(paymentService).toContain("persistCanonicalPaymentImport");
+    expect(paymentService).toContain("PaymentIngestionSource");
+  });
+
+  it("enforces account-scoped provider identity and source-level relationships", () => {
+    expect(migration).toContain("uq_payment_event_account_provider_id");
+    expect(migration).toContain('"company_id","payment_account_id","provider_event_id"');
+    expect(paymentService).toContain("relatedProviderEventId");
+    expect(paymentService).toContain("candidates.length === 1");
+  });
+
+  it("filters canonical Client Funds imports in UI and service while retaining null-account legacy imports", () => {
+    expect(reconciliationPage).toContain("entry.paymentAccountId === null");
+    expect(reconciliationPage).toContain("accountEligibility.get(entry.paymentAccountId) === true");
+    expect(reconciliationService).toContain("paymentAccounts.clientFundsEligible");
+    expect(reconciliationService).toContain("row.paymentAccountId !== null");
   });
 
   it("reuses the same canonical import from Client Funds with a legacy fallback", () => {
@@ -28,7 +46,7 @@ describe("payment-ledger architectural invariants", () => {
   });
 
   it("derives company identity from the active-company boundary on every new mutation route", () => {
-    for (const relative of ["../../../app/api/payment-accounts/route.ts", "../../../app/api/payment-accounts/assets/route.ts", "../../../app/api/payment-accounts/import/route.ts", "../../../app/api/payment-accounts/rules/route.ts"]) {
+    for (const relative of ["../../../app/api/payment-accounts/route.ts", "../../../app/api/payment-accounts/assets/route.ts", "../../../app/api/payment-accounts/import/route.ts", "../../../app/api/payment-accounts/rules/route.ts", "../../../app/api/payment-accounts/balance-snapshots/route.ts"]) {
       expect(readFileSync(new URL(relative, import.meta.url), "utf8")).toContain("getActiveCompanyFromRequest");
     }
     expect(paymentService).toContain("requireOwnedAccount");

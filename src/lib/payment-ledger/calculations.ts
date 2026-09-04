@@ -1,5 +1,5 @@
 import { Decimal } from "@/src/lib/decimal";
-import type { AccountAssetOpening, FeeRule, PaymentEvent, ReserveRule } from "./types";
+import type { AccountAssetOpening, FeeRule, PaymentEvent, ReportedBalanceSnapshot, ReserveRule } from "./types";
 import type { IndexedTransaction } from "@/src/lib/reconciliation/match";
 
 const zero = () => new Decimal(0);
@@ -18,7 +18,7 @@ export interface BalancePosition {
   reserveDifference: string | null;
 }
 
-export function calculateBalances(openings: AccountAssetOpening[], events: PaymentEvent[]): BalancePosition[] {
+export function calculateBalances(openings: AccountAssetOpening[], events: PaymentEvent[], snapshots: ReportedBalanceSnapshot[] = []): BalancePosition[] {
   const positions = new Map<string, { accountId: number; asset: string; type: "fiat" | "crypto"; available: Decimal; reserve: Decimal; reportedAvailable: string | null; reportedReserve: string | null }>();
   const ensure = (accountId: number, asset: string, type: "fiat" | "crypto") => {
     const key = keyOf(accountId, asset);
@@ -37,6 +37,8 @@ export function calculateBalances(openings: AccountAssetOpening[], events: Payme
   const ordered = [...events].sort((a, b) => a.eventDate.localeCompare(b.eventDate) || a.id - b.id);
   for (const event of ordered) {
     const position = ensure(event.paymentAccountId, event.balanceAssetCode, event.balanceAssetType);
+    const opening = openings.find((candidate) => candidate.paymentAccountId === event.paymentAccountId && candidate.assetCode.toUpperCase() === event.balanceAssetCode.toUpperCase());
+    if (opening?.openingBalanceDate && event.eventDate < opening.openingBalanceDate) continue;
     const amount = new Decimal(event.balanceAmount);
     if (event.eventType === "reserve_hold") {
       position.available = position.available.minus(amount);
@@ -51,6 +53,16 @@ export function calculateBalances(openings: AccountAssetOpening[], events: Payme
     }
     if (event.reportedAvailableBalance !== null) position.reportedAvailable = event.reportedAvailableBalance;
     if (event.reportedReserveBalance !== null) position.reportedReserve = event.reportedReserveBalance;
+  }
+  const latestSnapshots = new Map<string, ReportedBalanceSnapshot>();
+  for (const snapshot of snapshots) {
+    const key = keyOf(snapshot.paymentAccountId, snapshot.assetCode); const current = latestSnapshots.get(key);
+    if (!current || snapshot.asOf > current.asOf) latestSnapshots.set(key, snapshot);
+  }
+  for (const snapshot of latestSnapshots.values()) {
+    const position = ensure(snapshot.paymentAccountId, snapshot.assetCode, snapshot.assetType);
+    position.reportedAvailable = snapshot.reportedAvailableBalance;
+    position.reportedReserve = snapshot.reportedReserveBalance;
   }
   return [...positions.values()].map((position) => ({
     paymentAccountId: position.accountId,
@@ -83,26 +95,35 @@ function activeOn(date: string, from: string, to: string | null) {
   return date >= from && (to === null || date <= to);
 }
 
-export function expectedFee(event: PaymentEvent, rules: FeeRule[]): string | null {
-  if (event.sourceAmount === null || event.sourceAssetCode === null) return null;
-  const sourceAsset = event.sourceAssetCode.toUpperCase();
-  const actualAsset = event.actualFeeAssetCode?.toUpperCase() ?? null;
-  const rule = rules.find((candidate) =>
+function applicableFeeRules(event: PaymentEvent, rules: FeeRule[]) {
+  return rules.filter((candidate) => {
+    const basisAsset = candidate.feeBasis === "source_amount" ? event.sourceAssetCode : event.balanceAssetCode;
+    return basisAsset !== null &&
     candidate.paymentAccountId === event.paymentAccountId &&
     candidate.eventType === event.eventType &&
-    (candidate.assetCode === null || candidate.assetCode.toUpperCase() === sourceAsset) &&
-    activeOn(event.eventDate, candidate.effectiveFrom, candidate.effectiveTo)
-  );
-  if (!rule) return null;
-  const fixedAsset = (rule.fixedAssetCode ?? sourceAsset).toUpperCase();
-  if (fixedAsset !== sourceAsset || (actualAsset !== null && actualAsset !== sourceAsset)) return null;
-  return new Decimal(event.sourceAmount).times(rule.percentageRate).div(100).plus(rule.fixedAmount).toFixed();
+    (candidate.assetCode === null || candidate.assetCode.toUpperCase() === basisAsset.toUpperCase()) &&
+    activeOn(event.eventDate, candidate.effectiveFrom, candidate.effectiveTo);
+  });
+}
+
+export function expectedFee(event: PaymentEvent, rules: FeeRule[]): string | null {
+  const matches = applicableFeeRules(event, rules);
+  if (matches.length !== 1) return null;
+  const rule = matches[0];
+  const basisAmount = rule.feeBasis === "source_amount" ? event.sourceAmount : event.balanceAmount;
+  const basisAsset = rule.feeBasis === "source_amount" ? event.sourceAssetCode : event.balanceAssetCode;
+  const feeAsset = (rule.feeAssetCode ?? rule.fixedAssetCode ?? basisAsset)?.toUpperCase() ?? null;
+  if (basisAmount === null || basisAsset === null || feeAsset !== basisAsset.toUpperCase()) return null;
+  return new Decimal(basisAmount).times(rule.percentageRate).div(100).plus(rule.fixedAmount).toFixed();
 }
 
 export function feeVariance(event: PaymentEvent, rules: FeeRule[]): string | null {
   const expected = expectedFee(event, rules);
-  if (expected === null || event.actualFeeAmount === null || event.actualFeeAssetCode === null || event.sourceAssetCode === null) return null;
-  if (event.actualFeeAssetCode.toUpperCase() !== event.sourceAssetCode.toUpperCase()) return null;
+  if (expected === null || event.actualFeeAmount === null || event.actualFeeAssetCode === null) return null;
+  const matches = applicableFeeRules(event, rules);
+  if (matches.length !== 1) return null;
+  const basisAsset = matches[0].feeBasis === "source_amount" ? event.sourceAssetCode : event.balanceAssetCode;
+  if (event.actualFeeAssetCode.toUpperCase() !== (matches[0].feeAssetCode ?? matches[0].fixedAssetCode ?? basisAsset)?.toUpperCase()) return null;
   return new Decimal(event.actualFeeAmount).minus(expected).toFixed();
 }
 
@@ -115,7 +136,7 @@ export function expectedReserveReleaseDate(event: PaymentEvent, rules: ReserveRu
     activeOn(event.eventDate, candidate.effectiveFrom, candidate.effectiveTo) &&
     candidate.holdPeriodDays !== null
   );
-  if (!rule?.holdPeriodDays) return null;
+  if (rule?.holdPeriodDays === null || rule === undefined) return null;
   const date = new Date(`${event.eventDate}T00:00:00Z`);
   date.setUTCDate(date.getUTCDate() + rule.holdPeriodDays);
   return date.toISOString().slice(0, 10);
@@ -127,14 +148,23 @@ export function calculateFundsInTransit(events: PaymentEvent[]): TransitPosition
     .filter((event) => (event.eventType === "settlement" || event.eventType === "transfer") && event.balanceDirection === "debit")
     .map((event) => {
       const relatedReceipts = events.filter((receipt) => receipt.relatedEventId === event.id);
-      const crossAssetReceipt = relatedReceipts.some((receipt) => (receipt.destinationAssetCode ?? receipt.balanceAssetCode).toUpperCase() !== event.balanceAssetCode.toUpperCase());
+      const crossAssetReceipt = relatedReceipts.some((receipt) => receipt.balanceAssetCode.toUpperCase() !== event.balanceAssetCode.toUpperCase());
       const received = crossAssetReceipt
-        ? new Decimal(event.balanceAmount)
-        : relatedReceipts.reduce((sum, receipt) => sum.plus(receipt.destinationAmount ?? receipt.balanceAmount), zero());
+        ? (relatedReceipts.some((receipt) => receipt.finalReceipt) ? new Decimal(event.balanceAmount) : zero())
+        : relatedReceipts.reduce((sum, receipt) => sum.plus(receipt.balanceAmount), zero());
       const outstanding = new Decimal(event.balanceAmount).minus(received);
       return { sourceEventId: event.id, sourceAccountId: event.paymentAccountId, destinationAccountId: event.destinationAccountId, sourceAssetCode: event.balanceAssetCode, sourceAmount: event.balanceAmount, outstandingAmount: Decimal.max(outstanding, 0).toFixed() };
     })
     .filter((position) => !new Decimal(position.outstandingAmount).isZero());
+}
+
+export interface ReserveLot { id: number; paymentAccountId: number; assetCode: string; holdDate: string; amount: string; expectedReleaseDate: string | null; released: string; actualReleaseDate: string | null; outstanding: string; }
+export function calculateReserveLots(events: PaymentEvent[], rules: ReserveRule[]): ReserveLot[] {
+  return events.filter((event) => event.eventType === "reserve_hold").map((hold) => {
+    const releases = events.filter((event) => event.eventType === "reserve_release" && event.relatedEventId === hold.id);
+    const released = releases.reduce((sum, event) => sum.plus(event.balanceAmount), zero());
+    return { id: hold.id, paymentAccountId: hold.paymentAccountId, assetCode: hold.balanceAssetCode, holdDate: hold.eventDate, amount: hold.balanceAmount, expectedReleaseDate: expectedReserveReleaseDate(hold, rules), released: released.toFixed(), actualReleaseDate: releases.at(-1)?.eventDate ?? null, outstanding: Decimal.max(new Decimal(hold.balanceAmount).minus(released), 0).toFixed() };
+  });
 }
 
 export function groupOwnedFundsByAsset(positions: BalancePosition[], transit: TransitPosition[]) {
@@ -148,6 +178,19 @@ export function groupOwnedFundsByAsset(positions: BalancePosition[], transit: Tr
   for (const position of positions) { const row = ensure(position.assetCode); row.available = row.available.plus(position.available); row.reserve = row.reserve.plus(position.reserve); }
   for (const item of transit) { const row = ensure(item.sourceAssetCode); row.transit = row.transit.plus(item.outstandingAmount); }
   return [...grouped.values()].map((row) => ({ assetCode: row.assetCode, immediatelyAvailable: row.available.toFixed(), rollingReserve: row.reserve.toFixed(), fundsInTransit: row.transit.toFixed(), totalOwned: row.available.plus(row.reserve).plus(row.transit).toFixed() }));
+}
+
+export interface ProcessedVolumeCorridor { corridor: string; sourceAssetCode: string; balanceAssetCode: string; volume: string; }
+export function calculateProcessedVolumeCorridors(events: PaymentEvent[]): ProcessedVolumeCorridor[] {
+  const grouped = new Map<string, { source: string; target: string; volume: Decimal }>();
+  for (const event of events) {
+    if (event.eventType !== "deposit" && event.eventType !== "withdrawal") continue;
+    const source = (event.sourceAssetCode ?? event.balanceAssetCode).toUpperCase(); const target = event.balanceAssetCode.toUpperCase();
+    const corridor = source === target ? source : `${source} → ${target}`;
+    const row = grouped.get(corridor) ?? { source, target, volume: zero() };
+    row.volume = row.volume.plus(event.sourceAmount ?? event.balanceAmount); grouped.set(corridor, row);
+  }
+  return [...grouped].map(([corridor, row]) => ({ corridor, sourceAssetCode: row.source, balanceAssetCode: row.target, volume: row.volume.toFixed() }));
 }
 
 /** Only player-facing deposits/withdrawals enter Client Funds matching. */

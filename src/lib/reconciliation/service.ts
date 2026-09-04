@@ -9,6 +9,7 @@ import {
   reconciliationRuns,
   reconciliationTransactions,
   paymentEvents,
+  paymentAccounts,
 } from "@/src/db/schema";
 import { type IndexedTransaction, runReconciliation } from "./match";
 import type {
@@ -272,7 +273,7 @@ async function resolveImportId(
   requestedId: number
 ): Promise<number> {
   const [row] = await db
-    .select({ id: reconciliationImports.id })
+    .select({ id: reconciliationImports.id, paymentAccountId: reconciliationImports.paymentAccountId })
     .from(reconciliationImports)
     .where(and(
       eq(reconciliationImports.companyId, companyId),
@@ -284,6 +285,12 @@ async function resolveImportId(
   if (!row) {
     const label = source === "player_ledger" ? "player-ledger" : "PSP";
     throw new ReconciliationSelectionError(`No valid ${label} import is available for this company.`);
+  }
+  if (source === "psp_transactions" && row.paymentAccountId !== null) {
+    const [account] = await db.select({ eligible: paymentAccounts.clientFundsEligible }).from(paymentAccounts).where(and(
+      eq(paymentAccounts.id, row.paymentAccountId), eq(paymentAccounts.companyId, companyId)
+    )).limit(1);
+    if (!account?.eligible) throw new ReconciliationSelectionError("This payment account is not eligible for Client Funds reconciliation.");
   }
   return row.id;
 }
