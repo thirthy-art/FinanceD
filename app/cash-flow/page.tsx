@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { getDb } from "@/src/db";
-import { supplierInvoices, vendors } from "@/src/db/schema";
-import { and, eq, desc } from "drizzle-orm";
+import { cashForecastItems, cashForecastSettings, supplierInvoices, vendors } from "@/src/db/schema";
+import { and, eq, desc, asc } from "drizzle-orm";
 import {
   classifyBucket,
   isFundingThroughMonthEnd,
@@ -21,39 +21,13 @@ import { resolveLocale, getMessages } from "@/src/i18n/index";
 import { LOCALE_COOKIE } from "@/src/i18n/types";
 import { getActiveCompanyForPage } from "@/src/lib/active-company-page";
 import CompanySelectionRequired from "@/src/components/CompanySelectionRequired";
+import CashForecastView from "@/src/components/CashForecastView";
+import { calculateCashForecast } from "@/src/lib/cash-forecast";
 
 export const dynamic = "force-dynamic";
 
 function todayString(): string {
   return new Date().toISOString().slice(0, 10);
-}
-
-function paymentStatusBadge(
-  status: string,
-  dueDate: string | null,
-  today: string,
-  labels: { overdue: string; noDueDate: string; approved: string; draft: string }
-) {
-  const isOverdue = dueDate && dueDate < today;
-  if (isOverdue) {
-    return (
-      <span style={{ background: "#fee2e2", color: "#dc2626", padding: "2px 8px", borderRadius: 10, fontSize: 11, fontWeight: 600 }}>
-        {labels.overdue}
-      </span>
-    );
-  }
-  if (!dueDate) {
-    return (
-      <span style={{ background: "#fef9c3", color: "#713f12", padding: "2px 8px", borderRadius: 10, fontSize: 11, fontWeight: 600 }}>
-        {labels.noDueDate}
-      </span>
-    );
-  }
-  return (
-    <span style={{ background: "#dbeafe", color: "#1e40af", padding: "2px 8px", borderRadius: 10, fontSize: 11, fontWeight: 600 }}>
-      {status === "approved" ? labels.approved : labels.draft}
-    </span>
-  );
 }
 
 function approvalBadge(status: "draft" | "approved", labels: { approved: string; draft: string }) {
@@ -107,7 +81,11 @@ function CurrencyTotals({ totals }: { totals: { currency: string; total: string 
   );
 }
 
-export default async function CashFlowPage() {
+export default async function CashFlowPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ view?: string }>;
+}) {
   const today = todayString();
   const cookieStore = await cookies();
   const locale = resolveLocale(cookieStore.get(LOCALE_COOKIE)?.value);
@@ -116,6 +94,8 @@ export default async function CashFlowPage() {
   const db = getDb();
 
   const { cashFlow: t } = getMessages(locale);
+  const forecastMessages = getMessages(locale).cashForecast;
+  const view = (await searchParams).view === "forecast" ? "forecast" : "current";
 
   const baseCurrency = company.baseCurrency;
 
@@ -144,7 +124,41 @@ export default async function CashFlowPage() {
     ))
     .orderBy(desc(supplierInvoices.createdAt));
 
-  type Row = typeof rows[number];
+  const tabs = (
+    <nav aria-label={t.title} style={{ display: "flex", gap: 6, marginBottom: 22, borderBottom: "1px solid #e2e8f0" }}>
+      <Link href="/cash-flow" style={{ padding: "9px 12px", textDecoration: "none", color: view === "current" ? "#1d4ed8" : "#64748b", borderBottom: view === "current" ? "2px solid #2563eb" : "2px solid transparent", fontWeight: 600 }}>{forecastMessages.tabCurrent}</Link>
+      <Link href="/cash-flow?view=forecast" style={{ padding: "9px 12px", textDecoration: "none", color: view === "forecast" ? "#1d4ed8" : "#64748b", borderBottom: view === "forecast" ? "2px solid #2563eb" : "2px solid transparent", fontWeight: 600 }}>{forecastMessages.tabForecast}</Link>
+    </nav>
+  );
+
+  if (view === "forecast") {
+    const [settingsRows, items] = await Promise.all([
+      db.select().from(cashForecastSettings)
+        .where(eq(cashForecastSettings.companyId, company.id)).limit(1),
+      db.select().from(cashForecastItems)
+        .where(eq(cashForecastItems.companyId, company.id))
+        .orderBy(asc(cashForecastItems.date), asc(cashForecastItems.id)),
+    ]);
+    const settings = settingsRows[0] ?? { openingCashBalance: "0.0000", minimumCashBuffer: "0.0000" };
+    const forecast = calculateCashForecast({
+      today,
+      openingCash: settings.openingCashBalance,
+      minimumBuffer: settings.minimumCashBuffer,
+      manualItems: items,
+      apItems: rows,
+    });
+    return <div>
+      <h1 style={{ fontSize: 22, fontWeight: 700, color: "#1e3a5f", margin: "0 0 14px" }}>{t.title}</h1>
+      {tabs}
+      <CashForecastView
+        currency={baseCurrency}
+        openingCash={settings.openingCashBalance}
+        minimumBuffer={settings.minimumCashBuffer}
+        forecast={forecast}
+        items={items}
+      />
+    </div>;
+  }
 
   const classified = rows.map((r) => ({
     ...r,
@@ -163,8 +177,6 @@ export default async function CashFlowPage() {
   };
 
   const approvalLabels = { approved: t.statusApproved, draft: t.statusDraft };
-  const paymentLabels = { overdue: t.overdue, noDueDate: t.dueDateMissingLabel, approved: t.statusApproved, draft: t.statusDraft };
-
   // Summary totals
   const allTotals = sumByCurrency(classified);
   const overdueTotals = sumByCurrency(classified.filter((r) => r.bucket === "overdue"));
@@ -236,6 +248,8 @@ export default async function CashFlowPage() {
           </button>
         </form>
       </div>
+
+      {tabs}
 
       {/* Current-month funding summary */}
       <section style={{ marginBottom: 28 }}>

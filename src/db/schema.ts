@@ -66,6 +66,22 @@ export const vendorStatusEnum = pgEnum("vendor_status", [
   "active",
 ]);
 
+export const cashForecastDirectionEnum = pgEnum("cash_forecast_direction", [
+  "inflow",
+  "outflow",
+]);
+
+export const cashForecastCategoryEnum = pgEnum("cash_forecast_category", [
+  "customer_receipts",
+  "financing_inflow",
+  "other_inflow",
+  "payroll",
+  "tax_vat",
+  "rent",
+  "debt_service",
+  "other_outflow",
+]);
+
 // ─── Companies ────────────────────────────────────────────────────────────────
 
 export const companies = pgTable("companies", {
@@ -294,6 +310,37 @@ export const budgetActualEntries = pgTable("budget_actual_entries", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+// ─── 13-week Cash Forecast ───────────────────────────────────────────────────
+
+export const cashForecastSettings = pgTable("cash_forecast_settings", {
+  id: serial("id").primaryKey(),
+  companyId: integer("company_id").notNull().references(() => companies.id),
+  openingCashBalance: numeric("opening_cash_balance", { precision: 18, scale: 4 }).notNull().default("0"),
+  minimumCashBuffer: numeric("minimum_cash_buffer", { precision: 18, scale: 4 }).notNull().default("0"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  companyUnique: unique("uq_cash_forecast_settings_company").on(table.companyId),
+  minimumBufferNonnegative: check(
+    "cash_forecast_settings_minimum_buffer_nonnegative",
+    sql`${table.minimumCashBuffer} >= 0`
+  ),
+}));
+
+export const cashForecastItems = pgTable("cash_forecast_items", {
+  id: serial("id").primaryKey(),
+  companyId: integer("company_id").notNull().references(() => companies.id),
+  date: varchar("date", { length: 10 }).notNull(),
+  description: varchar("description", { length: 200 }).notNull(),
+  direction: cashForecastDirectionEnum("direction").notNull(),
+  category: cashForecastCategoryEnum("category").notNull(),
+  amount: numeric("amount", { precision: 18, scale: 4 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  amountNonnegative: check("cash_forecast_item_amount_nonnegative", sql`${table.amount} >= 0`),
+}));
 
 // ─── Client Funds Reconciliation ──────────────────────────────────────────────
 //
