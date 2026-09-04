@@ -45,6 +45,22 @@ export const currencyTypeEnum = pgEnum("currency_type", [
   "crypto",
 ]);
 
+export const reconciliationSourceEnum = pgEnum("reconciliation_source", [
+  "player_ledger",
+  "psp_transactions",
+]);
+
+export const reconciliationTransactionTypeEnum = pgEnum("reconciliation_transaction_type", [
+  "deposit",
+  "withdrawal",
+]);
+
+export const reconciliationMatchStatusEnum = pgEnum("reconciliation_match_status", [
+  "matched",
+  "unmatched",
+  "ambiguous",
+]);
+
 export const vendorStatusEnum = pgEnum("vendor_status", [
   "draft",
   "active",
@@ -279,7 +295,229 @@ export const budgetActualEntries = pgTable("budget_actual_entries", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+// ─── Client Funds Reconciliation ──────────────────────────────────────────────
+//
+// Deterministic client-funds / PSP reconciliation foundation.
+// Imports are persisted per-company so duplicate uploads are rejected and
+// imported source transactions stay independently identifiable. This module is
+// intentionally NOT connected to supplier invoice or payment semantics.
+
+export const reconciliationImports = pgTable("reconciliation_imports", {
+  id: serial("id").primaryKey(),
+  companyId: integer("company_id")
+    .notNull()
+    .references(() => companies.id),
+  sourceKind: reconciliationSourceEnum("source_kind").notNull(),
+  originalFilename: varchar("original_filename", { length: 255 }).notNull(),
+  contentHash: varchar("content_hash", { length: 64 }).notNull(),
+  rowCount: integer("row_count").notNull().default(0),
+  status: varchar("status", { length: 20 }).notNull().default("parsed"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  companySourceHashUnique: unique(
+    "uq_reconciliation_import_company_source_hash"
+  ).on(table.companyId, table.sourceKind, table.contentHash),
+}));
+
+// One deterministic run owns exactly one player-ledger import and one PSP
+// import. Reusing the same pair returns the same run and recomputes its result.
+export const reconciliationRuns = pgTable("reconciliation_runs", {
+  id: serial("id").primaryKey(),
+  companyId: integer("company_id")
+    .notNull()
+    .references(() => companies.id),
+  playerLedgerImportId: integer("player_ledger_import_id")
+    .notNull()
+    .references(() => reconciliationImports.id),
+  pspImportId: integer("psp_import_id")
+    .notNull()
+    .references(() => reconciliationImports.id),
+  status: varchar("status", { length: 20 }).notNull().default("completed"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  importPairUnique: unique("uq_reconciliation_run_company_import_pair").on(
+    table.companyId,
+    table.playerLedgerImportId,
+    table.pspImportId
+  ),
+}));
+
+export const reconciliationTransactions = pgTable("reconciliation_transactions", {
+  id: serial("id").primaryKey(),
+  companyId: integer("company_id")
+    .notNull()
+    .references(() => companies.id),
+  importId: integer("import_id")
+    .notNull()
+    .references(() => reconciliationImports.id),
+  source: reconciliationSourceEnum("source").notNull(),
+  externalId: varchar("external_id", { length: 255 }),
+  playerId: varchar("player_id", { length: 255 }),
+  transactionType: reconciliationTransactionTypeEnum("transaction_type").notNull(),
+  amount: numeric("amount", { precision: 38, scale: 18 }).notNull(),
+  currency: varchar("currency", { length: 20 }).notNull(),
+  eventDate: varchar("event_date", { length: 10 }),
+  reference: text("reference"),
+  status: varchar("status", { length: 50 }),
+  statusProvided: boolean("status_provided").notNull().default(false),
+  matchStatus: reconciliationMatchStatusEnum("match_status")
+    .notNull()
+    .default("unmatched"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  amountNonnegative: check(
+    "reconciliation_transaction_amount_nonnegative",
+    sql`${table.amount} >= 0`
+  ),
+}));
+
+// Match status is scoped to a run because one persisted import can be paired
+// with different counterpart imports over time.
+export const reconciliationRunItems = pgTable("reconciliation_run_items", {
+  id: serial("id").primaryKey(),
+  companyId: integer("company_id")
+    .notNull()
+    .references(() => companies.id),
+  runId: integer("run_id")
+    .notNull()
+    .references(() => reconciliationRuns.id),
+  transactionId: integer("transaction_id")
+    .notNull()
+    .references(() => reconciliationTransactions.id),
+  matchStatus: reconciliationMatchStatusEnum("match_status")
+    .notNull()
+    .default("unmatched"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  runTransactionUnique: unique("uq_reconciliation_run_item").on(
+    table.runId,
+    table.transactionId
+  ),
+}));
+
+// A match binds exactly one player-ledger transaction to exactly one PSP
+// transaction for the same company. The v1 engine only creates one-to-one
+// exact matches; the shape intentionally leaves room (without implementing
+// them) for one-to-many / many-to-one and manual-confirmation workflows later.
+export const reconciliationMatches = pgTable("reconciliation_matches", {
+  id: serial("id").primaryKey(),
+  companyId: integer("company_id")
+    .notNull()
+    .references(() => companies.id),
+  runId: integer("run_id")
+    .notNull()
+    .references(() => reconciliationRuns.id),
+  playerTransactionId: integer("player_transaction_id")
+    .notNull()
+    .references(() => reconciliationTransactions.id),
+  pspTransactionId: integer("psp_transaction_id")
+    .notNull()
+    .references(() => reconciliationTransactions.id),
+  matchReason: varchar("match_reason", { length: 255 }).notNull(),
+  confirmed: boolean("confirmed").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  playerUnique: unique(
+    "match_player_transaction_unique"
+  ).on(table.runId, table.playerTransactionId),
+  pspUnique: unique(
+    "match_psp_transaction_unique"
+  ).on(table.runId, table.pspTransactionId),
+  playerPspUnique: uniqueIndex("match_player_psp_unique")
+    .on(table.runId, table.playerTransactionId, table.pspTransactionId),
+}));
+
 // ─── Relations ────────────────────────────────────────────────────────────────
+
+export const reconciliationImportRelations = relations(
+  reconciliationImports,
+  ({ one, many }) => ({
+    company: one(companies, {
+      fields: [reconciliationImports.companyId],
+      references: [companies.id],
+    }),
+    transactions: many(reconciliationTransactions),
+    playerLedgerRuns: many(reconciliationRuns, { relationName: "playerLedgerImport" }),
+    pspRuns: many(reconciliationRuns, { relationName: "pspImport" }),
+  })
+);
+
+export const reconciliationRunRelations = relations(
+  reconciliationRuns,
+  ({ one, many }) => ({
+    company: one(companies, {
+      fields: [reconciliationRuns.companyId],
+      references: [companies.id],
+    }),
+    playerLedgerImport: one(reconciliationImports, {
+      fields: [reconciliationRuns.playerLedgerImportId],
+      references: [reconciliationImports.id],
+      relationName: "playerLedgerImport",
+    }),
+    pspImport: one(reconciliationImports, {
+      fields: [reconciliationRuns.pspImportId],
+      references: [reconciliationImports.id],
+      relationName: "pspImport",
+    }),
+    items: many(reconciliationRunItems),
+    matches: many(reconciliationMatches),
+  })
+);
+
+export const reconciliationTransactionRelations = relations(
+  reconciliationTransactions,
+  ({ one }) => ({
+    company: one(companies, {
+      fields: [reconciliationTransactions.companyId],
+      references: [companies.id],
+    }),
+    import: one(reconciliationImports, {
+      fields: [reconciliationTransactions.importId],
+      references: [reconciliationImports.id],
+    }),
+  })
+);
+
+export const reconciliationMatchRelations = relations(
+  reconciliationMatches,
+  ({ one }) => ({
+    company: one(companies, {
+      fields: [reconciliationMatches.companyId],
+      references: [companies.id],
+    }),
+    run: one(reconciliationRuns, {
+      fields: [reconciliationMatches.runId],
+      references: [reconciliationRuns.id],
+    }),
+    playerTransaction: one(reconciliationTransactions, {
+      fields: [reconciliationMatches.playerTransactionId],
+      references: [reconciliationTransactions.id],
+    }),
+    pspTransaction: one(reconciliationTransactions, {
+      fields: [reconciliationMatches.pspTransactionId],
+      references: [reconciliationTransactions.id],
+    }),
+  })
+);
+
+export const reconciliationRunItemRelations = relations(
+  reconciliationRunItems,
+  ({ one }) => ({
+    company: one(companies, {
+      fields: [reconciliationRunItems.companyId],
+      references: [companies.id],
+    }),
+    run: one(reconciliationRuns, {
+      fields: [reconciliationRunItems.runId],
+      references: [reconciliationRuns.id],
+    }),
+    transaction: one(reconciliationTransactions, {
+      fields: [reconciliationRunItems.transactionId],
+      references: [reconciliationTransactions.id],
+    }),
+  })
+);
 
 export const supplierInvoiceRelations = relations(
   supplierInvoices,
