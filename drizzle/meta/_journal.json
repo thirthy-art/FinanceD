@@ -106,6 +106,27 @@
       "when": 1788503082698,
       "tag": "0014_luxuriant_drax",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1788518765005,
+      "tag": "0015_elite_scourge",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1788521733734,
+      "tag": "0016_boring_amazoness",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1788547651799,
+      "tag": "0017_silent_gorilla_man",
+      "breakpoints": true
     }
   ]
 }

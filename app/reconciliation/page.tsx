@@ -4,9 +4,13 @@ import { getDb } from "@/src/db";
 import {
   reconciliationImports,
   reconciliationMatches,
+  reconciliationPaymentMatches,
+  reconciliationPaymentRunItems,
   reconciliationRunItems,
   reconciliationRuns,
   reconciliationTransactions,
+  paymentEvents,
+  paymentAccounts,
 } from "@/src/db/schema";
 import { getActiveCompanyForPage } from "@/src/lib/active-company-page";
 import CompanySelectionRequired from "@/src/components/CompanySelectionRequired";
@@ -32,10 +36,13 @@ export default async function ReconciliationPage() {
       originalFilename: reconciliationImports.originalFilename,
       rowCount: reconciliationImports.rowCount,
       createdAt: reconciliationImports.createdAt,
+      paymentAccountId: reconciliationImports.paymentAccountId,
     })
     .from(reconciliationImports)
     .where(eq(reconciliationImports.companyId, company.id))
     .orderBy(desc(reconciliationImports.createdAt), desc(reconciliationImports.id));
+  const accountEligibility = new Map((await db.select({ id: paymentAccounts.id, eligible: paymentAccounts.clientFundsEligible }).from(paymentAccounts).where(eq(paymentAccounts.companyId, company.id))).map((account) => [account.id, account.eligible]));
+  const eligibleImports = imports.filter((entry) => entry.source !== "psp_transactions" || entry.paymentAccountId === null || accountEligibility.get(entry.paymentAccountId) === true);
 
   const [latestRun] = await db
     .select({
@@ -93,10 +100,30 @@ export default async function ReconciliationPage() {
           eq(reconciliationMatches.runId, latestRun.id)
         ))
     : [];
+  const paymentTxRows = latestRun
+    ? await db.select({
+        id: paymentEvents.id, externalId: paymentEvents.externalId, reference: paymentEvents.reference,
+        eventType: paymentEvents.eventType, balanceAmount: paymentEvents.balanceAmount,
+        balanceAssetCode: paymentEvents.balanceAssetCode, sourceAmount: paymentEvents.sourceAmount,
+        sourceAssetCode: paymentEvents.sourceAssetCode, eventDate: paymentEvents.eventDate,
+        status: paymentEvents.status, statusProvided: paymentEvents.statusProvided,
+        matchStatus: reconciliationPaymentRunItems.matchStatus,
+      }).from(reconciliationPaymentRunItems).innerJoin(paymentEvents, eq(reconciliationPaymentRunItems.paymentEventId, paymentEvents.id)).where(and(
+        eq(reconciliationPaymentRunItems.companyId, company.id), eq(reconciliationPaymentRunItems.runId, latestRun.id), eq(paymentEvents.companyId, company.id)
+      )).orderBy(paymentEvents.id)
+    : [];
+  const paymentMatchRows = latestRun
+    ? await db.select({ playerTransactionId: reconciliationPaymentMatches.playerTransactionId, paymentEventId: reconciliationPaymentMatches.paymentEventId })
+        .from(reconciliationPaymentMatches).where(and(eq(reconciliationPaymentMatches.companyId, company.id), eq(reconciliationPaymentMatches.runId, latestRun.id)))
+    : [];
   const matchByTx = new Map<number, number>();
   for (const m of matchRows) {
     matchByTx.set(m.playerTransactionId, m.pspTransactionId);
     matchByTx.set(m.pspTransactionId, m.playerTransactionId);
+  }
+  for (const m of paymentMatchRows) {
+    matchByTx.set(m.playerTransactionId, -m.paymentEventId);
+    matchByTx.set(-m.paymentEventId, m.playerTransactionId);
   }
 
   const transactions: UiTransaction[] = txRows.map((r) => ({
@@ -113,7 +140,13 @@ export default async function ReconciliationPage() {
     statusProvided: r.statusProvided,
     matchStatus: r.matchStatus,
     linkedTransactionId: matchByTx.get(r.id) ?? null,
-  }));
+  })).concat(paymentTxRows.map((r) => ({
+    id: -r.id, source: "psp_transactions" as const, externalId: r.externalId, playerId: null,
+    reference: r.reference, type: r.eventType as "deposit" | "withdrawal",
+    amount: String(r.sourceAmount ?? r.balanceAmount), currency: String(r.sourceAssetCode ?? r.balanceAssetCode),
+    eventDate: r.eventDate, status: r.status, statusProvided: r.statusProvided,
+    matchStatus: r.matchStatus, linkedTransactionId: matchByTx.get(-r.id) ?? null,
+  })));
 
   const canonical: ReconciliationTransaction[] = transactions.map((tx) => ({
     source: tx.source,
@@ -132,11 +165,11 @@ export default async function ReconciliationPage() {
     canonical.filter((tx) => tx.source === "psp_transactions")
   );
 
-  const matchedPairs = matchRows.length;
+  const matchedPairs = matchRows.length + paymentMatchRows.length;
   const unmatchedCount = transactions.filter((tx) => tx.matchStatus === "unmatched").length;
   const ambiguousCount = transactions.filter((tx) => tx.matchStatus === "ambiguous").length;
 
-  const uiImports: UiImport[] = imports.map((row) => ({
+  const uiImports: UiImport[] = eligibleImports.map((row) => ({
     id: row.id,
     source: row.source,
     originalFilename: row.originalFilename,
@@ -146,10 +179,10 @@ export default async function ReconciliationPage() {
 
   const displayedRun: DisplayedReconciliationRun | null = latestRun
     ? (() => {
-        const playerLedgerImport = imports.find(
+        const playerLedgerImport = eligibleImports.find(
           (entry) => entry.id === latestRun.playerLedgerImportId
         );
-        const pspImport = imports.find((entry) => entry.id === latestRun.pspImportId);
+        const pspImport = eligibleImports.find((entry) => entry.id === latestRun.pspImportId);
         if (!playerLedgerImport || !pspImport) return null;
         return {
           id: latestRun.id,
@@ -172,8 +205,8 @@ export default async function ReconciliationPage() {
       matchedPairs={matchedPairs}
       unmatchedCount={unmatchedCount}
       ambiguousCount={ambiguousCount}
-      hasLedger={imports.some((imp) => imp.source === "player_ledger")}
-      hasPsp={imports.some((imp) => imp.source === "psp_transactions")}
+      hasLedger={eligibleImports.some((imp) => imp.source === "player_ledger")}
+      hasPsp={eligibleImports.some((imp) => imp.source === "psp_transactions")}
     />
   );
 }

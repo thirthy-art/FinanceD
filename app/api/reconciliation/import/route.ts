@@ -34,6 +34,12 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   }
+  if (sourceValue === "psp_transactions") {
+    return NextResponse.json(
+      { error: "PSP and wallet files must be uploaded once in PSPs & Wallets → Transactions." },
+      { status: 409 }
+    );
+  }
   if (file.size > MAX_UPLOAD_BYTES) {
     return NextResponse.json(
       { error: "Reconciliation file exceeds the 25 MB upload limit." },
