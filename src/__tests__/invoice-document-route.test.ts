@@ -34,6 +34,17 @@ beforeEach(() => {
 });
 
 describe("GET /api/invoices/[id]/document", () => {
+  it("returns authorization failure before querying or reading document bytes", async () => {
+    mockGetActiveCompany.mockResolvedValueOnce(new Response(null, { status: 401 }) as never);
+    const response = await GET(
+      new Request("http://localhost/api/invoices/41/document") as never,
+      { params: Promise.resolve({ id: "41" }) },
+    );
+    expect(response.status).toBe(401);
+    expect(mockGetDb).not.toHaveBeenCalled();
+    expect(mockReadDocument).not.toHaveBeenCalled();
+  });
+
   it("returns durable bytes inline with the stored document metadata", async () => {
     mockGetDb.mockReturnValue(databaseResult([{
       supplier_invoice_documents: {
@@ -56,7 +67,8 @@ describe("GET /api/invoices/[id]/document", () => {
     expect(mockReadDocument).toHaveBeenCalledWith("object:companies/7/invoice-documents/invoice.pdf");
   });
 
-  it("does not read storage when the active company query cannot see the document", async () => {
+  it("returns no bytes when User B requests Company A's document id", async () => {
+    mockGetActiveCompany.mockResolvedValueOnce({ id: 8, baseCurrency: "GBP" } as never);
     mockGetDb.mockReturnValue(databaseResult([]) as never);
 
     const response = await GET(

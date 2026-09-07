@@ -15,4 +15,11 @@ export function getDb() {
   return drizzle(getPool(), { schema });
 }
 
+export async function closeDb() {
+  if (!pool) return;
+  const closing = pool;
+  pool = null;
+  await closing.end();
+}
+
 export type Db = ReturnType<typeof getDb>;

@@ -29,7 +29,7 @@ Prerequisites: Node.js 22 (see `.nvmrc`) and PostgreSQL.
 nvm use
 npm install
 cp .env.example .env
-# Set DATABASE_URL and any optional storage/AI configuration.
+# Set DATABASE_URL, AUTH_SECRET, at least one OAuth provider, and any optional storage/AI configuration.
 npm run db:migrate
 npm run db:seed # optional, idempotent demo data
 npm run dev
@@ -37,7 +37,7 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-Production needs a PostgreSQL `DATABASE_URL` and durable document storage. Legacy environment-based AI extraction additionally needs provider credentials, endpoint, and model; database-backed runtime AI settings additionally need the deployment encryption key. See [Operations](docs/OPERATIONS.md) for the exact variables and migration procedure.
+Production needs PostgreSQL, Auth.js OAuth configuration, and durable document storage. AI provider credentials are configured per company and encrypted with `AI_SETTINGS_ENCRYPTION_KEY`; production tenants never inherit deployment-global AI credentials. See [Operations](docs/OPERATIONS.md) for Render variables, migration procedure, and private-beta onboarding.
 
 ## Data and storage policies
 

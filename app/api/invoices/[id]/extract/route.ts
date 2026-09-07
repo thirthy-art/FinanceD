@@ -58,12 +58,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   let candidates: Awaited<ReturnType<typeof getAiProviderCandidates>>;
   try {
-    candidates = await getAiProviderCandidates();
+    candidates = await getAiProviderCandidates(company.id);
   } catch {
     return errorResponse("AI extraction configuration is temporarily unavailable.", 503);
   }
   if (candidates.length === 0) {
-    return errorResponse("AI extraction is not configured on the server.", 503);
+    return errorResponse("AI extraction is not configured for this company.", 503);
   }
 
   let userContent: string | Array<Record<string, unknown>>;
@@ -166,7 +166,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     systemPrompt: "You extract supplier invoices faithfully. Follow the user's JSON schema and extraction rules exactly.",
   });
   if (chainResult.kind === "not-configured") {
-    return errorResponse("AI extraction is not configured on the server.", 503);
+    return errorResponse("AI extraction is not configured for this company.", 503);
   }
   if (chainResult.kind === "no-vision-provider") {
     return errorResponse("The configured AI models do not support image input.", 422);

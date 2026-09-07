@@ -1,9 +1,16 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import "dotenv/config";
 import { and, eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as schema from "@/src/db/schema";
+
+vi.mock("@/src/lib/active-company", () => ({
+  getActiveCompanyFromRequest: vi.fn(async (request: Request) => {
+    const match = request.headers.get("cookie")?.match(/financed_company_id=(\d+)/);
+    return { id: match ? Number(match[1]) : 0, baseCurrency: "EUR" };
+  }),
+}));
 
 const HAS_DB = Boolean(process.env.DATABASE_URL);
 let pool: Pool;

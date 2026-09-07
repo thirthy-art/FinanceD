@@ -5,12 +5,17 @@
  * against a real PostgreSQL database. They are explicitly skipped (not silently
  * returned) when no database connection is available.
  */
-import { describe, it, expect, afterEach, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, afterEach, beforeAll, afterAll, vi } from "vitest";
 import "dotenv/config";
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { eq } from "drizzle-orm";
 import * as schema from "../db/schema";
+
+const active = vi.hoisted(() => ({ companyId: 0 }));
+vi.mock("@/src/lib/active-company", () => ({
+  getActiveCompanyFromRequest: vi.fn(async () => ({ id: active.companyId, baseCurrency: "EUR" })),
+}));
 
 // ── Dynamic import of route handler ──────────────────────────────────────────
 // We import the PATCH handler and call it directly with a NextRequest,
@@ -66,11 +71,15 @@ afterEach(async () => {
 
 async function getCompanyId(): Promise<number> {
   const rows = await db.select().from(schema.companies).limit(1);
-  if (rows.length) return rows[0].id;
+  if (rows.length) {
+    active.companyId = rows[0].id;
+    return rows[0].id;
+  }
   const [company] = await db
     .insert(schema.companies)
     .values({ name: "Test Company", baseCurrency: "EUR" })
     .returning();
+  active.companyId = company.id;
   return company.id;
 }
 

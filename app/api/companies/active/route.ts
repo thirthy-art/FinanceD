@@ -1,9 +1,10 @@
-import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getDb } from "@/src/db";
-import { companies } from "@/src/db/schema";
-import { setActiveCompanyCookie } from "@/src/lib/active-company";
+import {
+  AuthenticationRequiredError,
+  getAuthorizedCompanies,
+  setActiveCompanyCookie,
+} from "@/src/lib/active-company";
 
 const SelectCompanySchema = z.object({
   companyId: z.number().int().positive(),
@@ -22,12 +23,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const [company] = await getDb()
-    .select({ id: companies.id, name: companies.name, baseCurrency: companies.baseCurrency })
-    .from(companies)
-    .where(eq(companies.id, parsed.data.companyId))
-    .limit(1);
+  let authorized;
+  try {
+    authorized = await getAuthorizedCompanies();
+  } catch (error) {
+    if (error instanceof AuthenticationRequiredError) {
+      return NextResponse.json({ error: error.message, code: error.code }, { status: 401 });
+    }
+    throw error;
+  }
+  const company = authorized.find((row) => row.id === parsed.data.companyId);
   if (!company) return NextResponse.json({ error: "Company not found." }, { status: 404 });
 
-  return setActiveCompanyCookie(NextResponse.json(company), company.id);
+  return setActiveCompanyCookie(NextResponse.json({
+    id: company.id,
+    name: company.name,
+    baseCurrency: company.baseCurrency,
+  }), company.id);
 }

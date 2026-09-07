@@ -16,6 +16,7 @@ export const en: Messages = {
   },
   companySwitcher: {
     selectCompany: "Select company",
+    noCompanyAssigned: "No company assigned",
     createCompany: "Create company",
     companyName: "Company name",
     baseCurrency: "Base currency",
@@ -24,7 +25,16 @@ export const en: Messages = {
     couldNotLoad: "Could not load companies",
     couldNotSwitch: "Could not switch company",
     couldNotCreate: "Could not create company",
-    selectAbove: "Select or create a company above to continue.",
+    selectAbove: "Select an assigned company above to continue, or ask the operator to grant access.",
+  },
+  auth: {
+    signInTitle: "Sign in to FinanceD",
+    signInDescription: "Use an approved Google or Microsoft account.",
+    signInGoogle: "Continue with Google",
+    signInMicrosoft: "Continue with Microsoft",
+    noProviders: "No sign-in provider is configured. Contact the operator.",
+    signedInAs: "Signed in as",
+    signOut: "Sign out",
   },
   common: {
     loading: "Loading…",
@@ -456,7 +466,7 @@ export const en: Messages = {
   },
   aiSettings: {
     title: "AI Provider Settings",
-    description: "Configure the fixed extraction provider chain for this FinanceD deployment.",
+    description: "Configure the extraction provider chain for the active company.",
     adminAccessTitle: "AI Settings Admin Access",
     adminAccessDescription: "Enter the deployment admin secret to manage AI provider settings.",
     adminSecret: "ADMIN SECRET",

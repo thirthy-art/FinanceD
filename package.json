@@ -13,12 +13,15 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts",
     "db:seed": "tsx src/db/seed.ts",
+    "auth:grant": "tsx scripts/auth-membership.ts grant",
+    "auth:revoke": "tsx scripts/auth-membership.ts revoke",
     "db:push": "drizzle-kit push",
     "test": "vitest run --config vitest.config.mjs",
     "test:watch": "vitest --config vitest.config.mjs",
     "probe:layout": "tsx scripts/probe-layout-extraction.ts"
   },
   "dependencies": {
+    "@auth/drizzle-adapter": "1.11.3",
     "@aws-sdk/client-s3": "^3.1114.0",
     "@types/pdf-parse": "^1.1.5",
     "@types/pg": "^8.21.0",
@@ -28,6 +31,7 @@
     "drizzle-orm": "^0.45.2",
     "exceljs": "^4.4.0",
     "next": "16.3.0",
+    "next-auth": "5.0.0-beta.32",
     "pdf-parse": "^2.4.5",
     "pdfjs-dist": "5.4.296",
     "pg": "^8.23.0",

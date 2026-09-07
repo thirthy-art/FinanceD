@@ -5,6 +5,7 @@ import Nav from "@/src/components/Nav";
 import { I18nProvider } from "@/src/i18n/context";
 import { resolveLocale, getDir } from "@/src/i18n/index";
 import { LOCALE_COOKIE } from "@/src/i18n/types";
+import { auth } from "@/auth";
 
 export const metadata: Metadata = {
   title: "FinanceD",
@@ -15,12 +16,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const cookieStore = await cookies();
   const locale = resolveLocale(cookieStore.get(LOCALE_COOKIE)?.value);
   const dir = getDir(locale);
+  const session = await auth();
 
   return (
     <html lang={locale} dir={dir}>
       <body>
         <I18nProvider initialLocale={locale}>
-          <Nav />
+          <Nav user={session?.user ?? null} />
           <main className="max-w-7xl mx-auto px-4 py-6">{children}</main>
         </I18nProvider>
       </body>

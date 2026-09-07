@@ -12,6 +12,7 @@ import {
   validateLayoutProbeFile,
 } from "@/app/dev/layout-probe/layout-probe-shared";
 import { layoutProbeAccess } from "@/app/dev/layout-probe/layout-probe-gate";
+import { getActiveCompanyFromRequest } from "@/src/lib/active-company";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,6 +33,8 @@ export async function POST(request: Request) {
   if (layoutProbeAccess(request.headers.get("cookie")) !== "available") {
     return json({ error: "Not found." }, 404);
   }
+  const company = await getActiveCompanyFromRequest(request);
+  if (company instanceof Response) return company;
 
   const contentLength = Number(request.headers.get("content-length") ?? "");
   if (

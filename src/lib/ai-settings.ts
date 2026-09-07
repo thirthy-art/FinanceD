@@ -2,14 +2,12 @@ import "server-only";
 
 import { eq } from "drizzle-orm";
 import { getDb } from "@/src/db";
-import { aiSettings } from "@/src/db/schema";
+import { companyAiSettings } from "@/src/db/schema";
 import { encryptAiSecret } from "@/src/lib/ai-settings-crypto";
 
 export const DEFAULT_MIMO_MODEL = "mimo-v2.5";
 export const DEFAULT_OPENROUTER_FALLBACK_1_MODEL = "xiaomi/mimo-v2.5";
-export const AI_SETTINGS_ID = 1;
-
-export type AiSettingsRecord = typeof aiSettings.$inferSelect;
+export type AiSettingsRecord = typeof companyAiSettings.$inferSelect;
 
 function isUndefinedTableError(error: unknown): boolean {
   const visited = new Set<unknown>();
@@ -22,12 +20,12 @@ function isUndefinedTableError(error: unknown): boolean {
   return false;
 }
 
-export async function readAiSettings(): Promise<AiSettingsRecord | null> {
+export async function readAiSettings(companyId: number): Promise<AiSettingsRecord | null> {
   try {
     const [settings] = await getDb()
       .select()
-      .from(aiSettings)
-      .where(eq(aiSettings.id, AI_SETTINGS_ID))
+      .from(companyAiSettings)
+      .where(eq(companyAiSettings.companyId, companyId))
       .limit(1);
     return settings ?? null;
   } catch (error) {
@@ -38,15 +36,26 @@ export async function readAiSettings(): Promise<AiSettingsRecord | null> {
   }
 }
 
+export function legacyLocalAiEnvironmentEnabled(): boolean {
+  return process.env.NODE_ENV !== "production"
+    && process.env.AI_LEGACY_LOCAL_DEVELOPMENT === "true";
+}
+
+export function defaultMimoModel(): string {
+  if (!legacyLocalAiEnvironmentEnabled()) return DEFAULT_MIMO_MODEL;
+  return (process.env.AI_MODEL || process.env.MIMO_MODEL || DEFAULT_MIMO_MODEL).trim();
+}
+
 function legacyMimoKeyConfigured(): boolean {
+  if (!legacyLocalAiEnvironmentEnabled()) return false;
   return Boolean((process.env.AI_API_KEY || process.env.MIMO_API_KEY)?.trim());
 }
 
-export async function getPublicAiSettings() {
-  const settings = await readAiSettings();
+export async function getPublicAiSettings(companyId: number) {
+  const settings = await readAiSettings(companyId);
   return {
     mimo: {
-      model: settings?.mimoModel ?? (process.env.AI_MODEL || process.env.MIMO_MODEL || DEFAULT_MIMO_MODEL).trim(),
+      model: settings?.mimoModel ?? defaultMimoModel(),
       configured: Boolean(settings?.mimoApiKeyEncrypted) || legacyMimoKeyConfigured(),
     },
     openRouter: {
@@ -57,19 +66,19 @@ export async function getPublicAiSettings() {
   };
 }
 
-export async function saveMimoSettings(input: { model: string; apiKey?: string }) {
+export async function saveMimoSettings(companyId: number, input: { model: string; apiKey?: string }) {
   const encryptedKey = input.apiKey ? encryptAiSecret(input.apiKey, "mimo") : undefined;
   const now = new Date();
   await getDb()
-    .insert(aiSettings)
+    .insert(companyAiSettings)
     .values({
-      id: AI_SETTINGS_ID,
+      companyId,
       mimoModel: input.model,
       ...(encryptedKey === undefined ? {} : { mimoApiKeyEncrypted: encryptedKey }),
       updatedAt: now,
     })
     .onConflictDoUpdate({
-      target: aiSettings.id,
+      target: companyAiSettings.companyId,
       set: {
         mimoModel: input.model,
         ...(encryptedKey === undefined ? {} : { mimoApiKeyEncrypted: encryptedKey }),
@@ -78,7 +87,7 @@ export async function saveMimoSettings(input: { model: string; apiKey?: string }
     });
 }
 
-export async function saveOpenRouterSettings(input: {
+export async function saveOpenRouterSettings(companyId: number, input: {
   fallback1Model: string;
   fallback2Model: string | null;
   apiKey?: string;
@@ -86,16 +95,16 @@ export async function saveOpenRouterSettings(input: {
   const encryptedKey = input.apiKey ? encryptAiSecret(input.apiKey, "openrouter") : undefined;
   const now = new Date();
   await getDb()
-    .insert(aiSettings)
+    .insert(companyAiSettings)
     .values({
-      id: AI_SETTINGS_ID,
+      companyId,
       openrouterFallback1Model: input.fallback1Model,
       openrouterFallback2Model: input.fallback2Model,
       ...(encryptedKey === undefined ? {} : { openrouterApiKeyEncrypted: encryptedKey }),
       updatedAt: now,
     })
     .onConflictDoUpdate({
-      target: aiSettings.id,
+      target: companyAiSettings.companyId,
       set: {
         openrouterFallback1Model: input.fallback1Model,
         openrouterFallback2Model: input.fallback2Model,

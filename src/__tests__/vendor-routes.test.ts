@@ -1,9 +1,14 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import "dotenv/config";
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { eq } from "drizzle-orm";
 import * as schema from "@/src/db/schema";
+
+const active = vi.hoisted(() => ({ companyId: 0 }));
+vi.mock("@/src/lib/active-company", () => ({
+  getActiveCompanyFromRequest: vi.fn(async () => ({ id: active.companyId, baseCurrency: "EUR" })),
+}));
 
 const HAS_DB = Boolean(process.env.DATABASE_URL);
 let pool: Pool;
@@ -32,8 +37,12 @@ afterAll(async () => { if (pool) await pool.end(); });
 
 async function companyId() {
   const [existing] = await db.select({ id: schema.companies.id }).from(schema.companies).limit(1);
-  if (existing) return existing.id;
+  if (existing) {
+    active.companyId = existing.id;
+    return existing.id;
+  }
   const [created] = await db.insert(schema.companies).values({ name: "Vendor Route Test" }).returning({ id: schema.companies.id });
+  active.companyId = created.id;
   return created.id;
 }
 

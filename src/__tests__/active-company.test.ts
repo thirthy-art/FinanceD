@@ -1,30 +1,35 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-vi.mock("@/src/db", () => ({ getDb: vi.fn() }));
+vi.mock("server-only", () => ({}));
+vi.mock("@/auth", () => ({ auth: vi.fn() }));
 
-import { getDb } from "@/src/db";
 import {
   ACTIVE_COMPANY_COOKIE,
   ActiveCompanySelectionRequiredError,
   getActiveCompanyFromRequest,
+  NoCompanyAssignedError,
   parseActiveCompanyId,
   resolveActiveCompany,
+  type ActiveCompanyDependencies,
+  type AuthorizedCompany,
 } from "@/src/lib/active-company";
 
-const mockGetDb = vi.mocked(getDb);
+const userA = { id: "user-a", email: "a@example.com", name: "User A" };
+const companyA = company(1, "Company A");
+const companyB = company(2, "Company B");
 
-function selectResult(rows: unknown[]) {
-  const limit = vi.fn().mockResolvedValue(rows);
-  const chain = {
-    where: vi.fn().mockReturnValue({ limit }),
-    orderBy: vi.fn().mockReturnValue({ limit }),
-  };
-  return { from: vi.fn().mockReturnValue(chain), chain };
+function company(id: number, name: string): AuthorizedCompany {
+  return { id, name, baseCurrency: "EUR", createdAt: new Date(0), updatedAt: new Date(0) };
 }
 
-beforeEach(() => vi.clearAllMocks());
+function dependencies(companies: AuthorizedCompany[], authenticated = true): ActiveCompanyDependencies {
+  return {
+    getUser: vi.fn().mockResolvedValue(authenticated ? userA : null),
+    listCompanies: vi.fn().mockResolvedValue(companies),
+  };
+}
 
-describe("active company resolution", () => {
+describe("authenticated active-company boundary", () => {
   it("parses only positive safe integer cookie values", () => {
     expect(ACTIVE_COMPANY_COOKIE).toBe("financed_company_id");
     expect(parseActiveCompanyId("42")).toBe(42);
@@ -33,85 +38,54 @@ describe("active company resolution", () => {
     expect(parseActiveCompanyId("9007199254740992")).toBeNull();
   });
 
-  it("uses the selected company when a valid cookie exists in a multi-company deployment", async () => {
-    const selected = { id: 8, name: "Company B", baseCurrency: "GBP" };
-    const query = selectResult([selected]);
-    const db = { select: vi.fn().mockReturnValue(query) };
-    mockGetDb.mockReturnValue(db as never);
-
-    await expect(resolveActiveCompany("8")).resolves.toEqual(selected);
-    expect(query.chain.where).toHaveBeenCalledOnce();
-    expect(query.chain.orderBy).not.toHaveBeenCalled();
+  it("rejects unauthenticated API access with 401", async () => {
+    const response = await getActiveCompanyFromRequest(
+      new Request("http://localhost/api/invoices"), dependencies([], false),
+    );
+    expect(response).toBeInstanceOf(Response);
+    if (!(response instanceof Response)) throw new Error("Expected a response.");
+    expect(response.status).toBe(401);
+    expect(await response.json()).toMatchObject({ code: "AUTHENTICATION_REQUIRED" });
   });
 
-  it("uses the sole company when the cookie is missing", async () => {
-    const sole = { id: 2, name: "Company A", baseCurrency: "EUR" };
-    const ordered = selectResult([sole]);
-    const db = { select: vi.fn().mockReturnValue(ordered) };
-    mockGetDb.mockReturnValue(db as never);
-
-    await expect(resolveActiveCompany()).resolves.toEqual(sole);
-    expect(ordered.chain.orderBy).toHaveBeenCalledOnce();
+  it("resolves Company A for User A's membership", async () => {
+    await expect(resolveActiveCompany("1", dependencies([companyA]))).resolves.toEqual(companyA);
   });
 
-  it.each([
-    ["missing", undefined],
-    ["malformed", "not-an-id"],
-  ])("requires selection with multiple companies and a %s cookie", async (_label, cookie) => {
-    const companies = [
-      { id: 2, name: "Company A", baseCurrency: "EUR" },
-      { id: 8, name: "Company B", baseCurrency: "GBP" },
-    ];
-    const db = { select: vi.fn().mockReturnValue(selectResult(companies)) };
-    mockGetDb.mockReturnValue(db as never);
-
-    await expect(resolveActiveCompany(cookie)).rejects.toBeInstanceOf(ActiveCompanySelectionRequiredError);
+  it("resolves Company B for User B's membership", async () => {
+    const deps = dependencies([companyB]);
+    deps.getUser = vi.fn().mockResolvedValue({ id: "user-b", email: "b@example.com", name: "User B" });
+    await expect(resolveActiveCompany("2", deps)).resolves.toEqual(companyB);
   });
 
-  it("requires selection when a stale cookie does not match either company", async () => {
-    const stale = selectResult([]);
-    const ordered = selectResult([
-      { id: 2, name: "Company A", baseCurrency: "EUR" },
-      { id: 8, name: "Company B", baseCurrency: "GBP" },
-    ]);
-    const db = { select: vi.fn().mockReturnValueOnce(stale).mockReturnValueOnce(ordered) };
-    mockGetDb.mockReturnValue(db as never);
-
-    await expect(resolveActiveCompany("999")).rejects.toMatchObject({
-      message: "Active company selection required.",
-      code: "ACTIVE_COMPANY_REQUIRED",
-    });
+  it("never grants Company B when User A forges the Company B cookie", async () => {
+    await expect(resolveActiveCompany("2", dependencies([companyA]))).resolves.toEqual(companyA);
   });
 
-  it("returns the centralized 409 API response when selection is required", async () => {
-    const db = { select: vi.fn().mockReturnValue(selectResult([
-      { id: 2, name: "Company A", baseCurrency: "EUR" },
-      { id: 8, name: "Company B", baseCurrency: "GBP" },
-    ])) };
-    mockGetDb.mockReturnValue(db as never);
+  it("safely falls back when the user has exactly one membership", async () => {
+    await expect(resolveActiveCompany(undefined, dependencies([companyA]))).resolves.toEqual(companyA);
+  });
 
-    const response = await getActiveCompanyFromRequest(new Request("http://localhost/api/invoices"));
+  it("requires selection for multiple memberships without a valid selection", async () => {
+    await expect(resolveActiveCompany(undefined, dependencies([companyA, companyB])))
+      .rejects.toBeInstanceOf(ActiveCompanySelectionRequiredError);
+    const response = await getActiveCompanyFromRequest(
+      new Request("http://localhost/api/invoices"), dependencies([companyA, companyB]),
+    );
     expect(response).toBeInstanceOf(Response);
     if (!(response instanceof Response)) throw new Error("Expected a response.");
     expect(response.status).toBe(409);
-    expect(await response.json()).toEqual({
-      error: "Active company selection required.",
-      code: "ACTIVE_COMPANY_REQUIRED",
-    });
   });
 
-  it("requires selection without creating a company when none exist", async () => {
-    const insert = vi.fn();
-    const transaction = vi.fn();
-    const db = {
-      select: vi.fn().mockReturnValue(selectResult([])),
-      insert,
-      transaction,
-    };
-    mockGetDb.mockReturnValue(db as never);
-
-    await expect(resolveActiveCompany()).rejects.toBeInstanceOf(ActiveCompanySelectionRequiredError);
-    expect(insert).not.toHaveBeenCalled();
-    expect(transaction).not.toHaveBeenCalled();
+  it("returns no-company-assigned for zero memberships", async () => {
+    await expect(resolveActiveCompany(undefined, dependencies([])))
+      .rejects.toBeInstanceOf(NoCompanyAssignedError);
+    const response = await getActiveCompanyFromRequest(
+      new Request("http://localhost/api/invoices"), dependencies([]),
+    );
+    expect(response).toBeInstanceOf(Response);
+    if (!(response instanceof Response)) throw new Error("Expected a response.");
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ code: "NO_COMPANY_ASSIGNED" });
   });
 });

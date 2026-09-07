@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { signOut } from "next-auth/react";
 import CompanySwitcher from "@/src/components/CompanySwitcher";
 import { useI18n } from "@/src/i18n/context";
 import type { Locale } from "@/src/i18n/types";
@@ -12,7 +13,7 @@ const LOCALE_LABELS: Record<Locale, string> = { en: "EN", ru: "RU", he: "HE" };
 
 type OpenMenu = "language" | "navigation" | null;
 
-export default function Nav() {
+export default function Nav({ user }: { user?: { name?: string | null; email?: string | null } | null }) {
   const pathname = usePathname();
   const { t, locale, setLocale } = useI18n();
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
@@ -65,9 +66,9 @@ export default function Nav() {
     <nav className="app-nav">
       <div className="app-nav-inner">
         <Link href="/" className="app-nav-brand">FinanceD</Link>
-        <CompanySwitcher />
+        {user && <CompanySwitcher />}
 
-        <div className="app-nav-primary">
+        {user && <div className="app-nav-primary">
           {primaryLinks.map((link) => (
             <Link
               key={link.href}
@@ -77,7 +78,7 @@ export default function Nav() {
               {link.label}
             </Link>
           ))}
-        </div>
+        </div>}
 
         <div className="app-nav-actions" ref={actionsRef}>
           <div className="app-nav-dropdown">
@@ -112,7 +113,21 @@ export default function Nav() {
             )}
           </div>
 
-          <div className="app-nav-dropdown">
+          {user && (
+            <div className="app-nav-dropdown">
+              <button
+                type="button"
+                className="app-nav-control"
+                title={`${t.auth.signedInAs} ${user.email ?? user.name ?? ""}`}
+                onClick={() => void signOut({ redirectTo: "/sign-in" })}
+              >
+                <span className="company-switcher-control-label">{user.email ?? user.name}</span>
+                <span>{t.auth.signOut}</span>
+              </button>
+            </div>
+          )}
+
+          {user && <div className="app-nav-dropdown">
             <button
               type="button"
               className="app-nav-control app-nav-menu-control"
@@ -138,7 +153,7 @@ export default function Nav() {
                 ))}
               </div>
             )}
-          </div>
+          </div>}
         </div>
       </div>
     </nav>

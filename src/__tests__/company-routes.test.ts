@@ -1,127 +1,78 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@/src/db", () => ({ getDb: vi.fn() }));
+const { mockGetAuthorizedCompanies } = vi.hoisted(() => ({ mockGetAuthorizedCompanies: vi.fn() }));
+vi.mock("@/src/lib/active-company", () => ({
+  AuthenticationRequiredError: class AuthenticationRequiredError extends Error {
+    code = "AUTHENTICATION_REQUIRED";
+    constructor() { super("Authentication required."); }
+  },
+  getAuthorizedCompanies: mockGetAuthorizedCompanies,
+  activeCompanyIdFromRequest(request: Request) {
+    const match = request.headers.get("cookie")?.match(/(?:^|;\s*)financed_company_id=(\d+)/);
+    return match ? Number(match[1]) : null;
+  },
+  setActiveCompanyCookie(response: Response, companyId: number) {
+    response.headers.append("Set-Cookie", `financed_company_id=${companyId}; Path=/; HttpOnly; SameSite=lax`);
+    return response;
+  },
+}));
 
-import { getDb } from "@/src/db";
+import { AuthenticationRequiredError } from "@/src/lib/active-company";
 import { GET, POST as createCompany } from "@/app/api/companies/route";
 import { POST as selectCompany } from "@/app/api/companies/active/route";
 
-const mockGetDb = vi.mocked(getDb);
+const rows = [
+  { id: 1, name: "Company A", baseCurrency: "EUR", createdAt: new Date(), updatedAt: new Date() },
+  { id: 2, name: "Company B", baseCurrency: "GBP", createdAt: new Date(), updatedAt: new Date() },
+];
 
-function request(url: string, body?: unknown) {
-  return new Request(url, body === undefined ? undefined : {
+function request(url: string, body?: unknown, cookie?: string) {
+  return new Request(url, body === undefined ? { headers: cookie ? { Cookie: cookie } : undefined } : {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...(cookie ? { Cookie: cookie } : {}) },
     body: JSON.stringify(body),
   });
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockGetAuthorizedCompanies.mockResolvedValue(rows);
 });
 
-describe("company management API", () => {
-  it("lists companies in deterministic order with the active company id", async () => {
-    const rows = [
-      { id: 1, name: "Company A", baseCurrency: "EUR" },
-      { id: 2, name: "Company B", baseCurrency: "GBP" },
-    ];
-    const orderBy = vi.fn().mockResolvedValue(rows);
-    mockGetDb.mockReturnValue({
-      select: vi.fn().mockReturnValue({ from: vi.fn().mockReturnValue({ orderBy }) }),
-    } as never);
-
-    const response = await GET(new Request("http://localhost/api/companies", {
-      headers: { Cookie: "financed_company_id=2" },
-    }));
-    expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ companies: rows, activeCompanyId: 2 });
-    expect(orderBy).toHaveBeenCalledOnce();
+describe("authorized company API", () => {
+  it("lists only memberships and preserves an authorized selection", async () => {
+    mockGetAuthorizedCompanies.mockResolvedValue([rows[1]]);
+    const response = await GET(request("http://localhost/api/companies", undefined, "financed_company_id=2"));
+    expect(await response.json()).toEqual({
+      companies: [{ id: 2, name: "Company B", baseCurrency: "GBP" }],
+      activeCompanyId: 2,
+    });
   });
 
-  it("lists all companies with a null active id when selection is required", async () => {
-    const rows = [
-      { id: 1, name: "Company A", baseCurrency: "EUR" },
-      { id: 2, name: "Company B", baseCurrency: "GBP" },
-    ];
-    mockGetDb.mockReturnValue({
-      select: vi.fn().mockReturnValue({
-        from: vi.fn().mockReturnValue({ orderBy: vi.fn().mockResolvedValue(rows) }),
-      }),
-    } as never);
-
+  it("returns null selection for multiple memberships without a cookie", async () => {
     const response = await GET(request("http://localhost/api/companies"));
-    expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ companies: rows, activeCompanyId: null });
+    expect((await response.json()).activeCompanyId).toBeNull();
   });
 
-  it("returns an empty list without creating a company when none exist", async () => {
-    const insert = vi.fn();
-    mockGetDb.mockReturnValue({
-      select: vi.fn().mockReturnValue({
-        from: vi.fn().mockReturnValue({ orderBy: vi.fn().mockResolvedValue([]) }),
-      }),
-      insert,
-    } as never);
-
+  it("fails unauthenticated listing closed", async () => {
+    mockGetAuthorizedCompanies.mockRejectedValue(new AuthenticationRequiredError());
     const response = await GET(request("http://localhost/api/companies"));
-    expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ companies: [], activeCompanyId: null });
-    expect(insert).not.toHaveBeenCalled();
+    expect(response.status).toBe(401);
   });
 
-  it("creates a normalized company and makes it active", async () => {
-    const created = { id: 3, name: "Test Cyprus Ltd", baseCurrency: "EUR" };
-    const returning = vi.fn().mockResolvedValue([created]);
-    const values = vi.fn().mockReturnValue({ returning });
-    mockGetDb.mockReturnValue({ insert: vi.fn().mockReturnValue({ values }) } as never);
+  it("allows selecting only a company in the user's memberships", async () => {
+    mockGetAuthorizedCompanies.mockResolvedValue([rows[0]]);
+    const denied = await selectCompany(request("http://localhost/api/companies/active", { companyId: 2 }));
+    expect(denied.status).toBe(404);
+    expect(denied.headers.get("set-cookie")).toBeNull();
 
-    const response = await createCompany(request("http://localhost/api/companies", {
-      name: "  Test Cyprus Ltd  ",
-      baseCurrency: "eur",
-    }));
-    expect(response.status).toBe(201);
-    expect(await response.json()).toEqual(created);
-    expect(values).toHaveBeenCalledWith({ name: "Test Cyprus Ltd", baseCurrency: "EUR" });
-    expect(response.headers.get("set-cookie")).toContain("financed_company_id=3");
-    expect(response.headers.get("set-cookie")).toContain("HttpOnly");
-    expect(response.headers.get("set-cookie")).toContain("SameSite=lax");
+    const allowed = await selectCompany(request("http://localhost/api/companies/active", { companyId: 1 }));
+    expect(allowed.status).toBe(200);
+    expect(allowed.headers.get("set-cookie")).toContain("financed_company_id=1");
   });
 
-  it("rejects invalid company creation input before database access", async () => {
-    const response = await createCompany(request("http://localhost/api/companies", {
-      name: " ",
-      baseCurrency: "EURO",
-    }));
-    expect(response.status).toBe(400);
-    expect(mockGetDb).not.toHaveBeenCalled();
-  });
-
-  it("switches to an existing company and sets the cookie", async () => {
-    const company = { id: 7, name: "Company B", baseCurrency: "GBP" };
-    const limit = vi.fn().mockResolvedValue([company]);
-    mockGetDb.mockReturnValue({
-      select: vi.fn().mockReturnValue({
-        from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ limit }) }),
-      }),
-    } as never);
-
-    const response = await selectCompany(request("http://localhost/api/companies/active", { companyId: 7 }));
-    expect(response.status).toBe(200);
-    expect(await response.json()).toEqual(company);
-    expect(response.headers.get("set-cookie")).toContain("financed_company_id=7");
-  });
-
-  it("returns 404 without setting a cookie for a nonexistent company", async () => {
-    const limit = vi.fn().mockResolvedValue([]);
-    mockGetDb.mockReturnValue({
-      select: vi.fn().mockReturnValue({
-        from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ limit }) }),
-      }),
-    } as never);
-
-    const response = await selectCompany(request("http://localhost/api/companies/active", { companyId: 999 }));
-    expect(response.status).toBe(404);
-    expect(response.headers.get("set-cookie")).toBeNull();
+  it("does not expose company creation through HTTP", async () => {
+    const response = await createCompany(request("http://localhost/api/companies", { name: "Tenant", baseCurrency: "EUR" }));
+    expect(response.status).toBe(405);
   });
 });

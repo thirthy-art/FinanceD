@@ -16,6 +16,7 @@ export const he: Messages = {
   },
   companySwitcher: {
     selectCompany: "בחר חברה",
+    noCompanyAssigned: "לא הוקצתה חברה",
     createCompany: "צור חברה",
     companyName: "שם החברה",
     baseCurrency: "מטבע בסיס",
@@ -24,7 +25,16 @@ export const he: Messages = {
     couldNotLoad: "לא ניתן לטעון חברות",
     couldNotSwitch: "לא ניתן להחליף חברה",
     couldNotCreate: "לא ניתן ליצור חברה",
-    selectAbove: "בחרו או צרו חברה למעלה כדי להמשיך.",
+    selectAbove: "בחרו חברה שהוקצתה למעלה, או בקשו מהמפעיל להעניק גישה.",
+  },
+  auth: {
+    signInTitle: "כניסה ל-FinanceD",
+    signInDescription: "השתמשו בחשבון Google או Microsoft מאושר.",
+    signInGoogle: "המשך עם Google",
+    signInMicrosoft: "המשך עם Microsoft",
+    noProviders: "לא הוגדר ספק כניסה. פנו למפעיל.",
+    signedInAs: "מחובר בתור",
+    signOut: "יציאה",
   },
   common: {
     loading: "טוען…",
@@ -455,7 +465,7 @@ export const he: Messages = {
   },
   aiSettings: {
     title: "הגדרות ספקי AI",
-    description: "הגדר את שרשרת ספקי החילוץ הקבועה עבור פריסת FinanceD זו.",
+    description: "הגדר את שרשרת ספקי החילוץ עבור החברה הפעילה.",
     adminAccessTitle: "גישת מנהל להגדרות AI",
     adminAccessDescription: "הזן את סוד מנהל הפריסה כדי לנהל את ספקי ה-AI.",
     adminSecret: "סוד מנהל",

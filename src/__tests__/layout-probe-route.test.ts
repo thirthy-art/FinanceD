@@ -3,21 +3,11 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
-
-import {
-  AI_SETTINGS_ADMIN_COOKIE,
-  createAiSettingsAdminToken,
-} from "@/src/lib/ai-settings-admin-auth";
+vi.mock("@/src/lib/active-company", () => ({
+  getActiveCompanyFromRequest: vi.fn().mockResolvedValue({ id: 1 }),
+}));
 import { POST } from "@/app/api/dev/layout-probe/route";
 import { MAX_LAYOUT_PROBE_BYTES } from "@/app/dev/layout-probe/layout-probe-shared";
-
-const ADMIN_SECRET = "layout-probe-route-test-admin-secret";
-
-function adminCookieHeader() {
-  const token = createAiSettingsAdminToken();
-  if (!token) throw new Error("Test requires AI_SETTINGS_ADMIN_SECRET.");
-  return `${AI_SETTINGS_ADMIN_COOKIE}=${token}`;
-}
 
 const fixturePath = path.join(
   process.cwd(),
@@ -122,30 +112,16 @@ describe("dev layout-probe route", () => {
 
   it("returns not-found in production when the flag is absent or false", async () => {
     vi.stubEnv("NODE_ENV", "production");
-    vi.stubEnv("AI_SETTINGS_ADMIN_SECRET", ADMIN_SECRET);
     expect((await POST(requestWithFile(await fixtureFile()))).status).toBe(404);
 
     vi.stubEnv("LAYOUT_PROBE_ENABLED", "false");
-    const authorized = await POST(requestWithFile(await fixtureFile(), adminCookieHeader()));
-    expect(authorized.status).toBe(404);
-  });
-
-  it("denies production requests without the AI Settings admin session", async () => {
-    vi.stubEnv("NODE_ENV", "production");
-    vi.stubEnv("LAYOUT_PROBE_ENABLED", "true");
-    vi.stubEnv("AI_SETTINGS_ADMIN_SECRET", ADMIN_SECRET);
-
     expect((await POST(requestWithFile(await fixtureFile()))).status).toBe(404);
-    const wrongCookie = await POST(requestWithFile(await fixtureFile(), `${AI_SETTINGS_ADMIN_COOKIE}=v1.0.invalid`));
-    expect(wrongCookie.status).toBe(404);
   });
 
-  it("serves production requests with the flag enabled and a valid admin session", async () => {
+  it("serves an authorized production request only when explicitly enabled", async () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("LAYOUT_PROBE_ENABLED", "true");
-    vi.stubEnv("AI_SETTINGS_ADMIN_SECRET", ADMIN_SECRET);
-
-    const response = await POST(requestWithFile(await fixtureFile(), adminCookieHeader()));
+    const response = await POST(requestWithFile(await fixtureFile()));
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.evidence.pages).toHaveLength(1);

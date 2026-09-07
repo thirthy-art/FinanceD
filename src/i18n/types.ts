@@ -20,6 +20,7 @@ export interface Messages {
   };
   companySwitcher: {
     selectCompany: string;
+    noCompanyAssigned: string;
     createCompany: string;
     companyName: string;
     baseCurrency: string;
@@ -29,6 +30,15 @@ export interface Messages {
     couldNotSwitch: string;
     couldNotCreate: string;
     selectAbove: string;
+  };
+  auth: {
+    signInTitle: string;
+    signInDescription: string;
+    signInGoogle: string;
+    signInMicrosoft: string;
+    noProviders: string;
+    signedInAs: string;
+    signOut: string;
   };
   common: {
     loading: string;

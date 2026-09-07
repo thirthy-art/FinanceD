@@ -12,7 +12,7 @@ describe("server page company-selection recovery", () => {
 
     expect(company).toBeNull();
     expect(renderToStaticMarkup(<CompanySelectionRequired locale="en" />))
-      .toContain("Select a company above to continue.");
+      .toContain("Select an assigned company above to continue");
   });
 
   it("does not swallow unrelated errors", async () => {
@@ -24,8 +24,8 @@ describe("server page company-selection recovery", () => {
   });
 
   it("renders the recovery message through every supported locale", () => {
-    expect(renderToStaticMarkup(<CompanySelectionRequired locale="en" />)).toContain("Select a company");
-    expect(renderToStaticMarkup(<CompanySelectionRequired locale="ru" />)).toContain("Выберите компанию");
-    expect(renderToStaticMarkup(<CompanySelectionRequired locale="he" />)).toContain("בחרו חברה");
+    expect(renderToStaticMarkup(<CompanySelectionRequired locale="en" />)).toContain("Select an assigned company");
+    expect(renderToStaticMarkup(<CompanySelectionRequired locale="ru" />)).toContain("Выберите назначенную компанию");
+    expect(renderToStaticMarkup(<CompanySelectionRequired locale="he" />)).toContain("בחרו חברה שהוקצתה");
   });
 });

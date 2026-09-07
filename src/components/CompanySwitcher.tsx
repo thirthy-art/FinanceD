@@ -1,9 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { FormEvent } from "react";
 import { useI18n } from "@/src/i18n/context";
-import { SUPPORTED_BASE_CURRENCIES } from "@/src/lib/supported-base-currencies";
 
 export interface CompanySummary {
   id: number;
@@ -17,7 +15,7 @@ export interface CompaniesResponse {
 }
 
 type RequestState = "idle" | "loading" | "error";
-type ActionError = "couldNotSwitch" | "couldNotCreate";
+type ActionError = "couldNotSwitch";
 
 interface CompanySwitcherProps {
   initialData?: CompaniesResponse;
@@ -38,24 +36,6 @@ export async function switchActiveCompany(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ companyId }),
-  });
-  await expectSuccess(response);
-  reload();
-}
-
-export async function createCompany(
-  name: string,
-  baseCurrency: string,
-  fetchImpl: typeof fetch = fetch,
-  reload: () => void = () => window.location.reload(),
-) {
-  const response = await fetchImpl("/api/companies", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      name: name.trim(),
-      baseCurrency: baseCurrency.trim().toUpperCase(),
-    }),
   });
   await expectSuccess(response);
   reload();
@@ -82,11 +62,8 @@ export default function CompanySwitcher({
     initialLoadError ? "error" : initialData ? "idle" : "loading",
   );
   const [isOpen, setIsOpen] = useState(Boolean(initialActionError));
-  const [showCreate, setShowCreate] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<ActionError | null>(initialActionError ?? null);
-  const [name, setName] = useState("");
-  const [baseCurrency, setBaseCurrency] = useState("EUR");
 
   useEffect(() => {
     if (initialData || initialLoadError) return;
@@ -122,7 +99,7 @@ export default function CompanySwitcher({
     ? t.common.loading
     : loadState === "error"
       ? c.couldNotLoad
-      : activeCompany?.name ?? c.selectCompany;
+      : activeCompany?.name ?? (companies.length === 0 ? c.noCompanyAssigned : c.selectCompany);
 
   async function handleSwitch(companyId: number) {
     if (pending || companyId === activeCompany?.id) return;
@@ -132,19 +109,6 @@ export default function CompanySwitcher({
       await switchActiveCompany(companyId);
     } catch {
       setError("couldNotSwitch");
-      setPending(false);
-    }
-  }
-
-  async function handleCreate(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (pending) return;
-    setPending(true);
-    setError(null);
-    try {
-      await createCompany(name, baseCurrency);
-    } catch {
-      setError("couldNotCreate");
       setPending(false);
     }
   }
@@ -190,59 +154,8 @@ export default function CompanySwitcher({
                 })}
               </div>
 
-              {!showCreate ? (
-                <button
-                  type="button"
-                  className="company-switcher-create-link"
-                  disabled={pending}
-                  onClick={() => {
-                    setShowCreate(true);
-                    setError(null);
-                  }}
-                >
-                  + {c.createCompany}
-                </button>
-              ) : (
-                <form className="company-switcher-form" onSubmit={handleCreate}>
-                  <label>
-                    <span>{c.companyName}</span>
-                    <input
-                      value={name}
-                      onChange={(event) => setName(event.target.value)}
-                      required
-                      maxLength={255}
-                      disabled={pending}
-                      autoFocus
-                    />
-                  </label>
-                  <label>
-                    <span>{c.baseCurrency}</span>
-                    <select
-                      value={baseCurrency}
-                      onChange={(event) => setBaseCurrency(event.target.value)}
-                      required
-                      className="company-switcher-currency-input"
-                      disabled={pending}
-                    >
-                      {SUPPORTED_BASE_CURRENCIES.map((currency) => (
-                        <option key={currency} value={currency}>{currency}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <div className="company-switcher-form-actions">
-                    <button type="submit" disabled={pending}>{pending ? c.creating : c.create}</button>
-                    <button
-                      type="button"
-                      disabled={pending}
-                      onClick={() => {
-                        setShowCreate(false);
-                        setError(null);
-                      }}
-                    >
-                      {t.common.cancel}
-                    </button>
-                  </div>
-                </form>
+              {companies.length === 0 && (
+                <p className="company-switcher-error" role="status">{c.noCompanyAssigned}</p>
               )}
             </>
           )}

@@ -4,7 +4,7 @@ import {
   saveMimoSettings,
   saveOpenRouterSettings,
 } from "@/src/lib/ai-settings";
-import { getAiSettingsAdminAccess } from "@/src/lib/ai-settings-admin-auth";
+import { getActiveCompanyFromRequest } from "@/src/lib/active-company";
 
 export const runtime = "nodejs";
 
@@ -31,31 +31,19 @@ function json(body: unknown, status = 200) {
   return Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
 }
 
-function requireAdmin(request: Request): Response | null {
-  const access = getAiSettingsAdminAccess(request.headers.get("cookie"));
-  if (access === "authorized") return null;
-  if (access === "not-configured") {
-    return json({
-      error: "AI settings admin access is not configured.",
-      code: "AI_SETTINGS_ADMIN_NOT_CONFIGURED",
-    }, 503);
-  }
-  return json({ error: "Unauthorized." }, 401);
-}
-
 export async function GET(request: Request) {
-  const denied = requireAdmin(request);
-  if (denied) return denied;
+  const company = await getActiveCompanyFromRequest(request);
+  if (company instanceof Response) return company;
   try {
-    return json(await getPublicAiSettings());
+    return json(await getPublicAiSettings(company.id));
   } catch {
     return json({ error: "AI settings are temporarily unavailable." }, 503);
   }
 }
 
 export async function PATCH(request: Request) {
-  const denied = requireAdmin(request);
-  if (denied) return denied;
+  const company = await getActiveCompanyFromRequest(request);
+  if (company instanceof Response) return company;
   let body: unknown;
   try {
     body = await request.json();
@@ -67,15 +55,15 @@ export async function PATCH(request: Request) {
 
   try {
     if (parsed.data.provider === "mimo") {
-      await saveMimoSettings({ model: parsed.data.model, apiKey: parsed.data.apiKey });
+      await saveMimoSettings(company.id, { model: parsed.data.model, apiKey: parsed.data.apiKey });
     } else {
-      await saveOpenRouterSettings({
+      await saveOpenRouterSettings(company.id, {
         fallback1Model: parsed.data.fallback1Model,
         fallback2Model: parsed.data.fallback2Model || null,
         apiKey: parsed.data.apiKey,
       });
     }
-    return json(await getPublicAiSettings());
+    return json(await getPublicAiSettings(company.id));
   } catch {
     return json({ error: "AI settings could not be saved." }, 503);
   }

@@ -10,10 +10,12 @@ import {
   pgEnum,
   unique,
   uniqueIndex,
+  primaryKey,
   check,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
+import type { AdapterAccount } from "next-auth/adapters";
 
 // ─── Enums ────────────────────────────────────────────────────────────────────
 
@@ -113,7 +115,71 @@ export const companies = pgTable("companies", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-// ─── Deployment-global AI Settings ───────────────────────────────────────────────
+// ─── Auth.js + private-beta company membership ───────────────────────────────
+
+export const authUsers = pgTable("auth_users", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  name: text("name"),
+  email: text("email").unique(),
+  emailVerified: timestamp("email_verified", { mode: "date" }),
+  image: text("image"),
+});
+
+export const authAccounts = pgTable("auth_accounts", {
+  userId: text("user_id")
+    .notNull()
+    .references(() => authUsers.id, { onDelete: "cascade" }),
+  type: text("type").$type<AdapterAccount["type"]>().notNull(),
+  provider: text("provider").notNull(),
+  providerAccountId: text("provider_account_id").notNull(),
+  refresh_token: text("refresh_token"),
+  access_token: text("access_token"),
+  expires_at: integer("expires_at"),
+  token_type: text("token_type"),
+  scope: text("scope"),
+  id_token: text("id_token"),
+  session_state: text("session_state"),
+}, (table) => ({
+  providerAccountPk: primaryKey({ columns: [table.provider, table.providerAccountId] }),
+}));
+
+export const authSessions = pgTable("auth_sessions", {
+  sessionToken: text("session_token").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => authUsers.id, { onDelete: "cascade" }),
+  expires: timestamp("expires", { mode: "date" }).notNull(),
+});
+
+export const companyMembers = pgTable("company_members", {
+  userId: text("user_id")
+    .notNull()
+    .references(() => authUsers.id, { onDelete: "cascade" }),
+  companyId: integer("company_id")
+    .notNull()
+    .references(() => companies.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  userCompanyUnique: unique("uq_company_members_user_company").on(table.userId, table.companyId),
+}));
+
+export const companyAiSettings = pgTable("company_ai_settings", {
+  companyId: integer("company_id")
+    .primaryKey()
+    .references(() => companies.id, { onDelete: "cascade" }),
+  mimoModel: varchar("mimo_model", { length: 200 }),
+  mimoApiKeyEncrypted: text("mimo_api_key_encrypted"),
+  openrouterApiKeyEncrypted: text("openrouter_api_key_encrypted"),
+  openrouterFallback1Model: varchar("openrouter_fallback_1_model", { length: 200 })
+    .notNull()
+    .default("xiaomi/mimo-v2.5"),
+  openrouterFallback2Model: varchar("openrouter_fallback_2_model", { length: 200 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Legacy deployment-global settings remain in the published schema for migration
+// compatibility, but authenticated tenant requests never read them.
 
 export const aiSettings = pgTable("ai_settings", {
   id: integer("id").primaryKey().default(1),
