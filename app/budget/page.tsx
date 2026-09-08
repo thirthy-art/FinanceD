@@ -1,6 +1,12 @@
 "use client";
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useI18n } from "@/src/i18n/context";
+import CompanyAccessState, { companyAccessCode, type CompanyAccessCode } from "@/src/components/CompanyAccessState";
+import { Badge } from "@/src/components/ui/badge";
+import { Button } from "@/src/components/ui/button";
+import { LoadingState } from "@/src/components/ui/feedback";
+import { PageActions, PageHeader, PageTitle } from "@/src/components/ui/page";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/src/components/ui/tabs";
 
 const inputStyle: React.CSSProperties = {
   padding: "6px 8px",
@@ -99,6 +105,7 @@ export default function BudgetPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [unmapped, setUnmapped] = useState<{ unmappedCount: number; accounts: { code: string; name: string; count: number }[] } | null>(null);
   const [manualActuals, setManualActuals] = useState<ManualEntry[]>([]);
+  const [accessCode, setAccessCode] = useState<CompanyAccessCode | null>(null);
 
   // Category management state
   const [selectedCatId, setSelectedCatId] = useState<number | null>(null);
@@ -123,11 +130,10 @@ export default function BudgetPage() {
 
   const loadReport = useCallback(async () => {
     setLoading(true);
-    const [rep, cats, unm] = await Promise.all([
-      fetch(`/api/budget/report?year=${year}`).then((r) => r.json()),
-      fetch("/api/budget/categories").then((r) => r.json()),
-      fetch(`/api/budget/unmapped?year=${year}`).then((r) => r.json()),
-    ]);
+    const responses = await Promise.all([fetch(`/api/budget/report?year=${year}`), fetch("/api/budget/categories"), fetch(`/api/budget/unmapped?year=${year}`)]);
+    const [rep, cats, unm] = await Promise.all(responses.map((response) => response.json().catch(() => ({}))));
+    const denied = [rep, cats, unm].map(companyAccessCode).find(Boolean);
+    if (denied) { setAccessCode(denied); setLoading(false); return; }
     setReport(rep);
     setCategories(cats);
     setUnmapped(unm);
@@ -136,12 +142,17 @@ export default function BudgetPage() {
 
   const loadManualActuals = useCallback(async () => {
     const data = await fetch(`/api/budget/actuals?year=${year}`).then((r) => r.json());
+    const denied = companyAccessCode(data);
+    if (denied) { setAccessCode(denied); return; }
     setManualActuals(Array.isArray(data) ? data : []);
   }, [year]);
 
   useEffect(() => {
-    void loadReport();
-    void loadManualActuals();
+    const timer = window.setTimeout(() => {
+      void loadReport();
+      void loadManualActuals();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [loadReport, loadManualActuals]);
 
   useEffect(() => {
@@ -281,56 +292,49 @@ export default function BudgetPage() {
     ["actuals", b.tabActuals],
   ];
 
+  if (accessCode) return <CompanyAccessState code={accessCode} />;
+
   return (
-    <div style={{ maxWidth: 1400 }}>
+    <div className="budget-page">
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20, flexWrap: "wrap" }}>
-        <h1 style={{ fontSize: 20, fontWeight: 700, color: "#1e3a5f", margin: 0 }}>{b.title}</h1>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <button onClick={() => setYear((y) => y - 1)} style={{ ...inputStyle, cursor: "pointer", background: "#f8fafc" }}>‹</button>
-          <span style={{ fontSize: 16, fontWeight: 600, color: "#374151", minWidth: 48, textAlign: "center" }}>{year}</span>
-          <button onClick={() => setYear((y) => y + 1)} style={{ ...inputStyle, cursor: "pointer", background: "#f8fafc" }}>›</button>
+      <PageHeader>
+        <PageTitle>{b.title}</PageTitle>
+        <PageActions>
+        <div className="budget-year-control">
+          <Button variant="secondary" size="icon" onClick={() => setYear((y) => y - 1)}>‹</Button>
+          <span>{year}</span>
+          <Button variant="secondary" size="icon" onClick={() => setYear((y) => y + 1)}>›</Button>
         </div>
         {report?.baseCurrency && (
-          <span style={{ fontSize: 12, color: "#64748b", background: "#f1f5f9", padding: "3px 8px", borderRadius: 4 }}>
-            {report.baseCurrency}
-          </span>
+          <Badge>{report.baseCurrency}</Badge>
         )}
         {unmapped && unmapped.unmappedCount > 0 && (
-          <span style={{ fontSize: 12, color: "#b45309", background: "#fef3c7", padding: "4px 10px", borderRadius: 4 }}>
+          <Badge variant="warning">
             ⚠ {unmapped.unmappedCount === 1 ? b.unmappedWarning1 : b.unmappedWarning.replace("{count}", String(unmapped.unmappedCount))}
-          </span>
+          </Badge>
         )}
-      </div>
+        </PageActions>
+      </PageHeader>
 
       {/* Tabs */}
-      <div style={{ display: "flex", gap: 4, marginBottom: 20, borderBottom: "2px solid #e2e8f0" }}>
+      <Tabs>
+      <TabsList>
         {tabs.map(([tabId, label]) => (
-          <button
+          <TabsTrigger
             key={tabId}
             onClick={() => setTab(tabId)}
-            style={{
-              padding: "8px 16px",
-              fontSize: 13,
-              fontWeight: tab === tabId ? 600 : 400,
-              color: tab === tabId ? "#1e3a5f" : "#64748b",
-              background: "transparent",
-              border: "none",
-              borderBottom: tab === tabId ? "2px solid #1e3a5f" : "2px solid transparent",
-              cursor: "pointer",
-              marginBottom: -2,
-            }}
+            active={tab === tabId}
           >
             {label}
-          </button>
+          </TabsTrigger>
         ))}
-      </div>
+      </TabsList>
 
       {/* ─── TAB: Budget & Actuals ─────────────────────────────────────── */}
       {tab === "budget" && (
-        <>
+        <TabsContent>
           {loading ? (
-            <p style={{ color: "#64748b" }}>{b.loading}</p>
+            <LoadingState>{b.loading}</LoadingState>
           ) : !report || !report.categories.length ? (
             <div style={{ ...cardStyle, padding: 32, textAlign: "center" }}>
               <p style={{ color: "#64748b", marginBottom: 16 }}>{b.noCategories}</p>
@@ -347,7 +351,7 @@ export default function BudgetPage() {
               <table style={{ borderCollapse: "collapse", minWidth: 900, width: "100%" }}>
                 <thead>
                   <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
-                    <th style={{ textAlign: "left", padding: "8px 12px", fontSize: 12, fontWeight: 600, color: "#64748b", textTransform: "uppercase", minWidth: 160, position: "sticky", left: 0, background: "#f8fafc", zIndex: 1 }}>{b.categoryHeader}</th>
+                    <th className="budget-sticky-column" style={{ textAlign: "start", minWidth: 160, position: "sticky", background: "#f8fafc", zIndex: 1 }}>{b.categoryHeader}</th>
                     {allMonths.map((m, i) => (
                       <th key={m} style={{ textAlign: "right", padding: "8px 6px", fontSize: 11, fontWeight: 600, color: "#64748b", textTransform: "uppercase", minWidth: 80 }}>
                         {new Intl.DateTimeFormat(locale, { month: "short" }).format(new Date(2000, i, 1))}
@@ -358,7 +362,7 @@ export default function BudgetPage() {
                 <tbody>
                   {report.categories.map((cat) => (
                     <tr key={cat.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                      <td style={{ padding: "6px 12px", fontSize: 13, fontWeight: 500, color: "#1e3a5f", position: "sticky", left: 0, background: "#fff", zIndex: 1, borderRight: "1px solid #e2e8f0" }}>
+                      <td className="budget-sticky-column" style={{ fontWeight: 500, color: "#1e3a5f", position: "sticky", background: "#fff", zIndex: 1 }}>
                         {cat.name}
                       </td>
                       {allMonths.map((month) => {
@@ -406,12 +410,12 @@ export default function BudgetPage() {
               </div>
             </div>
           )}
-        </>
+        </TabsContent>
       )}
 
       {/* ─── TAB: Categories & Accounts ───────────────────────────────── */}
       {tab === "categories" && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+        <TabsContent className="budget-category-layout">
           {/* Left: category list */}
           <div>
             <h2 style={{ fontSize: 15, fontWeight: 600, color: "#374151", marginBottom: 12 }}>{b.budgetCategoriesTitle}</h2>
@@ -580,12 +584,12 @@ export default function BudgetPage() {
               </div>
             )}
           </div>
-        </div>
+        </TabsContent>
       )}
 
       {/* ─── TAB: Manual Entries ──────────────────────────────────────── */}
       {tab === "actuals" && (
-        <>
+        <TabsContent>
           <h2 style={{ fontSize: 15, fontWeight: 600, color: "#374151", marginBottom: 12 }}>
             {b.manualEntriesTitle.replace("{year}", String(year))}
           </h2>
@@ -701,8 +705,9 @@ export default function BudgetPage() {
               </table>
             )}
           </div>
-        </>
+        </TabsContent>
       )}
+      </Tabs>
     </div>
   );
 }

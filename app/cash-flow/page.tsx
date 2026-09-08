@@ -23,6 +23,11 @@ import { getActiveCompanyForPage } from "@/src/lib/active-company-page";
 import CompanySelectionRequired from "@/src/components/CompanySelectionRequired";
 import CashForecastView from "@/src/components/CashForecastView";
 import { calculateCashForecast } from "@/src/lib/cash-forecast";
+import { Badge } from "@/src/components/ui/badge";
+import { buttonVariants } from "@/src/components/ui/button";
+import { EmptyState } from "@/src/components/ui/feedback";
+import { PageActions, PageHeader, PageTitle } from "@/src/components/ui/page";
+import { cn } from "@/src/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -32,8 +37,8 @@ function todayString(): string {
 
 function approvalBadge(status: "draft" | "approved", labels: { approved: string; draft: string }) {
   return status === "approved"
-    ? <span style={{ background: "#dcfce7", color: "#166534", padding: "2px 8px", borderRadius: 10, fontSize: 11, fontWeight: 600 }}>{labels.approved}</span>
-    : <span style={{ background: "#fef9c3", color: "#713f12", padding: "2px 8px", borderRadius: 10, fontSize: 11, fontWeight: 600 }}>{labels.draft}</span>;
+    ? <Badge variant="success">{labels.approved}</Badge>
+    : <Badge variant="warning">{labels.draft}</Badge>;
 }
 
 function SummaryCard({
@@ -48,21 +53,14 @@ function SummaryCard({
   accent?: string;
 }) {
   return (
-    <div style={{
-      flex: "1 1 180px",
-      background: "#fff",
-      border: "1px solid #e2e8f0",
-      borderRadius: 8,
-      padding: "16px 20px",
-      minWidth: 0,
-    }}>
-      <div style={{ fontSize: 11, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>
+    <div className="cash-flow-summary-card">
+      <div className="cash-flow-summary-label">
         {label}
       </div>
-      <div style={{ fontSize: 20, fontWeight: 700, color: accent ?? "#1e3a5f", lineHeight: 1.2 }}>
+      <div className="cash-flow-summary-value" style={accent ? { color: accent } : undefined}>
         {value}
       </div>
-      {sub && <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 4 }}>{sub}</div>}
+      {sub && <div className="cash-flow-summary-sub">{sub}</div>}
     </div>
   );
 }
@@ -125,9 +123,9 @@ export default async function CashFlowPage({
     .orderBy(desc(supplierInvoices.createdAt));
 
   const tabs = (
-    <nav aria-label={t.title} style={{ display: "flex", gap: 6, marginBottom: 22, borderBottom: "1px solid #e2e8f0" }}>
-      <Link href="/cash-flow" style={{ padding: "9px 12px", textDecoration: "none", color: view === "current" ? "#1d4ed8" : "#64748b", borderBottom: view === "current" ? "2px solid #2563eb" : "2px solid transparent", fontWeight: 600 }}>{forecastMessages.tabCurrent}</Link>
-      <Link href="/cash-flow?view=forecast" style={{ padding: "9px 12px", textDecoration: "none", color: view === "forecast" ? "#1d4ed8" : "#64748b", borderBottom: view === "forecast" ? "2px solid #2563eb" : "2px solid transparent", fontWeight: 600 }}>{forecastMessages.tabForecast}</Link>
+    <nav aria-label={t.title} className="ui-tab-list mb-5">
+      <Link href="/cash-flow" className={cn("ui-tab", view === "current" && "ui-tab-active")}>{forecastMessages.tabCurrent}</Link>
+      <Link href="/cash-flow?view=forecast" className={cn("ui-tab", view === "forecast" && "ui-tab-active")}>{forecastMessages.tabForecast}</Link>
     </nav>
   );
 
@@ -147,8 +145,8 @@ export default async function CashFlowPage({
       manualItems: items,
       apItems: rows,
     });
-    return <div>
-      <h1 style={{ fontSize: 22, fontWeight: 700, color: "#1e3a5f", margin: "0 0 14px" }}>{t.title}</h1>
+    return <div className="cash-flow-page">
+      <PageHeader><PageTitle>{t.title}</PageTitle></PageHeader>
       {tabs}
       <CashForecastView
         currency={baseCurrency}
@@ -234,20 +232,17 @@ export default async function CashFlowPage({
   });
 
   return (
-    <div>
-      <div style={{ marginBottom: 24, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 700, color: "#1e3a5f", margin: 0 }}>
-          {t.title}
-        </h1>
+    <div className="cash-flow-page">
+      <PageHeader>
+        <PageTitle>{t.title}</PageTitle>
+        <PageActions>
         <form action="/api/cash-flow/export" method="get">
-          <button
-            type="submit"
-            style={{ border: "1px solid #cbd5e1", color: "#334155", background: "#fff", padding: "8px 18px", borderRadius: 6, fontSize: 14, fontWeight: 600, cursor: "pointer" }}
-          >
+          <button type="submit" className={buttonVariants({ variant: "secondary" })}>
             {t.exportPayables}
           </button>
         </form>
-      </div>
+        </PageActions>
+      </PageHeader>
 
       {tabs}
 
@@ -293,9 +288,7 @@ export default async function CashFlowPage({
           {t.next4Weeks}
         </div>
         {classified.length === 0 ? (
-          <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "32px 24px", textAlign: "center", color: "#94a3b8" }}>
-            {t.noOutstandingPayables}
-          </div>
+          <EmptyState>{t.noOutstandingPayables}</EmptyState>
         ) : (
           <CashFlowView weeks={weeks} overdue={overdueData} />
         )}
@@ -308,16 +301,16 @@ export default async function CashFlowPage({
         </div>
 
         {classified.length === 0 ? (
-          <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "48px 24px", textAlign: "center", color: "#718096" }}>
+          <EmptyState>
             <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>{t.noPayablesTitle}</div>
             <div>{t.noPayablesDesc}</div>
-          </div>
+          </EmptyState>
         ) : (
           <>
             {/* Desktop table */}
             <div style={{ display: "none" }} className="cf-table-desktop">
-              <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, overflow: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720 }}>
+              <div className="ui-table-shell ui-table-scroll">
+                <table className="ui-table" style={{ minWidth: 720 }}>
                   <thead>
                     <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
                       {[t.colVendor, t.colInvoiceNo, t.colInvDate, t.colDueDate, t.colCurrency, t.colGrossAmount, t.colApproval, t.colTiming].map((h) => (

@@ -12,7 +12,9 @@ import NewInvoiceUploadButton from "@/src/components/NewInvoiceUploadButton";
 import InvoicePaymentFilter from "@/src/components/InvoicePaymentFilter";
 import { Badge } from "@/src/components/ui/badge";
 import { Button } from "@/src/components/ui/button";
+import { Card } from "@/src/components/ui/card";
 import { PageActions, PageHeader, PageTitle } from "@/src/components/ui/page";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/src/components/ui/table";
 
 export const dynamic = "force-dynamic";
 
@@ -91,7 +93,7 @@ export default async function Home({
         </PageActions>
       </PageHeader>
 
-      <div className="invoice-payment-filter-row">
+      <Card className="invoice-filter-bar">
         <InvoicePaymentFilter
           label={t.paymentFilterLabel}
           allLabel={t.paymentFilterAll}
@@ -99,7 +101,7 @@ export default async function Home({
           paidLabel={common.statusPaid}
           value={paymentFilter}
         />
-      </div>
+      </Card>
 
       {deleted === "1" && (
         <div className="ui-alert ui-alert-success mb-4">
@@ -118,52 +120,41 @@ export default async function Home({
       ) : (
         <>
           <div className="invoice-list-desktop ui-table-shell">
-            <table className="ui-table">
-            <thead>
-              <tr>
-                {[t.colNum, t.colVendor, t.colInvoiceNo, t.colDate, t.colAmount, t.colStatus, ""].map((h, idx) => (
-                  <th
-                    key={idx}
-                    className="uppercase"
-                  >
-                    {h}
-                  </th>
+            <Table className="min-w-[820px]">
+            <TableHeader>
+              <TableRow>
+                {[t.colVendor, t.colInvoiceNo, t.colDate, t.colAmount, t.colStatus, t.colNum, ""].map((h, idx) => (
+                  <TableHead key={idx} className={idx === 3 ? "text-end" : undefined}>{h}</TableHead>
                 ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((inv, i) => (
-                <tr
-                  key={inv.id}
-                  style={{ borderBottom: i < rows.length - 1 ? "1px solid #f1f5f9" : "none" }}
-                >
-                  <td style={{ padding: "12px 16px", color: "#94a3b8", fontSize: 12 }}>{inv.id}</td>
-                  <td style={{ padding: "12px 16px", fontWeight: 500 }}>{inv.vendorName ?? <span style={{ color: "#94a3b8" }}>{common.none}</span>}</td>
-                  <td style={{ padding: "12px 16px" }}>{inv.invoiceNumber ?? <span style={{ color: "#94a3b8" }}>{common.none}</span>}</td>
-                  <td style={{ padding: "12px 16px", color: "#64748b" }}>{inv.invoiceDate ?? common.none}</td>
-                  <td style={{ padding: "12px 16px", fontWeight: 600 }}>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((inv) => (
+                <TableRow key={inv.id}>
+                  <TableCell className="font-semibold text-[var(--heading)]">{inv.vendorName ?? <span className="text-[var(--muted-foreground)]">{common.none}</span>}</TableCell>
+                  <TableCell>{inv.invoiceNumber ?? <span className="text-[var(--muted-foreground)]">{common.none}</span>}</TableCell>
+                  <TableCell className="text-[var(--muted-foreground)]">{inv.invoiceDate ?? common.none}</TableCell>
+                  <TableCell className="text-end font-semibold tabular-nums">
                     {inv.grossAmount
                       ? `${inv.currency} ${formatDisplayAmount(inv.grossAmount, inv.currencyType)}`
                       : common.none}
-                  </td>
-                  <td style={{ padding: "12px 16px" }}>
+                  </TableCell>
+                  <TableCell>
                     <div className="invoice-list-status-badges">
                       {statusBadge(inv.status, common)}
                       {paymentStatusBadge(inv.paymentStatus, common)}
                     </div>
-                  </td>
-                  <td style={{ padding: "12px 16px" }}>
-                    <Link
-                      href={`/invoices/${inv.id}`}
-                      style={{ color: "#2563eb", textDecoration: "none", fontWeight: 500, fontSize: 13 }}
-                    >
+                  </TableCell>
+                  <TableCell className="text-xs text-[var(--muted-foreground)]">#{inv.id}</TableCell>
+                  <TableCell className="text-end">
+                    <Link href={`/invoices/${inv.id}`} className="ui-table-action">
                       {t.review}
                     </Link>
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-            </table>
+            </TableBody>
+            </Table>
           </div>
           <div className="invoice-list-mobile">
             {rows.map((inv) => (

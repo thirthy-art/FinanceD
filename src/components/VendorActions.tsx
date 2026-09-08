@@ -3,6 +3,9 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useI18n } from "@/src/i18n/context";
+import { Button } from "@/src/components/ui/button";
+import { Alert } from "@/src/components/ui/feedback";
+import { Select } from "@/src/components/ui/select";
 
 interface VendorSummary {
   id: number;
@@ -10,7 +13,6 @@ interface VendorSummary {
   taxId: string | null;
   invoiceCount: number;
 }
-
 export default function VendorActions({
   source,
   targets,
@@ -67,30 +69,30 @@ export default function VendorActions({
   }
 
   return (
-    <div id="vendor-actions" style={{ marginTop: 24, paddingTop: 20, borderTop: "1px solid #e2e8f0" }}>
-      <div style={{ display: "flex", gap: 10 }}>
-        <button onClick={() => { setMode("merge"); setError(""); }} style={buttonStyle}>{va.mergeVendor}</button>
-        <button onClick={() => { setMode("delete"); setError(""); }} style={{ ...buttonStyle, color: "#fff", background: "#dc2626", borderColor: "#dc2626" }}>{va.deleteVendor}</button>
+    <div id="vendor-actions" className="vendor-actions">
+      <div className="flex flex-wrap gap-2">
+        <Button variant="secondary" onClick={() => { setMode("merge"); setError(""); }}>{va.mergeVendor}</Button>
+        <Button variant="destructive" onClick={() => { setMode("delete"); setError(""); }}>{va.deleteVendor}</Button>
       </div>
 
       {mode === "delete" && (
-        <div role="dialog" aria-modal="true" style={dialogStyle}>
+        <div role="dialog" aria-modal="true" className="vendor-action-panel">
           <strong>{va.deleteTitle.replace("{name}", source.name)}</strong>
           <p style={{ margin: "8px 0" }}>{va.deleteDesc}</p>
           <p style={{ margin: "8px 0", color: source.invoiceCount > 0 ? "#b91c1c" : "#475569" }}>
             {va.associatedInvoices.replace("{count}", String(source.invoiceCount))}
           </p>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button disabled={busy} onClick={deleteVendor} style={{ ...buttonStyle, color: "#fff", background: "#dc2626", borderColor: "#dc2626" }}>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="destructive" disabled={busy} onClick={deleteVendor}>
               {busy ? va.deleting : va.confirmDeletion}
-            </button>
-            <button disabled={busy} onClick={() => setMode("idle")} style={buttonStyle}>{cm.cancel}</button>
+            </Button>
+            <Button variant="secondary" disabled={busy} onClick={() => setMode("idle")}>{cm.cancel}</Button>
           </div>
         </div>
       )}
 
       {mode === "merge" && (
-        <div role="dialog" aria-modal="true" style={dialogStyle}>
+        <div role="dialog" aria-modal="true" className="vendor-action-panel">
           <strong>{va.mergeDuplicate}</strong>
           <p style={{ margin: "8px 0" }}>
             {va.mergeSource
@@ -98,16 +100,16 @@ export default function VendorActions({
               .replace("{count}", String(source.invoiceCount))
               .replace("{taxId}", source.taxId ?? cm.none)}
           </p>
-          <label style={{ display: "block", marginBottom: 8 }}>
+          <label className="ui-label mb-2">
             {va.vendorToKeep}
-            <select value={targetId} onChange={(event) => { setTargetId(event.target.value); setMergeReviewed(false); }} style={{ display: "block", marginTop: 4, padding: 7, minWidth: 280 }}>
+            <Select className="mt-1 max-w-lg" value={targetId} onChange={(event) => { setTargetId(event.target.value); setMergeReviewed(false); }}>
               <option value="">{va.selectTarget}</option>
               {targets.map((candidate) => (
                 <option key={candidate.id} value={candidate.id}>
                   {candidate.name} · {candidate.invoiceCount} invoice(s) · {candidate.taxId ?? "No Tax ID"}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
           {target && (
             <p style={{ margin: "8px 0" }}>
@@ -118,22 +120,19 @@ export default function VendorActions({
             </p>
           )}
           <p style={{ margin: "8px 0", color: "#475569" }}>{va.mergeDesc}</p>
-          <div style={{ display: "flex", gap: 8 }}>
+          <div className="flex flex-wrap gap-2">
             {!mergeReviewed ? (
-              <button disabled={!target} onClick={() => setMergeReviewed(true)} style={buttonStyle}>{va.reviewMerge}</button>
+              <Button disabled={!target} onClick={() => setMergeReviewed(true)}>{va.reviewMerge}</Button>
             ) : (
-              <button disabled={busy || !target} onClick={mergeVendor} style={{ ...buttonStyle, color: "#fff", background: "#b45309", borderColor: "#b45309" }}>
+              <Button className="bg-[var(--warning)] hover:bg-[var(--warning)]" disabled={busy || !target} onClick={mergeVendor}>
                 {busy ? va.merging : va.confirmMerge}
-              </button>
+              </Button>
             )}
-            <button disabled={busy} onClick={() => setMode("idle")} style={buttonStyle}>{cm.cancel}</button>
+            <Button variant="secondary" disabled={busy} onClick={() => setMode("idle")}>{cm.cancel}</Button>
           </div>
         </div>
       )}
-      {error && <p role="alert" style={{ color: "#b91c1c", marginTop: 10 }}>{error}</p>}
+      {error && <Alert tone="error" className="mt-3">{error}</Alert>}
     </div>
   );
 }
-
-const buttonStyle: React.CSSProperties = { padding: "8px 12px", border: "1px solid #cbd5e1", borderRadius: 6, background: "#fff", cursor: "pointer", fontWeight: 600 };
-const dialogStyle: React.CSSProperties = { marginTop: 14, maxWidth: 620, padding: 16, border: "1px solid #cbd5e1", borderRadius: 8, background: "#f8fafc" };

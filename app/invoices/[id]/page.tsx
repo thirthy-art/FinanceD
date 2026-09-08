@@ -21,6 +21,7 @@ import { LOCALE_COOKIE } from "@/src/i18n/types";
 import { getActiveCompanyForPage } from "@/src/lib/active-company-page";
 import CompanySelectionRequired from "@/src/components/CompanySelectionRequired";
 import NewInvoiceUploadButton from "@/src/components/NewInvoiceUploadButton";
+import { PageActions, PageDescription, PageHeader, PageHeading, PageTitle } from "@/src/components/ui/page";
 
 export default async function InvoicePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -82,19 +83,14 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
 
   return (
     <div>
-      <div style={{ marginBottom: 20, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-        <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-          <Link href="/" style={{ color: "#2563eb", textDecoration: "none", fontSize: 13 }}>
-            {t.allInvoices}
-          </Link>
-          <span style={{ color: "#cbd5e1" }}>/</span>
-          <span style={{ fontSize: 13, color: "#64748b" }}>
-            Invoice #{invoice.id}
-            {invoice.invoiceNumber ? ` · ${invoice.invoiceNumber}` : ""}
-          </span>
-        </div>
-        <NewInvoiceUploadButton label={invoiceList.newInvoice} />
-      </div>
+      <PageHeader className="invoice-review-page-header">
+        <PageHeading>
+          <Link href="/" className="ui-back-link">← {t.allInvoices}</Link>
+          <PageTitle>{invoice.invoiceNumber || `#${invoice.id}`}</PageTitle>
+          <PageDescription>#{invoice.id}{invoice.vendorId ? ` · ${invoice.currency}` : ""}</PageDescription>
+        </PageHeading>
+        <PageActions><NewInvoiceUploadButton label={invoiceList.newInvoice} /></PageActions>
+      </PageHeader>
       <InvoiceReview
         invoice={invoice}
         documents={docs}

@@ -1,12 +1,14 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useI18n } from "@/src/i18n/context";
+import CompanyAccessState, { companyAccessCode, type CompanyAccessCode } from "@/src/components/CompanyAccessState";
 import { SUPPORTED_BASE_CURRENCIES } from "@/src/lib/supported-base-currencies";
 import { Button } from "@/src/components/ui/button";
 import { Card } from "@/src/components/ui/card";
 import { Input } from "@/src/components/ui/input";
 import { PageHeader, PageTitle } from "@/src/components/ui/page";
 import { Select } from "@/src/components/ui/select";
+import { Alert, LoadingState } from "@/src/components/ui/feedback";
 
 export default function CompanyPage() {
   const { t } = useI18n();
@@ -18,12 +20,21 @@ export default function CompanyPage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
+  const [accessCode, setAccessCode] = useState<CompanyAccessCode | null>(null);
 
   useEffect(() => {
     fetch("/api/settings/company")
-      .then((r) => r.json())
-      .then((d) => { setName(d.name); setCurrency(d.baseCurrency); setLoading(false); });
-  }, []);
+      .then(async (response) => ({ response, data: await response.json().catch(() => ({})) }))
+      .then(({ response, data }) => {
+        const denied = companyAccessCode(data);
+        if (denied) { setAccessCode(denied); return; }
+        if (!response.ok || typeof data.name !== "string" || typeof data.baseCurrency !== "string") throw new Error("load failed");
+        setName(data.name);
+        setCurrency(data.baseCurrency);
+      })
+      .catch(() => setError(c.couldNotSave))
+      .finally(() => setLoading(false));
+  }, [c.couldNotSave]);
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -34,13 +45,17 @@ export default function CompanyPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, baseCurrency: currency }),
       });
+      const data = await res.json().catch(() => ({}));
+      const denied = companyAccessCode(data);
+      if (denied) { setAccessCode(denied); return; }
       if (!res.ok) throw new Error("Save failed");
       setSaved(true);
     } catch { setError(c.couldNotSave); }
     finally { setSaving(false); }
   }
 
-  if (loading) return <div className="text-sm text-[var(--muted-foreground)]" role="status">{c.loading}</div>;
+  if (loading) return <LoadingState>{c.loading}</LoadingState>;
+  if (accessCode) return <CompanyAccessState code={accessCode} />;
 
   return (
     <div className="max-w-lg">
@@ -57,8 +72,8 @@ export default function CompanyPage() {
               {SUPPORTED_BASE_CURRENCIES.map((cur) => <option key={cur}>{cur}</option>)}
             </Select>
           </div>
-          {error && <div className="ui-alert ui-alert-error mb-3" role="alert">{error}</div>}
-          {saved && <div className="ui-alert ui-alert-success mb-3" role="status">{c.saved}</div>}
+          {error && <Alert tone="error" className="mb-3">{error}</Alert>}
+          {saved && <Alert tone="success" className="mb-3">{c.saved}</Alert>}
           <Button type="submit" disabled={saving}>
             {saving ? c.saving : c.save}
           </Button>
