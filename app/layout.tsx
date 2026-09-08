@@ -23,7 +23,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body>
         <I18nProvider initialLocale={locale}>
           <Nav user={session?.user ?? null} />
-          <main className="max-w-7xl mx-auto px-4 py-6">{children}</main>
+          <main className={session?.user ? "app-main" : "auth-main"}>{children}</main>
         </I18nProvider>
       </body>
     </html>

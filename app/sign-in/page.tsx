@@ -1,14 +1,11 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { Landmark } from "lucide-react";
 import { auth, configuredAuthProviders, signIn } from "@/auth";
 import { getMessages, resolveLocale } from "@/src/i18n";
 import { LOCALE_COOKIE } from "@/src/i18n/types";
 
-export default async function SignInPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ callbackUrl?: string }>;
-}) {
+export default async function SignInPage({ searchParams }: { searchParams: Promise<{ callbackUrl?: string }> }) {
   if (await auth()) redirect("/");
   const locale = resolveLocale((await cookies()).get(LOCALE_COOKIE)?.value);
   const labels = getMessages(locale).auth;
@@ -16,13 +13,19 @@ export default async function SignInPage({
   const providerIds = configuredAuthProviders.map((provider) => provider.id);
 
   return (
-    <div style={{ maxWidth: 420, margin: "48px auto", padding: 28, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8 }}>
-      <h1 style={{ fontSize: 22, fontWeight: 700, color: "#1e3a5f", marginBottom: 8 }}>{labels.signInTitle}</h1>
-      <p style={{ color: "#64748b", marginBottom: 24 }}>{labels.signInDescription}</p>
-      <div style={{ display: "grid", gap: 12 }}>
-        {providerIds.includes("google") && <ProviderButton provider="google" label={labels.signInGoogle} callbackUrl={callbackUrl} />}
-        {providerIds.includes("microsoft-entra-id") && <ProviderButton provider="microsoft-entra-id" label={labels.signInMicrosoft} callbackUrl={callbackUrl} />}
-        {providerIds.length === 0 && <p role="alert" style={{ color: "#b45309" }}>{labels.noProviders}</p>}
+    <div className="auth-shell">
+      <div className="auth-card">
+        <div className="auth-brand">
+          <span className="app-brand-mark" aria-hidden="true"><Landmark size={19} strokeWidth={2.2} /></span>
+          <span>FinanceD</span>
+        </div>
+        <h1 className="auth-title">{labels.signInTitle}</h1>
+        <p className="auth-description">{labels.signInDescription}</p>
+        <div className="auth-providers">
+          {providerIds.includes("google") && <ProviderButton provider="google" mark="G" label={labels.signInGoogle} callbackUrl={callbackUrl} />}
+          {providerIds.includes("microsoft-entra-id") && <ProviderButton provider="microsoft-entra-id" mark="M" label={labels.signInMicrosoft} callbackUrl={callbackUrl} />}
+          {providerIds.length === 0 && <p role="alert" className="ui-alert ui-alert-warning">{labels.noProviders}</p>}
+        </div>
       </div>
     </div>
   );
@@ -32,14 +35,15 @@ function safeCallbackUrl(value: string | undefined) {
   return value?.startsWith("/") && !value.startsWith("//") ? value : "/";
 }
 
-function ProviderButton({ provider, label, callbackUrl }: { provider: string; label: string; callbackUrl: string }) {
+function ProviderButton({ provider, mark, label, callbackUrl }: { provider: string; mark: string; label: string; callbackUrl: string }) {
   return (
     <form action={async () => {
       "use server";
       await signIn(provider, { redirectTo: callbackUrl });
     }}>
-      <button type="submit" style={{ width: "100%", minHeight: 44, border: "1px solid #cbd5e1", borderRadius: 6, background: "#fff", color: "#1e293b", fontWeight: 600, cursor: "pointer" }}>
-        {label}
+      <button type="submit" className="auth-provider-button">
+        <span className="auth-provider-mark" aria-hidden="true">{mark}</span>
+        <span>{label}</span>
       </button>
     </form>
   );

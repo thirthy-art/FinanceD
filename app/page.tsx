@@ -10,24 +10,20 @@ import { resolveLocale, getMessages } from "@/src/i18n/index";
 import { LOCALE_COOKIE } from "@/src/i18n/types";
 import NewInvoiceUploadButton from "@/src/components/NewInvoiceUploadButton";
 import InvoicePaymentFilter from "@/src/components/InvoicePaymentFilter";
+import { Badge } from "@/src/components/ui/badge";
+import { Button } from "@/src/components/ui/button";
+import { PageActions, PageHeader, PageTitle } from "@/src/components/ui/page";
 
 export const dynamic = "force-dynamic";
 
 function statusBadge(status: string, t: { statusApproved: string; statusDraft: string }) {
   const label = status === "approved" ? t.statusApproved : t.statusDraft;
-  const style: React.CSSProperties =
-    status === "approved"
-      ? { background: "#dcfce7", color: "#166534", padding: "2px 10px", borderRadius: 12, fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }
-      : { background: "#fef9c3", color: "#713f12", padding: "2px 10px", borderRadius: 12, fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" };
-  return <span style={style}>{label}</span>;
+  return <Badge variant={status === "approved" ? "success" : "warning"}>{label}</Badge>;
 }
 
 function paymentStatusBadge(status: "Paid" | "Unpaid", t: { statusPaid: string; statusUnpaid: string }) {
   const paid = status === "Paid";
-  const style: React.CSSProperties = paid
-    ? { background: "#dcfce7", color: "#166534", padding: "2px 10px", borderRadius: 12, fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }
-    : { background: "#fee2e2", color: "#991b1b", padding: "2px 10px", borderRadius: 12, fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" };
-  return <span style={style}>{paid ? t.statusPaid : t.statusUnpaid}</span>;
+  return <Badge variant={paid ? "success" : "destructive"}>{paid ? t.statusPaid : t.statusUnpaid}</Badge>;
 }
 
 export default async function Home({
@@ -83,20 +79,17 @@ export default async function Home({
 
   return (
     <div>
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-        <h1 style={{ fontSize: 22, fontWeight: 700, color: "#1e3a5f" }}>{t.title}</h1>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+      <PageHeader>
+        <PageTitle>{t.title}</PageTitle>
+        <PageActions>
           <form action="/api/invoices/export" method="get">
-            <button
-              type="submit"
-              style={{ border: "1px solid #cbd5e1", color: "#334155", background: "#fff", padding: "8px 18px", borderRadius: 6, fontSize: 14, fontWeight: 600, cursor: "pointer" }}
-            >
+            <Button type="submit" variant="secondary">
               {t.exportInvoices}
-            </button>
+            </Button>
           </form>
           <NewInvoiceUploadButton label={t.newInvoice} />
-        </div>
-      </div>
+        </PageActions>
+      </PageHeader>
 
       <div className="invoice-payment-filter-row">
         <InvoicePaymentFilter
@@ -109,46 +102,29 @@ export default async function Home({
       </div>
 
       {deleted === "1" && (
-        <div style={{ marginBottom: 16, padding: "10px 14px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 6, color: "#166534", fontSize: 14 }}>
+        <div className="ui-alert ui-alert-success mb-4">
           {t.deleted}
         </div>
       )}
 
       {!hasAnyInvoices ? (
-        <div
-          style={{
-            background: "#fff",
-            border: "1px solid #e2e8f0",
-            borderRadius: 8,
-            padding: "48px 24px",
-            textAlign: "center",
-            color: "#718096",
-          }}
-        >
-          <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>{t.noInvoicesTitle}</div>
-          <div style={{ marginBottom: 20 }}>{t.noInvoicesDesc}</div>
+        <div className="ui-empty-state">
+          <div className="mb-2 text-base font-semibold text-[var(--heading)]">{t.noInvoicesTitle}</div>
+          <div className="mb-5">{t.noInvoicesDesc}</div>
           <NewInvoiceUploadButton label={t.uploadInvoice} />
         </div>
       ) : rows.length === 0 ? (
         <div className="invoice-list-filter-empty">{t.noFilterResults}</div>
       ) : (
         <>
-          <div className="invoice-list-desktop" style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <div className="invoice-list-desktop ui-table-shell">
+            <table className="ui-table">
             <thead>
-              <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
+              <tr>
                 {[t.colNum, t.colVendor, t.colInvoiceNo, t.colDate, t.colAmount, t.colStatus, ""].map((h, idx) => (
                   <th
                     key={idx}
-                    style={{
-                      padding: "10px 16px",
-                      textAlign: "left",
-                      fontSize: 12,
-                      fontWeight: 600,
-                      color: "#64748b",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.05em",
-                    }}
+                    className="uppercase"
                   >
                     {h}
                   </th>

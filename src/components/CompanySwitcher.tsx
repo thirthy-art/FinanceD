@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Building2, Check, ChevronDown } from "lucide-react";
 import { useI18n } from "@/src/i18n/context";
 
 export interface CompanySummary {
@@ -64,6 +65,7 @@ export default function CompanySwitcher({
   const [isOpen, setIsOpen] = useState(Boolean(initialActionError));
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<ActionError | null>(initialActionError ?? null);
+  const switcherRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (initialData || initialLoadError) return;
@@ -90,6 +92,22 @@ export default function CompanySwitcher({
     return () => controller.abort();
   }, [initialData, initialLoadError]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    function close(event: PointerEvent) {
+      if (event.target instanceof Node && !switcherRef.current?.contains(event.target)) setIsOpen(false);
+    }
+    function escape(event: KeyboardEvent) {
+      if (event.key === "Escape") setIsOpen(false);
+    }
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [isOpen]);
+
   const activeCompany = useMemo(
     () => resolveDisplayedCompany(companies, activeCompanyId),
     [activeCompanyId, companies],
@@ -114,7 +132,7 @@ export default function CompanySwitcher({
   }
 
   return (
-    <div className="company-switcher">
+    <div className="company-switcher" ref={switcherRef}>
       <button
         type="button"
         className={`company-switcher-control${!activeCompany && loadState === "idle" ? " company-switcher-control-attention" : ""}`}
@@ -124,8 +142,9 @@ export default function CompanySwitcher({
         disabled={loadState === "loading"}
         title={controlLabel}
       >
+        <Building2 className="company-switcher-control-icon" size={16} aria-hidden="true" />
         <span className="company-switcher-control-label">{controlLabel}</span>
-        <span aria-hidden="true">▾</span>
+        <ChevronDown className="company-switcher-chevron" size={15} aria-hidden="true" />
       </button>
 
       {isOpen && loadState !== "loading" && (
@@ -146,7 +165,7 @@ export default function CompanySwitcher({
                       disabled={pending || isActive}
                       onClick={() => void handleSwitch(company.id)}
                     >
-                      <span className="company-switcher-check" aria-hidden="true">{isActive ? "✓" : ""}</span>
+                      <span className="company-switcher-check" aria-hidden="true">{isActive ? <Check size={15} /> : null}</span>
                       <span className="company-switcher-option-name" title={company.name}>{company.name}</span>
                       <span className="company-switcher-currency">{company.baseCurrency}</span>
                     </button>
