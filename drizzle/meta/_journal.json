@@ -127,6 +127,20 @@
       "when": 1788547651799,
       "tag": "0017_silent_gorilla_man",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1788782359990,
+      "tag": "0018_polite_thing",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1788929518803,
+      "tag": "0019_gorgeous_doctor_faustus",
+      "breakpoints": true
     }
   ]
 }

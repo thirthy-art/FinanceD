@@ -1,6 +1,6 @@
 # FinanceD Operations
 
-Practical runbook for the repository state at `2d47180e640766183084fe1cc3e153bda0d237fb`.
+Practical runbook for FinanceD private-beta operations.
 
 ## Local development
 
@@ -10,7 +10,7 @@ Prerequisites are Node.js 22 (`.nvmrc`; `package.json` requires Node 22 or newer
 nvm use
 npm install
 cp .env.example .env
-# Configure DATABASE_URL.
+# Configure DATABASE_URL, AUTH_SECRET, and at least one OAuth provider.
 npm run db:migrate
 npm run db:seed # optional; idempotent demo data
 npm run dev
@@ -41,6 +41,14 @@ The exact variables documented by `.env.example` are:
 | Variable | Required | Purpose |
 |---|---|---|
 | `DATABASE_URL` | Yes | PostgreSQL connection string. |
+| `AUTH_SECRET` | Yes | High-entropy Auth.js signing/encryption secret. |
+| `AUTH_URL` | Production | Canonical Auth.js origin. Set to `https://financedapp.concept.me.uk` on Render so OAuth starts and returns on the same host. |
+| `AUTH_TRUST_HOST` | Render | Set to `true` so Auth.js accepts Render's forwarded host headers. |
+| `AUTH_GOOGLE_ID` | Google login | Google OAuth client ID. |
+| `AUTH_GOOGLE_SECRET` | Google login | Google OAuth client secret. |
+| `AUTH_MICROSOFT_ENTRA_ID_ID` | Microsoft login | Microsoft Entra application/client ID. |
+| `AUTH_MICROSOFT_ENTRA_ID_SECRET` | Microsoft login | Microsoft Entra client secret. |
+| `AUTH_MICROSOFT_ENTRA_ID_ISSUER` | Microsoft login | Entra v2 issuer for the selected tenant/account policy. |
 | `DOCUMENT_STORAGE_BACKEND` | No; defaults to `local` | `local` or `s3`. |
 | `UPLOAD_DIR` | Local backend only; defaults to `./uploads` | Local binary-document directory. |
 | `DOCUMENT_STORAGE_S3_ENDPOINT` | S3 backend | S3-compatible endpoint. |
@@ -48,16 +56,38 @@ The exact variables documented by `.env.example` are:
 | `DOCUMENT_STORAGE_S3_BUCKET` | S3 backend | Bucket name. |
 | `DOCUMENT_STORAGE_S3_ACCESS_KEY_ID` | S3 backend | Access key identifier. |
 | `DOCUMENT_STORAGE_S3_SECRET_ACCESS_KEY` | S3 backend | Secret access key. |
-| `AI_API_KEY` | AI only | Preferred provider credential. |
-| `AI_BASE_URL` | AI only | Preferred OpenAI-compatible base URL. |
-| `AI_MODEL` | AI only | Preferred model name. |
-| `AI_SETTINGS_ENCRYPTION_KEY` | Runtime AI settings only | Base64-encoded 32-byte deployment master key used for AES-256-GCM encryption of provider keys stored in PostgreSQL. |
-| `AI_SETTINGS_ADMIN_SECRET` | Runtime AI settings control plane | Separate high-entropy deployment secret used to authorize access to `/settings/ai` and its APIs. It is not persisted. |
-| `MIMO_API_KEY` | AI fallback config name | Backward-compatible credential name. |
-| `MIMO_BASE_URL` | AI fallback config name | Backward-compatible base URL. |
-| `MIMO_MODEL` | AI fallback config name | Backward-compatible model name. |
+| `AI_SETTINGS_ENCRYPTION_KEY` | Company AI settings | Base64-encoded 32-byte deployment master key used for AES-256-GCM encryption of company provider keys stored in PostgreSQL. |
+| `AI_LEGACY_LOCAL_DEVELOPMENT` | No | Explicitly enables legacy environment AI credentials outside production only; keep unset/`false` on Render. |
+| `AI_API_KEY`, `AI_BASE_URL`, `AI_MODEL` | Local legacy mode only | Legacy OpenAI-compatible local development configuration. |
+| `MIMO_API_KEY`, `MIMO_BASE_URL`, `MIMO_MODEL` | Local legacy mode only | Backward-compatible local development configuration names. |
 
 Never place actual values for credentials, connection strings, bucket identifiers, or account details in documentation or source control.
+
+Google's callback is `/api/auth/callback/google`; Microsoft's is `/api/auth/callback/microsoft-entra-id`. In production these resolve below the `AUTH_URL` origin, so provider redirect URIs must use `https://financedapp.concept.me.uk/api/auth/callback/<provider>` and must not use the Render service URL. A provider is enabled only when all of its documented variables are present. Auth.js identity, OAuth account, and database-session rows are persisted in PostgreSQL.
+
+## Private-beta onboarding and removal
+
+There is no invitation or user-administration UI. Run provisioning commands only in a trusted server/operations environment with `DATABASE_URL` configured.
+
+Create a new client company and grant its first user access:
+
+```bash
+npm run auth:provision -- --company-name "Acme Ltd" --email alice@acme.com
+```
+
+The command refuses to create the company when a case-insensitive, whitespace-trimmed company name already exists. Use the reported existing company ID with the existing-company command instead; do not create a replacement company.
+
+Grant another user access to an existing company:
+
+```bash
+npm run auth:grant -- --company-id 3 --email bob@acme.com
+```
+
+The company ID is authoritative and the command reports both its ID and name. If the normalized email already belongs to an Auth.js user, the command creates `company_members` immediately. Otherwise it creates an idempotent pending access record. After a successful OAuth/OIDC sign-in, FinanceD matches the provider-authenticated email, creates every explicitly invited membership, and marks those access records claimed. No company is created during sign-in, and an uninvited identity has no company access.
+
+Both provisioning commands trim and lowercase email addresses without provider-specific rewriting. Repeating a grant cannot create duplicate effective access. Multiple users may belong to one company, and one user may be explicitly granted multiple companies.
+
+Remove an existing user's company membership with `npm run auth:revoke -- <email> <companyId>`. This command requires an existing Auth.js user and company. These operator commands never expose an HTTP endpoint; `company_members` remains the application authorization source.
 
 ## Document storage
 
@@ -72,9 +102,9 @@ Never place actual values for credentials, connection strings, bucket identifier
 
 AI extraction is optional. Core upload, local PDF text extraction / image OCR, heuristic prefill, manual review, and saving continue without an AI key. If no key is configured, the on-demand AI route returns a configuration error rather than blocking upload.
 
-The deployment-global `/settings/ai` page configures a fixed provider chain: MiMo Direct, OpenRouter using the first fallback model, and an optional second OpenRouter model. The provider endpoints are built in. Set a separate high-entropy `AI_SETTINGS_ADMIN_SECRET` in Render to protect this page and its settings APIs with a short-lived HttpOnly authorization cookie. If the admin secret is absent, the settings control plane fails closed while invoice extraction continues to use any existing database or environment provider configuration. Runtime provider keys are encrypted before persistence with AES-256-GCM; set `AI_SETTINGS_ENCRYPTION_KEY` to a base64-encoded 32-byte secret in Render environment configuration and never commit its value. Losing or replacing this master key makes previously stored provider keys unreadable, so handle rotation as an explicit operational change.
+The `/settings/ai` page configures the active company's fixed provider chain: MiMo Direct, OpenRouter using the first fallback model, and an optional second OpenRouter model. Auth.js plus company membership is the sole authorization mechanism for these settings. Runtime provider keys are encrypted before persistence with AES-256-GCM; set `AI_SETTINGS_ENCRYPTION_KEY` to a base64-encoded 32-byte secret in Render environment configuration and never commit its value. Losing or replacing this master key makes previously stored provider keys unreadable, so handle rotation as an explicit operational change.
 
-The legacy OpenAI-compatible `AI_*` and `MIMO_*` variables remain bootstrap fallbacks. They are used when no runtime settings row exists, and their MiMo credential remains available when the first runtime save changes only the model. This prevents a settings migration from disabling a working deployment. A provider key entered in the browser is sent only to the server, encrypted before storage, and is never returned by settings APIs.
+Production extraction reads only the active company's `company_ai_settings` row. A company without a key receives a not-configured response and cannot consume another company's key or a deployment-global key. Legacy `AI_*`/`MIMO_*` credentials work only outside production when `AI_LEGACY_LOCAL_DEVELOPMENT=true`; this is an explicit local-development compatibility path and must remain disabled on Render. A provider key entered in the browser is sent only to the server, encrypted before storage, and is never returned by settings APIs.
 
 For normal extraction:
 

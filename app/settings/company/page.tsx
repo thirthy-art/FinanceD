@@ -1,12 +1,14 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useI18n } from "@/src/i18n/context";
+import CompanyAccessState, { companyAccessCode, type CompanyAccessCode } from "@/src/components/CompanyAccessState";
 import { SUPPORTED_BASE_CURRENCIES } from "@/src/lib/supported-base-currencies";
-
-const inputStyle: React.CSSProperties = {
-  width: "100%", padding: "8px 10px", border: "1px solid #e2e8f0",
-  borderRadius: 6, fontSize: 14, background: "#fff",
-};
+import { Button } from "@/src/components/ui/button";
+import { Card } from "@/src/components/ui/card";
+import { Input } from "@/src/components/ui/input";
+import { PageHeader, PageTitle } from "@/src/components/ui/page";
+import { Select } from "@/src/components/ui/select";
+import { Alert, LoadingState } from "@/src/components/ui/feedback";
 
 export default function CompanyPage() {
   const { t } = useI18n();
@@ -18,12 +20,21 @@ export default function CompanyPage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
+  const [accessCode, setAccessCode] = useState<CompanyAccessCode | null>(null);
 
   useEffect(() => {
     fetch("/api/settings/company")
-      .then((r) => r.json())
-      .then((d) => { setName(d.name); setCurrency(d.baseCurrency); setLoading(false); });
-  }, []);
+      .then(async (response) => ({ response, data: await response.json().catch(() => ({})) }))
+      .then(({ response, data }) => {
+        const denied = companyAccessCode(data);
+        if (denied) { setAccessCode(denied); return; }
+        if (!response.ok || typeof data.name !== "string" || typeof data.baseCurrency !== "string") throw new Error("load failed");
+        setName(data.name);
+        setCurrency(data.baseCurrency);
+      })
+      .catch(() => setError(c.couldNotSave))
+      .finally(() => setLoading(false));
+  }, [c.couldNotSave]);
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -34,40 +45,40 @@ export default function CompanyPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, baseCurrency: currency }),
       });
+      const data = await res.json().catch(() => ({}));
+      const denied = companyAccessCode(data);
+      if (denied) { setAccessCode(denied); return; }
       if (!res.ok) throw new Error("Save failed");
       setSaved(true);
     } catch { setError(c.couldNotSave); }
     finally { setSaving(false); }
   }
 
-  if (loading) return <div style={{ color: "#94a3b8" }}>{c.loading}</div>;
+  if (loading) return <LoadingState>{c.loading}</LoadingState>;
+  if (accessCode) return <CompanyAccessState code={accessCode} />;
 
   return (
-    <div style={{ maxWidth: 480 }}>
-      <h1 style={{ fontSize: 20, fontWeight: 700, color: "#1e3a5f", marginBottom: 24 }}>{c.title}</h1>
-      <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: 24 }}>
+    <div className="max-w-lg">
+      <PageHeader><PageTitle>{c.title}</PageTitle></PageHeader>
+      <Card className="p-5 sm:p-6">
         <form onSubmit={save}>
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#64748b", marginBottom: 4 }}>{c.nameLabel}</label>
-            <input style={inputStyle} value={name} onChange={(e) => { setName(e.target.value); setSaved(false); }} required />
+          <div className="mb-4">
+            <label className="ui-label" htmlFor="company-name">{c.nameLabel}</label>
+            <Input id="company-name" value={name} onChange={(e) => { setName(e.target.value); setSaved(false); }} required />
           </div>
-          <div style={{ marginBottom: 24 }}>
-            <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#64748b", marginBottom: 4 }}>{c.currencyLabel}</label>
-            <select style={inputStyle} value={currency} onChange={(e) => { setCurrency(e.target.value); setSaved(false); }}>
+          <div className="mb-6">
+            <label className="ui-label" htmlFor="company-currency">{c.currencyLabel}</label>
+            <Select id="company-currency" value={currency} onChange={(e) => { setCurrency(e.target.value); setSaved(false); }}>
               {SUPPORTED_BASE_CURRENCIES.map((cur) => <option key={cur}>{cur}</option>)}
-            </select>
+            </Select>
           </div>
-          {error && <div style={{ marginBottom: 12, padding: 10, background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 6, color: "#dc2626", fontSize: 13 }}>{error}</div>}
-          {saved && <div style={{ marginBottom: 12, padding: 10, background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 6, color: "#16a34a", fontSize: 13 }}>{c.saved}</div>}
-          <button
-            type="submit"
-            disabled={saving}
-            style={{ padding: "10px 20px", background: "#2563eb", color: "#fff", border: "none", borderRadius: 6, fontWeight: 600, cursor: "pointer", fontSize: 14 }}
-          >
+          {error && <Alert tone="error" className="mb-3">{error}</Alert>}
+          {saved && <Alert tone="success" className="mb-3">{c.saved}</Alert>}
+          <Button type="submit" disabled={saving}>
             {saving ? c.saving : c.save}
-          </button>
+          </Button>
         </form>
-      </div>
+      </Card>
     </div>
   );
 }

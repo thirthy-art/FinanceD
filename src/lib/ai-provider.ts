@@ -4,6 +4,8 @@ import { decryptAiSecret } from "@/src/lib/ai-settings-crypto";
 import {
   DEFAULT_MIMO_MODEL,
   DEFAULT_OPENROUTER_FALLBACK_1_MODEL,
+  defaultMimoModel,
+  legacyLocalAiEnvironmentEnabled,
   readAiSettings,
 } from "@/src/lib/ai-settings";
 
@@ -44,6 +46,7 @@ function providerNameForEndpoint(value: string): AiProviderName {
 }
 
 function legacyMimoCandidate(modelOverride?: string): AiProviderCandidate | null {
+  if (!legacyLocalAiEnvironmentEnabled()) return null;
   const apiKey = (process.env.AI_API_KEY || process.env.MIMO_API_KEY)?.trim();
   if (!apiKey) return null;
   const model = (modelOverride || process.env.AI_MODEL || process.env.MIMO_MODEL || DEFAULT_MIMO_MODEL).trim();
@@ -68,7 +71,7 @@ function legacyMimoCandidate(modelOverride?: string): AiProviderCandidate | null
 }
 
 function configuredMimoModel(model: string | null | undefined): string {
-  return (model || process.env.AI_MODEL || process.env.MIMO_MODEL || DEFAULT_MIMO_MODEL).trim();
+  return (model || defaultMimoModel()).trim();
 }
 
 function encryptedCandidate(input: Omit<AiProviderCandidate, "apiKey" | "configurationError"> & {
@@ -83,8 +86,8 @@ function encryptedCandidate(input: Omit<AiProviderCandidate, "apiKey" | "configu
   }
 }
 
-export async function getAiProviderCandidates(): Promise<AiProviderCandidate[]> {
-  const settings = await readAiSettings();
+export async function getAiProviderCandidates(companyId: number): Promise<AiProviderCandidate[]> {
+  const settings = await readAiSettings(companyId);
   if (!settings) {
     const legacy = legacyMimoCandidate();
     return legacy ? [legacy] : [];
@@ -129,11 +132,12 @@ export async function getAiProviderCandidates(): Promise<AiProviderCandidate[]> 
 }
 
 export async function getAiTestCandidate(input: {
+  companyId: number;
   provider: "mimo" | "openrouter";
   model: string;
   apiKey?: string;
 }): Promise<AiProviderCandidate | null> {
-  const settings = await readAiSettings();
+  const settings = await readAiSettings(input.companyId);
   const provider = input.provider === "mimo" ? "mimo-direct" : "openrouter";
   const testEndpoint = input.provider === "mimo"
     ? `${MIMO_BASE_URL}/chat/completions`

@@ -2,21 +2,34 @@
 import { useEffect, useState } from "react";
 import { flattenAccountHierarchy } from "@/src/lib/coa-hierarchy";
 import { useI18n } from "@/src/i18n/context";
+import CompanyAccessState, { companyAccessCode, type CompanyAccessCode } from "@/src/components/CompanyAccessState";
+import { Badge } from "@/src/components/ui/badge";
+import { Button } from "@/src/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/card";
+import { Alert, EmptyState, LoadingState } from "@/src/components/ui/feedback";
+import { Input } from "@/src/components/ui/input";
+import { PageHeader, PageTitle } from "@/src/components/ui/page";
+import { Select } from "@/src/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/src/components/ui/table";
 
 interface Account { id: number; code: string; name: string; type: string; parentId: number | null; isPosting: boolean; isActive: boolean; }
 
 const TYPES = ["asset", "liability", "equity", "revenue", "expense"];
-const inputStyle: React.CSSProperties = { padding: "6px 8px", border: "1px solid #e2e8f0", borderRadius: 5, fontSize: 13 };
-const typeColors: Record<string, React.CSSProperties> = {
-  asset:     { background: "#dbeafe", color: "#1d4ed8" },
-  liability: { background: "#fce7f3", color: "#9d174d" },
-  equity:    { background: "#fef3c7", color: "#92400e" },
-  revenue:   { background: "#dcfce7", color: "#15803d" },
-  expense:   { background: "#fee2e2", color: "#991b1b" },
+const typeVariants = {
+  asset: "info",
+  liability: "destructive",
+  equity: "warning",
+  revenue: "success",
+  expense: "neutral",
 };
 
-async function fetchAccounts(): Promise<Account[]> {
-  return fetch("/api/settings/chart-of-accounts").then((response) => response.json());
+async function fetchAccounts(): Promise<{ rows: Account[]; access: CompanyAccessCode | null }> {
+  const response = await fetch("/api/settings/chart-of-accounts");
+  const data = await response.json().catch(() => null);
+  const access = companyAccessCode(data);
+  if (access) return { rows: [], access };
+  if (!response.ok || !Array.isArray(data)) throw new Error("Could not load accounts");
+  return { rows: data, access: null };
 }
 
 export default function ChartOfAccountsPage() {
@@ -34,6 +47,7 @@ export default function ChartOfAccountsPage() {
 
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
+  const [access, setAccess] = useState<CompanyAccessCode | null>(null);
   const [newCode, setNewCode] = useState("");
   const [newName, setNewName] = useState("");
   const [newType, setNewType] = useState("expense");
@@ -42,15 +56,17 @@ export default function ChartOfAccountsPage() {
   const [editData, setEditData] = useState<Partial<Account>>({});
 
   async function load() {
-    const data = await fetchAccounts();
-    setAccounts(data);
+    const result = await fetchAccounts();
+    setAccess(result.access);
+    setAccounts(result.rows);
     setLoading(false);
   }
   useEffect(() => {
     let cancelled = false;
-    void fetchAccounts().then((data) => {
+    void fetchAccounts().then((result) => {
       if (!cancelled) {
-        setAccounts(data);
+        setAccess(result.access);
+        setAccounts(result.rows);
         setLoading(false);
       }
     });
@@ -98,95 +114,78 @@ export default function ChartOfAccountsPage() {
     load();
   }
 
-  if (loading) return <div style={{ color: "#94a3b8" }}>{c.loading}</div>;
+  if (loading) return <LoadingState>{c.loading}</LoadingState>;
+  if (access) return <CompanyAccessState code={access} />;
   const hierarchicalAccounts = flattenAccountHierarchy(accounts);
 
   return (
     <div>
-      <h1 style={{ fontSize: 20, fontWeight: 700, color: "#1e3a5f", marginBottom: 24 }}>{c.title}</h1>
+      <PageHeader><PageTitle>{c.title}</PageTitle></PageHeader>
 
-      <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden", marginBottom: 32 }}>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead>
-            <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
+      <Card className="mb-6 overflow-hidden">
+        {hierarchicalAccounts.length === 0 ? <EmptyState className="border-0">{c.title}</EmptyState> : <Table className="min-w-[820px]">
+          <TableHeader>
+            <TableRow>
               {[c.colCode, c.colName, c.colType, c.colPosting, c.colActive, ""].map((h) => (
-                <th key={h} style={{ padding: "10px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, color: "#64748b", textTransform: "uppercase" }}>{h}</th>
+                <TableHead key={h}>{h}</TableHead>
               ))}
-            </tr>
-          </thead>
-          <tbody>
-            {hierarchicalAccounts.map((a, i) => (
-              <tr key={a.id} style={{ borderBottom: i < hierarchicalAccounts.length - 1 ? "1px solid #f1f5f9" : "none", opacity: a.isActive ? 1 : 0.45, background: a.isPosting ? "#fff" : "#f8fafc", fontWeight: a.isPosting ? 400 : 600 }}>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {hierarchicalAccounts.map((a) => (
+              <TableRow key={a.id} className={`${a.isActive ? "" : "opacity-50"}${a.isPosting ? "" : " bg-[var(--muted)] font-semibold"}`}>
                 {editId === a.id ? (
                   <>
-                    <td style={{ padding: "8px 16px" }}>
-                      <input style={{ ...inputStyle, width: 80 }} value={editData.code ?? a.code} onChange={(e) => setEditData((d) => ({ ...d, code: e.target.value }))} />
-                    </td>
-                    <td style={{ padding: "8px 16px" }}>
-                      <input style={{ ...inputStyle, width: 200, marginLeft: a.depth * 18 }} value={editData.name ?? a.name} onChange={(e) => setEditData((d) => ({ ...d, name: e.target.value }))} />
-                    </td>
-                    <td style={{ padding: "8px 16px" }}>
-                      <select style={inputStyle} value={editData.type ?? a.type} onChange={(e) => setEditData((d) => ({ ...d, type: e.target.value }))}>
+                    <TableCell><Input className="w-24 font-mono" value={editData.code ?? a.code} onChange={(e) => setEditData((d) => ({ ...d, code: e.target.value }))} /></TableCell>
+                    <TableCell><Input className="min-w-52" style={{ marginInlineStart: a.depth * 18 }} value={editData.name ?? a.name} onChange={(e) => setEditData((d) => ({ ...d, name: e.target.value }))} /></TableCell>
+                    <TableCell><Select value={editData.type ?? a.type} onChange={(e) => setEditData((d) => ({ ...d, type: e.target.value }))}>
                         {TYPES.map((type) => <option key={type} value={type}>{typeLabels[type] ?? type}</option>)}
-                      </select>
-                    </td>
-                    <td style={{ padding: "8px 16px" }}>{a.isPosting ? c.posting : c.header}</td>
-                    <td />
-                    <td style={{ padding: "8px 16px", display: "flex", gap: 8 }}>
-                      <button onClick={() => saveEdit(a.id)} style={{ ...inputStyle, background: "#2563eb", color: "#fff", border: "none", cursor: "pointer" }}>{cm.save}</button>
-                      <button onClick={() => setEditId(null)} style={{ ...inputStyle, cursor: "pointer" }}>{cm.cancel}</button>
-                    </td>
+                      </Select></TableCell>
+                    <TableCell>{a.isPosting ? c.posting : c.header}</TableCell><TableCell />
+                    <TableCell><div className="flex gap-2"><Button size="sm" onClick={() => saveEdit(a.id)}>{cm.save}</Button><Button size="sm" variant="secondary" onClick={() => setEditId(null)}>{cm.cancel}</Button></div></TableCell>
                   </>
                 ) : (
                   <>
-                    <td style={{ padding: "10px 16px", fontFamily: "monospace", fontWeight: 600 }}>{a.code}</td>
-                    <td style={{ padding: "10px 16px" }}>
-                      <span style={{ display: "inline-block", paddingLeft: a.depth * 18 }}>{a.name}</span>
-                      {!a.isPosting && <span style={{ marginLeft: 8, padding: "2px 7px", borderRadius: 10, background: "#e2e8f0", color: "#475569", fontSize: 10 }}>{c.nonPostingHeader}</span>}
-                    </td>
-                    <td style={{ padding: "10px 16px" }}>
-                      <span style={{ padding: "2px 8px", borderRadius: 10, fontSize: 11, fontWeight: 600, ...typeColors[a.type] }}>{typeLabels[a.type] ?? a.type}</span>
-                    </td>
-                    <td style={{ padding: "10px 16px" }}>{a.isPosting ? c.postingYes : c.postingNo}</td>
-                    <td style={{ padding: "10px 16px" }}>{a.isActive ? "✓" : "—"}</td>
-                    <td style={{ padding: "10px 16px", display: "flex", gap: 8 }}>
-                      <button onClick={() => { setEditId(a.id); setEditData({}); }} style={{ ...inputStyle, cursor: "pointer", fontSize: 12 }}>{cm.edit}</button>
+                    <TableCell className="font-mono font-semibold">{a.code}</TableCell>
+                    <TableCell><span className="inline-block" style={{ paddingInlineStart: a.depth * 18 }}>{a.name}</span>{!a.isPosting && <Badge className="ms-2" variant="neutral">{c.nonPostingHeader}</Badge>}</TableCell>
+                    <TableCell><Badge variant={(typeVariants[a.type as keyof typeof typeVariants] ?? "neutral") as "info" | "destructive" | "warning" | "success" | "neutral"}>{typeLabels[a.type] ?? a.type}</Badge></TableCell>
+                    <TableCell>{a.isPosting ? c.postingYes : c.postingNo}</TableCell>
+                    <TableCell><Badge variant={a.isActive ? "success" : "neutral"}>{a.isActive ? cm.yes : cm.no}</Badge></TableCell>
+                    <TableCell><div className="flex gap-2"><Button size="sm" variant="secondary" onClick={() => { setEditId(a.id); setEditData({}); }}>{cm.edit}</Button>
                       {a.isActive
-                        ? <button onClick={() => deactivate(a.id)} style={{ ...inputStyle, cursor: "pointer", fontSize: 12, color: "#dc2626" }}>{cm.deactivate}</button>
-                        : <button onClick={() => activate(a.id)} style={{ ...inputStyle, cursor: "pointer", fontSize: 12, color: "#16a34a" }}>{cm.activate}</button>
+                        ? <Button size="sm" variant="ghost" onClick={() => deactivate(a.id)}>{cm.deactivate}</Button>
+                        : <Button size="sm" variant="ghost" onClick={() => activate(a.id)}>{cm.activate}</Button>
                       }
-                    </td>
+                    </div></TableCell>
                   </>
                 )}
-              </tr>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
-      </div>
+          </TableBody>
+        </Table>}
+      </Card>
 
-      <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: 20 }}>
-        <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 16, color: "#374151" }}>{c.addAccount}</h2>
-        <form onSubmit={addAccount} style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
-          <div>
-            <label style={{ display: "block", fontSize: 11, color: "#64748b", marginBottom: 3 }}>{c.colCode}</label>
-            <input style={{ ...inputStyle, width: 80 }} value={newCode} onChange={(e) => setNewCode(e.target.value)} required placeholder={c.codePlaceholder} />
+      <Card>
+        <CardHeader><CardTitle>{c.addAccount}</CardTitle></CardHeader>
+        <CardContent><form onSubmit={addAccount} className="ui-inline-form">
+          <div className="w-28">
+            <label className="ui-label">{c.colCode}</label>
+            <Input value={newCode} onChange={(e) => setNewCode(e.target.value)} required placeholder={c.codePlaceholder} />
           </div>
-          <div>
-            <label style={{ display: "block", fontSize: 11, color: "#64748b", marginBottom: 3 }}>{c.colName}</label>
-            <input style={{ ...inputStyle, width: 220 }} value={newName} onChange={(e) => setNewName(e.target.value)} required placeholder={c.namePlaceholder} />
+          <div className="min-w-56 flex-1">
+            <label className="ui-label">{c.colName}</label>
+            <Input value={newName} onChange={(e) => setNewName(e.target.value)} required placeholder={c.namePlaceholder} />
           </div>
-          <div>
-            <label style={{ display: "block", fontSize: 11, color: "#64748b", marginBottom: 3 }}>{c.colType}</label>
-            <select style={inputStyle} value={newType} onChange={(e) => setNewType(e.target.value)}>
+          <div className="min-w-40">
+            <label className="ui-label">{c.colType}</label>
+            <Select value={newType} onChange={(e) => setNewType(e.target.value)}>
               {TYPES.map((type) => <option key={type} value={type}>{typeLabels[type] ?? type}</option>)}
-            </select>
+            </Select>
           </div>
-          <button type="submit" style={{ ...inputStyle, background: "#2563eb", color: "#fff", border: "none", cursor: "pointer", fontWeight: 600 }}>
-            {c.addAccount}
-          </button>
+          <Button type="submit">{c.addAccount}</Button>
         </form>
-        {addError && <div style={{ marginTop: 8, color: "#dc2626", fontSize: 13 }}>{addError}</div>}
-      </div>
+        {addError && <Alert tone="error" className="mt-3">{addError}</Alert>}</CardContent>
+      </Card>
     </div>
   );
 }

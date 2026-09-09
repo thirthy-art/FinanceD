@@ -10,24 +10,22 @@ import { resolveLocale, getMessages } from "@/src/i18n/index";
 import { LOCALE_COOKIE } from "@/src/i18n/types";
 import NewInvoiceUploadButton from "@/src/components/NewInvoiceUploadButton";
 import InvoicePaymentFilter from "@/src/components/InvoicePaymentFilter";
+import { ChevronRight } from "lucide-react";
+import { Button } from "@/src/components/ui/button";
+import { PageTitle } from "@/src/components/ui/page";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/src/components/ui/table";
+import styles from "./invoice-list.module.css";
 
 export const dynamic = "force-dynamic";
 
 function statusBadge(status: string, t: { statusApproved: string; statusDraft: string }) {
   const label = status === "approved" ? t.statusApproved : t.statusDraft;
-  const style: React.CSSProperties =
-    status === "approved"
-      ? { background: "#dcfce7", color: "#166534", padding: "2px 10px", borderRadius: 12, fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }
-      : { background: "#fef9c3", color: "#713f12", padding: "2px 10px", borderRadius: 12, fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" };
-  return <span style={style}>{label}</span>;
+  return <span className={`${styles.workflow} ${status === "approved" ? styles.approved : ""}`}>{label}</span>;
 }
 
 function paymentStatusBadge(status: "Paid" | "Unpaid", t: { statusPaid: string; statusUnpaid: string }) {
   const paid = status === "Paid";
-  const style: React.CSSProperties = paid
-    ? { background: "#dcfce7", color: "#166534", padding: "2px 10px", borderRadius: 12, fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }
-    : { background: "#fee2e2", color: "#991b1b", padding: "2px 10px", borderRadius: 12, fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" };
-  return <span style={style}>{paid ? t.statusPaid : t.statusUnpaid}</span>;
+  return <span className={`${styles.payment} ${paid ? styles.paid : ""}`}>{paid ? t.statusPaid : t.statusUnpaid}</span>;
 }
 
 export default async function Home({
@@ -82,148 +80,121 @@ export default async function Home({
   }
 
   return (
-    <div>
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-        <h1 style={{ fontSize: 22, fontWeight: 700, color: "#1e3a5f" }}>{t.title}</h1>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-          <form action="/api/invoices/export" method="get">
-            <button
-              type="submit"
-              style={{ border: "1px solid #cbd5e1", color: "#334155", background: "#fff", padding: "8px 18px", borderRadius: 6, fontSize: 14, fontWeight: 600, cursor: "pointer" }}
-            >
-              {t.exportInvoices}
-            </button>
+    <div className={styles.page}>
+      <header className={styles.header}>
+        <PageTitle>{t.title}</PageTitle>
+        <NewInvoiceUploadButton label={t.newInvoice} />
+      </header>
+
+      <section className={styles.results} aria-label={t.title}>
+        <div className={styles.toolbar}>
+          <InvoicePaymentFilter
+            label={t.paymentFilterLabel}
+            allLabel={t.paymentFilterAll}
+            unpaidLabel={common.statusUnpaid}
+            paidLabel={common.statusPaid}
+            value={paymentFilter}
+          />
+          <form action="/api/invoices/export" method="get" className={styles.export}>
+            <Button type="submit" variant="secondary" size="sm" aria-label={t.exportAllDescription}>
+              {t.exportAll} · <bdi>XLSX</bdi>
+            </Button>
           </form>
-          <NewInvoiceUploadButton label={t.newInvoice} />
         </div>
-      </div>
 
-      <div className="invoice-payment-filter-row">
-        <InvoicePaymentFilter
-          label={t.paymentFilterLabel}
-          allLabel={t.paymentFilterAll}
-          unpaidLabel={common.statusUnpaid}
-          paidLabel={common.statusPaid}
-          value={paymentFilter}
-        />
-      </div>
+        {deleted === "1" && (
+          <div className={`${styles.notice} ui-alert ui-alert-success`} role="status">
+            {t.deleted}
+          </div>
+        )}
 
-      {deleted === "1" && (
-        <div style={{ marginBottom: 16, padding: "10px 14px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 6, color: "#166534", fontSize: 14 }}>
-          {t.deleted}
-        </div>
-      )}
-
-      {!hasAnyInvoices ? (
-        <div
-          style={{
-            background: "#fff",
-            border: "1px solid #e2e8f0",
-            borderRadius: 8,
-            padding: "48px 24px",
-            textAlign: "center",
-            color: "#718096",
-          }}
-        >
-          <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>{t.noInvoicesTitle}</div>
-          <div style={{ marginBottom: 20 }}>{t.noInvoicesDesc}</div>
-          <NewInvoiceUploadButton label={t.uploadInvoice} />
-        </div>
-      ) : rows.length === 0 ? (
-        <div className="invoice-list-filter-empty">{t.noFilterResults}</div>
-      ) : (
-        <>
-          <div className="invoice-list-desktop" style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
-                {[t.colNum, t.colVendor, t.colInvoiceNo, t.colDate, t.colAmount, t.colStatus, ""].map((h, idx) => (
-                  <th
-                    key={idx}
-                    style={{
-                      padding: "10px 16px",
-                      textAlign: "left",
-                      fontSize: 12,
-                      fontWeight: 600,
-                      color: "#64748b",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.05em",
-                    }}
-                  >
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((inv, i) => (
-                <tr
-                  key={inv.id}
-                  style={{ borderBottom: i < rows.length - 1 ? "1px solid #f1f5f9" : "none" }}
-                >
-                  <td style={{ padding: "12px 16px", color: "#94a3b8", fontSize: 12 }}>{inv.id}</td>
-                  <td style={{ padding: "12px 16px", fontWeight: 500 }}>{inv.vendorName ?? <span style={{ color: "#94a3b8" }}>{common.none}</span>}</td>
-                  <td style={{ padding: "12px 16px" }}>{inv.invoiceNumber ?? <span style={{ color: "#94a3b8" }}>{common.none}</span>}</td>
-                  <td style={{ padding: "12px 16px", color: "#64748b" }}>{inv.invoiceDate ?? common.none}</td>
-                  <td style={{ padding: "12px 16px", fontWeight: 600 }}>
-                    {inv.grossAmount
-                      ? `${inv.currency} ${formatDisplayAmount(inv.grossAmount, inv.currencyType)}`
-                      : common.none}
-                  </td>
-                  <td style={{ padding: "12px 16px" }}>
-                    <div className="invoice-list-status-badges">
-                      {statusBadge(inv.status, common)}
+        {!hasAnyInvoices ? (
+          <div className={styles.empty}>
+            <div className="mb-2 text-base font-semibold text-[var(--heading)]">{t.noInvoicesTitle}</div>
+            <div className="mb-5">{t.noInvoicesDesc}</div>
+            <NewInvoiceUploadButton label={t.uploadInvoice} />
+          </div>
+        ) : rows.length === 0 ? (
+          <div className={styles.empty}>{t.noFilterResults}</div>
+        ) : (
+          <>
+            <div className={styles.desktop}>
+              <Table className={styles.table}>
+                <colgroup>
+                  <col className={styles.identityColumn} />
+                  <col className={styles.dateColumn} />
+                  <col className={styles.workflowColumn} />
+                  <col className={styles.amountColumn} />
+                  <col className={styles.actionColumn} />
+                </colgroup>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead scope="col">{t.colInvoice}</TableHead>
+                    <TableHead scope="col">{t.colDate}</TableHead>
+                    <TableHead scope="col">{t.colWorkflow}</TableHead>
+                    <TableHead scope="col" className={styles.amountHeading}>{t.colAmount} / {t.paymentFilterLabel}</TableHead>
+                    <TableHead scope="col"><span className="sr-only">{t.review}</span></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {rows.map((inv) => (
+                    <TableRow key={inv.id}>
+                      <TableCell>
+                        <Link href={`/invoices/${inv.id}`} className={styles.identity}>
+                          <span className="sr-only">{t.review}: </span>
+                          <span className={styles.vendor}><bdi>{inv.vendorName ?? common.none}</bdi></span>
+                          <span className={styles.reference}>
+                            <bdi>{inv.invoiceNumber ?? common.none}</bdi>
+                            <bdi className={styles.id}>#{inv.id}</bdi>
+                          </span>
+                        </Link>
+                      </TableCell>
+                      <TableCell className={styles.date}><bdi>{inv.invoiceDate ?? common.none}</bdi></TableCell>
+                      <TableCell>{statusBadge(inv.status, common)}</TableCell>
+                      <TableCell>
+                        <div className={styles.money}>
+                          <span className={styles.amount} dir="ltr">
+                            {inv.grossAmount ? <><span className={styles.currency}>{inv.currency}</span>{" "}{formatDisplayAmount(inv.grossAmount, inv.currencyType)}</> : common.none}
+                          </span>
+                          {paymentStatusBadge(inv.paymentStatus, common)}
+                        </div>
+                      </TableCell>
+                      <TableCell className={styles.actionCell}>
+                        <Link href={`/invoices/${inv.id}`} className={styles.review} aria-label={`${t.review}: ${inv.vendorName ?? common.none}, ${inv.invoiceNumber ?? common.none}, #${inv.id}`}>
+                          <ChevronRight size={16} aria-hidden="true" />
+                        </Link>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+            <div className={styles.mobile}>
+              {rows.map((inv) => (
+                <article key={inv.id}>
+                  <Link className={styles.mobileRow} href={`/invoices/${inv.id}`}>
+                    <span className="sr-only">{t.review}: </span>
+                    <span className={styles.mobileIdentity}>
+                      <span className={styles.vendor}><bdi>{inv.vendorName ?? common.none}</bdi></span>
+                      <span className={styles.reference}><bdi>{inv.invoiceNumber ?? common.none}</bdi><bdi className={styles.id}>#{inv.id}</bdi></span>
+                    </span>
+                    <span className={styles.money}>
+                      <span className={styles.amount} dir="ltr">
+                        {inv.grossAmount ? <><span className={styles.currency}>{inv.currency}</span>{" "}{formatDisplayAmount(inv.grossAmount, inv.currencyType)}</> : common.none}
+                      </span>
+                      <span className="sr-only">{t.paymentFilterLabel}: </span>
                       {paymentStatusBadge(inv.paymentStatus, common)}
-                    </div>
-                  </td>
-                  <td style={{ padding: "12px 16px" }}>
-                    <Link
-                      href={`/invoices/${inv.id}`}
-                      style={{ color: "#2563eb", textDecoration: "none", fontWeight: 500, fontSize: 13 }}
-                    >
-                      {t.review}
-                    </Link>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-            </table>
-          </div>
-          <div className="invoice-list-mobile">
-            {rows.map((inv) => (
-              <article className="invoice-list-card" key={inv.id}>
-                <div className="invoice-list-card-header">
-                  <div className="invoice-list-card-vendor">
-                    {inv.vendorName ?? <span className="invoice-list-card-none">{common.none}</span>}
-                  </div>
-                  <div className="invoice-list-status-badges invoice-list-card-status">
-                    {statusBadge(inv.status, common)}
-                    {paymentStatusBadge(inv.paymentStatus, common)}
-                  </div>
-                </div>
-                <div className="invoice-list-card-details">
-                  <span className="invoice-list-card-invoice-number">
-                    {inv.invoiceNumber ?? <span className="invoice-list-card-none">{common.none}</span>}
-                  </span>
-                  <span aria-hidden="true">·</span>
-                  <span>{inv.invoiceDate ?? common.none}</span>
-                </div>
-                <div className="invoice-list-card-summary">
-                  <div className="invoice-list-card-amount">
-                    {inv.grossAmount
-                      ? `${inv.currency} ${formatDisplayAmount(inv.grossAmount, inv.currencyType)}`
-                      : common.none}
-                  </div>
-                  <Link className="invoice-list-card-review" href={`/invoices/${inv.id}`}>
-                    {t.review}
+                    </span>
+                    <span className={styles.date}><span className="sr-only">{t.colDate}: </span><bdi>{inv.invoiceDate ?? common.none}</bdi></span>
+                    <span className={styles.mobileWorkflow}><span>{t.colWorkflow}: </span>{statusBadge(inv.status, common)}</span>
+                    <ChevronRight className={styles.mobileChevron} size={16} aria-hidden="true" />
                   </Link>
-                </div>
-                <div className="invoice-list-card-id">#{inv.id}</div>
-              </article>
-            ))}
-          </div>
-        </>
-      )}
+                </article>
+              ))}
+            </div>
+          </>
+        )}
+      </section>
     </div>
   );
 }

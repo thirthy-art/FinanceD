@@ -16,6 +16,7 @@ export const ru: Messages = {
   },
   companySwitcher: {
     selectCompany: "Выберите компанию",
+    noCompanyAssigned: "Компания не назначена",
     createCompany: "Создать компанию",
     companyName: "Название компании",
     baseCurrency: "Базовая валюта",
@@ -24,7 +25,16 @@ export const ru: Messages = {
     couldNotLoad: "Не удалось загрузить компании",
     couldNotSwitch: "Не удалось сменить компанию",
     couldNotCreate: "Не удалось создать компанию",
-    selectAbove: "Выберите или создайте компанию выше, чтобы продолжить.",
+    selectAbove: "Выберите назначенную компанию выше или попросите оператора предоставить доступ.",
+  },
+  auth: {
+    signInTitle: "Вход в FinanceD",
+    signInDescription: "Используйте одобренную учётную запись Google или Microsoft.",
+    signInGoogle: "Продолжить с Google",
+    signInMicrosoft: "Продолжить с Microsoft",
+    noProviders: "Провайдер входа не настроен. Обратитесь к оператору.",
+    signedInAs: "Выполнен вход",
+    signOut: "Выйти",
   },
   common: {
     loading: "Загрузка…",
@@ -55,6 +65,10 @@ export const ru: Messages = {
   invoiceList: {
     title: "Счета поставщиков",
     exportInvoices: "Экспорт счетов",
+    exportAll: "Экспорт всех",
+    exportAllDescription: "Экспорт всех счетов компании и их строк в XLSX независимо от фильтра оплаты",
+    colInvoice: "Счёт",
+    colWorkflow: "Обработка",
     newInvoice: "+ Новый счёт",
     deleted: "Черновик счёта удалён.",
     noInvoicesTitle: "Счетов пока нет",
@@ -455,7 +469,7 @@ export const ru: Messages = {
   },
   aiSettings: {
     title: "Настройки провайдеров ИИ",
-    description: "Настройте фиксированную цепочку провайдеров извлечения для этого развертывания FinanceD.",
+    description: "Настройте цепочку провайдеров извлечения для активной компании.",
     adminAccessTitle: "Административный доступ к настройкам ИИ",
     adminAccessDescription: "Введите секрет администратора развертывания для управления провайдерами ИИ.",
     adminSecret: "СЕКРЕТ АДМИНИСТРАТОРА",

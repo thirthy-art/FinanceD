@@ -20,6 +20,7 @@ export interface Messages {
   };
   companySwitcher: {
     selectCompany: string;
+    noCompanyAssigned: string;
     createCompany: string;
     companyName: string;
     baseCurrency: string;
@@ -29,6 +30,15 @@ export interface Messages {
     couldNotSwitch: string;
     couldNotCreate: string;
     selectAbove: string;
+  };
+  auth: {
+    signInTitle: string;
+    signInDescription: string;
+    signInGoogle: string;
+    signInMicrosoft: string;
+    noProviders: string;
+    signedInAs: string;
+    signOut: string;
   };
   common: {
     loading: string;
@@ -59,6 +69,10 @@ export interface Messages {
   invoiceList: {
     title: string;
     exportInvoices: string;
+    exportAll: string;
+    exportAllDescription: string;
+    colInvoice: string;
+    colWorkflow: string;
     newInvoice: string;
     deleted: string;
     noInvoicesTitle: string;

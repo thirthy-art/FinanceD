@@ -1,6 +1,7 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import styles from "@/app/invoice-list.module.css";
 
 type PaymentFilterValue = "all" | "unpaid" | "paid";
 
@@ -34,17 +35,15 @@ export default function InvoicePaymentFilter({
   }
 
   return (
-    <label className="invoice-payment-filter">
-      <span>{label}:</span>
-      <select
-        aria-label={label}
-        value={value}
-        onChange={(event) => updatePaymentFilter(event.target.value as PaymentFilterValue)}
-      >
-        <option value="all">{allLabel}</option>
-        <option value="unpaid">{unpaidLabel}</option>
-        <option value="paid">{paidLabel}</option>
-      </select>
-    </label>
+    <div className={styles.filter}>
+      <span className={styles.filterLabel}>{label}</span>
+      <div className={styles.segments} role="group" aria-label={label}>
+        {([ ["all", allLabel], ["unpaid", unpaidLabel], ["paid", paidLabel] ] as const).map(([option, text]) => (
+          <button key={option} type="button" aria-pressed={value === option} onClick={() => updatePaymentFilter(option)}>
+            {text}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }

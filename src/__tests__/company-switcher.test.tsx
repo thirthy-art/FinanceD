@@ -1,7 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import CompanySwitcher, {
-  createCompany,
   resolveDisplayedCompany,
   switchActiveCompany,
 } from "@/src/components/CompanySwitcher";
@@ -77,26 +76,11 @@ describe("CompanySwitcher requests", () => {
     expect(markup).toContain("Could not switch company");
   });
 
-  it("creates a company with a trimmed name and uppercase currency, then hard reloads", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(response());
-    const reload = vi.fn();
-
-    await createCompany("  Real Company  ", " eur ", fetchMock, reload);
-
-    expect(fetchMock).toHaveBeenCalledWith("/api/companies", expect.objectContaining({
-      method: "POST",
-      body: JSON.stringify({ name: "Real Company", baseCurrency: "EUR" }),
-    }));
-    expect(reload).toHaveBeenCalledOnce();
-  });
-
-  it("preserves the page without a reload when company creation fails", async () => {
-    const reload = vi.fn();
-    await expect(createCompany("Real Company", "EUR", vi.fn().mockResolvedValue(response(false)), reload)).rejects.toThrow();
-    expect(reload).not.toHaveBeenCalled();
+  it("shows the no-company-assigned state without a creation control", () => {
     const markup = renderToStaticMarkup(
-      <CompanySwitcher initialData={{ companies, activeCompanyId: 2 }} initialActionError="couldNotCreate" />,
+      <CompanySwitcher initialData={{ companies: [], activeCompanyId: null }} />,
     );
-    expect(markup).toContain("Could not create company");
+    expect(markup).toContain("No company assigned");
+    expect(markup).not.toContain("Create company");
   });
 });

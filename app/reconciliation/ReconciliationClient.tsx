@@ -14,6 +14,10 @@ import {
   displayedRunPairLabel,
   shouldShowStaleResultsWarning,
 } from "./result-ownership";
+import { Badge } from "@/src/components/ui/badge";
+import { Button } from "@/src/components/ui/button";
+import { Alert, EmptyState } from "@/src/components/ui/feedback";
+import { PageDescription, PageHeader, PageHeading, PageTitle } from "@/src/components/ui/page";
 
 const ACCEPT = ".csv,.xlsx";
 
@@ -23,12 +27,6 @@ function formatMoney(amount: string, currency: string): string {
   } catch {
     return `${currency} ${amount}`;
   }
-}
-
-function statusStyle(matchStatus: string) {
-  if (matchStatus === "matched") return { background: "#dcfce7", color: "#166534" };
-  if (matchStatus === "ambiguous") return { background: "#fef9c3", color: "#713f12" };
-  return { background: "#f1f5f9", color: "#64748b" };
 }
 
 export default function ReconciliationClient({
@@ -137,14 +135,14 @@ export default function ReconciliationClient({
   );
 
   return (
-    <div>
-      <nav style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 18 }}>
-        <span style={{ padding: "8px 12px", borderRadius: 6, fontSize: 13, fontWeight: 600, color: "#fff", background: "#1e3a5f" }}>{messages.paymentAccounts.topClientFunds}</span>
-        <Link href="/reconciliation/payment-accounts" style={{ padding: "8px 12px", borderRadius: 6, fontSize: 13, fontWeight: 600, color: "#334155", background: "#fff", border: "1px solid #cbd5e1", textDecoration: "none" }}>{messages.paymentAccounts.topPayments}</Link>
+    <div className="reconciliation-page">
+      <nav className="business-section-nav">
+        <span className="ui-button">{messages.paymentAccounts.topClientFunds}</span>
+        <Link href="/reconciliation/payment-accounts" className="ui-button ui-button-secondary">{messages.paymentAccounts.topPayments}</Link>
       </nav>
       <Header t={t} />
 
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginBottom: 24 }}>
+      <div className="reconciliation-upload-grid">
         <UploadCard
           title={t.importLedgerTitle}
           desc={t.importLedgerDesc}
@@ -154,10 +152,10 @@ export default function ReconciliationClient({
           loading={uploadingSource === "player_ledger"}
           onFile={(f) => handleFile("player_ledger", f)}
         />
-        <div style={{ flex: "1 1 260px", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "16px 18px" }}>
-          <div style={{ fontSize: 14, fontWeight: 600, color: "#1e3a5f", marginBottom: 4 }}>{t.importPspTitle}</div>
-          <div style={{ fontSize: 12, color: "#64748b", marginBottom: 12 }}>{t.importPspDesc}</div>
-          <Link href="/reconciliation/payment-accounts" style={{ display: "inline-block", padding: "8px 14px", borderRadius: 6, fontSize: 13, fontWeight: 600, background: hasPsp ? "#dcfce7" : "#eff6ff", color: hasPsp ? "#166534" : "#1e40af", textDecoration: "none" }}>
+        <div className="reconciliation-upload-card ui-card">
+          <div className="business-card-title">{t.importPspTitle}</div>
+          <div className="business-page-copy">{t.importPspDesc}</div>
+          <Link href="/reconciliation/payment-accounts" className="ui-button ui-button-secondary">
             {hasPsp ? t.importPspDone : t.importPspButton}
           </Link>
         </div>
@@ -165,7 +163,7 @@ export default function ReconciliationClient({
 
       <section style={{ marginBottom: 24 }}>
         <SectionLabel>{t.runTitle}</SectionLabel>
-        <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: 16 }}>
+        <div className="ui-card reconciliation-run-card">
           <div style={{ marginBottom: 14 }}>
             <p style={{ margin: 0, fontSize: 13, color: "#475569" }}>{t.runDescription}</p>
             {(!hasLedger || !hasPsp) && (
@@ -185,31 +183,19 @@ export default function ReconciliationClient({
               value={pspImportId}
               onChange={setPspImportId}
             />
-            <button
+            <Button
               type="button"
               onClick={handleRun}
               disabled={running || playerLedgerImportId === null || pspImportId === null}
-              style={{
-                background: playerLedgerImportId !== null && pspImportId !== null ? "#1e3a5f" : "#cbd5e1",
-                color: playerLedgerImportId !== null && pspImportId !== null ? "#fff" : "#64748b",
-                padding: "10px 18px",
-                border: "none",
-                borderRadius: 6,
-                fontSize: 14,
-                fontWeight: 600,
-                cursor: playerLedgerImportId !== null && pspImportId !== null ? "pointer" : "not-allowed",
-              }}
             >
               {running ? t.running : t.runButton}
-            </button>
+            </Button>
           </div>
         </div>
       </section>
 
       {error && (
-        <div style={{ background: "#fee2e2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 6, padding: "10px 14px", fontSize: 13, marginBottom: 16 }}>
-          {error}
-        </div>
+        <Alert tone="error" className="mb-4">{error}</Alert>
       )}
 
       {displayedRun && (
@@ -228,20 +214,7 @@ export default function ReconciliationClient({
             <span>{displayedRunPairLabel(displayedRun)}</span>
           </div>
           {showStaleResultsWarning && (
-            <div
-              role="status"
-              style={{
-                background: "#fffbeb",
-                border: "1px solid #fde68a",
-                borderRadius: 8,
-                color: "#92400e",
-                fontSize: 13,
-                marginTop: 8,
-                padding: "10px 14px",
-              }}
-            >
-              {t.selectedImportsNotReconciled}
-            </div>
+            <Alert tone="warning" className="mt-2">{t.selectedImportsNotReconciled}</Alert>
           )}
         </section>
       )}
@@ -286,10 +259,10 @@ export default function ReconciliationClient({
         </div>
 
         {transactions.length === 0 ? (
-          <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "40px 24px", textAlign: "center", color: "#94a3b8" }}>
+          <EmptyState>
             <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>{t.noDataTitle}</div>
             <div style={{ fontSize: 13 }}>{t.noDataDesc}</div>
-          </div>
+          </EmptyState>
         ) : (
           <TransactionTable
             t={t}
@@ -302,9 +275,7 @@ export default function ReconciliationClient({
       <section style={{ marginTop: 28 }}>
         <SectionLabel>{t.uploadsHeading}</SectionLabel>
         {imports.length === 0 ? (
-          <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "16px", color: "#94a3b8", fontSize: 13 }}>
-            {t.uploadsEmpty}
-          </div>
+          <EmptyState className="py-6">{t.uploadsEmpty}</EmptyState>
         ) : (
           <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden" }}>
             {imports.map((imp) => (
@@ -325,17 +296,13 @@ export default function ReconciliationClient({
 
 function Header({ t }: { t: Messages["reconciliation"] }) {
   return (
-    <div style={{ marginBottom: 24 }}>
-      <h1 style={{ fontSize: 22, fontWeight: 700, color: "#1e3a5f", margin: 0 }}>{t.title}</h1>
-      <p style={{ margin: "6px 0 0", color: "#64748b", fontSize: 13 }}>{t.subtitle}</p>
-      <p style={{ margin: "8px 0 0", color: "#d97706", fontSize: 12, maxWidth: 720 }}>⚠️ {t.disclaimer}</p>
-    </div>
+    <><PageHeader><PageHeading><PageTitle>{t.title}</PageTitle><PageDescription>{t.subtitle}</PageDescription></PageHeading></PageHeader><Alert tone="warning" className="mb-6 max-w-3xl">⚠️ {t.disclaimer}</Alert></>
   );
 }
 
 function SectionLabel({ children }: { children: ReactNode }) {
   return (
-    <div style={{ fontSize: 13, fontWeight: 600, color: "#64748b", marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+    <div className="invoice-section-kicker mb-2">
       {children}
     </div>
   );
@@ -343,8 +310,8 @@ function SectionLabel({ children }: { children: ReactNode }) {
 
 function SummaryCard({ label, value, accent }: { label: string; value: string; accent?: string }) {
   return (
-    <div style={{ flex: "1 1 150px", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "14px 16px", minWidth: 0 }}>
-      <div style={{ fontSize: 11, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>
+    <div className="reconciliation-summary-card">
+      <div className="cash-flow-summary-label">
         {label}
       </div>
       <div style={{ fontSize: 18, fontWeight: 700, color: accent ?? "#1e3a5f", lineHeight: 1.2 }}>{value}</div>
@@ -371,9 +338,9 @@ function UploadCard({
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   return (
-    <div style={{ flex: "1 1 260px", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "16px 18px" }}>
-      <div style={{ fontSize: 14, fontWeight: 600, color: "#1e3a5f", marginBottom: 4 }}>{title}</div>
-      <div style={{ fontSize: 12, color: "#64748b", marginBottom: 12 }}>{desc}</div>
+    <div className="reconciliation-upload-card ui-card">
+      <div className="business-card-title">{title}</div>
+      <div className="business-page-copy">{desc}</div>
       <input
         ref={inputRef}
         type="file"
@@ -386,45 +353,27 @@ function UploadCard({
           if (file) onFile(file);
         }}
       />
-      <button
+      <Button
         type="button"
         onClick={() => inputRef.current?.click()}
         disabled={loading}
-        style={{
-          padding: "8px 14px",
-          borderRadius: 6,
-          fontSize: 13,
-          fontWeight: 600,
-          cursor: loading ? "wait" : "pointer",
-          background: loading ? "#e2e8f0" : loaded ? "#dcfce7" : "#eff6ff",
-          color: loading ? "#64748b" : loaded ? "#166534" : "#1e40af",
-          border: "none",
-        }}
+        variant={loaded ? "secondary" : "default"}
       >
         {loading ? "…" : loaded ? doneLabel : buttonLabel}
-      </button>
+      </Button>
     </div>
   );
 }
 
 function TabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
   return (
-    <button
+    <Button
       type="button"
       onClick={onClick}
-      style={{
-        padding: "8px 16px",
-        borderRadius: 6,
-        fontSize: 13,
-        fontWeight: 600,
-        border: active ? "1px solid #1e3a5f" : "1px solid #cbd5e1",
-        background: active ? "#1e3a5f" : "#fff",
-        color: active ? "#fff" : "#334155",
-        cursor: "pointer",
-      }}
+      variant={active ? "default" : "secondary"}
     >
       {children}
-    </button>
+    </Button>
   );
 }
 
@@ -442,8 +391,8 @@ function TransactionTable({
     <>
       {/* Desktop table */}
       <div className="cf-table-desktop" style={{ display: "none" }}>
-        <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, overflow: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720 }}>
+        <div className="ui-table-shell ui-table-scroll">
+          <table className="ui-table" style={{ minWidth: 720 }}>
             <thead>
               <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
                 {[t.colReference, t.colPlayerId, t.colType, t.colAmount, t.colCurrency, t.colDate, t.colStatus, t.matchStatus].map((h) => (
@@ -488,9 +437,7 @@ function TransactionTable({
               {tx.status && <span>{t.colStatus}: {tx.status}</span>}
             </div>
             <div style={{ marginTop: 6, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-              <span style={{ ...statusStyle(tx.matchStatus), padding: "2px 8px", borderRadius: 10, fontSize: 11, fontWeight: 600 }}>
-                {tx.matchStatus}
-              </span>
+              <Badge variant={tx.matchStatus === "matched" ? "success" : tx.matchStatus === "ambiguous" ? "warning" : "neutral"}>{tx.matchStatus}</Badge>
               <MatchCell t={t} tx={tx} transactionById={transactionById} isLedger={isLedger} />
             </div>
           </div>
@@ -539,22 +486,13 @@ function ImportSelect({
   onChange: (value: number | null) => void;
 }) {
   return (
-    <label style={{ flex: "1 1 280px", minWidth: 0, fontSize: 12, color: "#475569" }}>
-      <span style={{ display: "block", fontWeight: 600, marginBottom: 6 }}>{label}</span>
+    <label className="reconciliation-import-select">
+      <span className="ui-label">{label}</span>
       <select
         value={value ?? ""}
         onChange={(event) => onChange(event.target.value === "" ? null : Number(event.target.value))}
         disabled={imports.length === 0}
-        style={{
-          width: "100%",
-          minWidth: 0,
-          padding: "9px 10px",
-          border: "1px solid #cbd5e1",
-          borderRadius: 6,
-          background: imports.length === 0 ? "#f1f5f9" : "#fff",
-          color: "#334155",
-          fontSize: 13,
-        }}
+        className="ui-input"
       >
         {imports.length === 0 && <option value="">—</option>}
         {imports.map((entry) => (

@@ -57,12 +57,12 @@ const CURRENCIES = ["EUR", "USD", "GBP", "CHF", "CAD", "AUD", "JPY", "SEK", "NOK
 
 function field(label: string, children: React.ReactNode, hint?: string) {
   return (
-    <div style={{ marginBottom: 16 }} className="invoice-field-group">
-      <label className="invoice-field-label" style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#64748b", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+    <div className="invoice-field-group">
+      <label className="invoice-field-label ui-label">
         {label}
       </label>
       {children}
-      {hint && <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 3 }}>{hint}</div>}
+      {hint && <div className="invoice-field-hint">{hint}</div>}
     </div>
   );
 }
@@ -678,7 +678,7 @@ export default function InvoiceReview({ invoice, documents, initialLinesAreDeter
   const invoiceStatusLabel = isApproved ? cm.statusApproved : cm.statusDraft;
 
   return (
-    <div className="invoice-layout">
+    <div className="invoice-layout invoice-review-workspace">
       {/* Narrow-screen: link to open document without the full side panel */}
       {doc && (
         <div className="invoice-doc-link">
@@ -686,19 +686,7 @@ export default function InvoiceReview({ invoice, documents, initialLinesAreDeter
             href={`/api/invoices/${invoice.id}/document`}
             target="_blank"
             rel="noopener noreferrer"
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-              padding: "8px 14px",
-              border: "1px solid #e2e8f0",
-              borderRadius: 6,
-              background: "#fff",
-              color: "#2563eb",
-              fontSize: 13,
-              fontWeight: 500,
-              textDecoration: "none",
-            }}
+            className="ui-button ui-button-secondary"
           >
             📄 {t.invoiceDetail.viewDocument}
           </a>
@@ -706,34 +694,11 @@ export default function InvoiceReview({ invoice, documents, initialLinesAreDeter
       )}
 
       {/* Document preview (wide screens) */}
-      <div
-        className="invoice-doc-panel"
-        style={{
-          background: "#fff",
-          border: "1px solid #e2e8f0",
-          borderRadius: 8,
-          overflow: "hidden",
-          position: "sticky",
-          top: 16,
-          maxHeight: "calc(100vh - 80px)",
-        }}
-      >
-        <div
-          style={{
-            padding: "12px 16px",
-            background: "#f8fafc",
-            borderBottom: "1px solid #e2e8f0",
-            fontSize: 13,
-            fontWeight: 600,
-            color: "#475569",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-          }}
-        >
+      <div className="invoice-doc-panel ui-card">
+        <div className="invoice-doc-panel-header">
           <span>{ir.originalDocument}</span>
           {doc && (
-            <span style={{ fontSize: 11, color: "#94a3b8", fontWeight: 400 }}>
+            <span className="invoice-doc-meta">
               {doc.ocrPerformed ? ir.ocrApplied : ir.textExtracted} · {doc.originalFilename}
             </span>
           )}
@@ -742,7 +707,7 @@ export default function InvoiceReview({ invoice, documents, initialLinesAreDeter
           doc.mimeType === "application/pdf" ? (
             <iframe
               src={`/api/invoices/${invoice.id}/document`}
-              style={{ width: "100%", height: "calc(100vh - 150px)", border: "none" }}
+              className="invoice-document-frame"
               title="Invoice document"
             />
           ) : (
@@ -750,38 +715,29 @@ export default function InvoiceReview({ invoice, documents, initialLinesAreDeter
             <img
               src={`/api/invoices/${invoice.id}/document`}
               alt="Invoice document"
-              style={{ width: "100%", objectFit: "contain", maxHeight: "calc(100vh - 150px)" }}
+              className="invoice-document-image"
             />
           )
         ) : (
-          <div style={{ padding: 40, textAlign: "center", color: "#94a3b8" }}>
+          <div className="ui-empty-state invoice-document-empty">
             {ir.noDocument}
           </div>
         )}
       </div>
 
       {/* Editable fields */}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: 16, marginBottom: 16 }}>
-          <div style={{ fontWeight: 700, color: "#1e3a5f", marginBottom: 5 }}>{ir.aiSectionTitle}</div>
-          <div style={{ fontSize: 13, lineHeight: 1.5, color: "#475569", marginBottom: 12 }}>
+      <div className="invoice-review-editor">
+        <div className="invoice-ai-actions ui-card">
+          <div className="invoice-section-title">{ir.aiSectionTitle}</div>
+          <div className="invoice-section-description">
             {ir.aiSectionDesc}
           </div>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <div className="invoice-action-row">
             <button
               type="button"
               onClick={() => tryAiExtraction()}
               disabled={!doc || extracting}
-              style={{
-                padding: "9px 14px",
-                border: "none",
-                borderRadius: 6,
-                background: !doc || extracting ? "#cbd5e1" : "#2563eb",
-                color: "#fff",
-                cursor: !doc || extracting ? "default" : "pointer",
-                fontSize: 13,
-                fontWeight: 600,
-              }}
+              className="ui-button"
             >
               {extracting ? ir.runningAiExtraction : ir.tryAiExtraction}
             </button>
@@ -790,16 +746,7 @@ export default function InvoiceReview({ invoice, documents, initialLinesAreDeter
                 type="button"
                 onClick={() => tryAiExtraction(true)}
                 disabled={extracting}
-                style={{
-                  padding: "9px 14px",
-                  border: "1px solid #2563eb",
-                  borderRadius: 6,
-                  background: extracting ? "#f1f5f9" : "#fff",
-                  color: extracting ? "#94a3b8" : "#2563eb",
-                  cursor: extracting ? "default" : "pointer",
-                  fontSize: 13,
-                  fontWeight: 600,
-                }}
+                className="ui-button ui-button-secondary"
               >
                 {ir.tryImageAi}
               </button>
@@ -809,7 +756,7 @@ export default function InvoiceReview({ invoice, documents, initialLinesAreDeter
                 type="button"
                 onClick={applyAiExtraction}
                 disabled={applyingExtraction}
-                style={{ padding: "9px 14px", border: "none", borderRadius: 6, background: applyingExtraction ? "#94a3b8" : "#16a34a", color: "#fff", cursor: applyingExtraction ? "default" : "pointer", fontSize: 13, fontWeight: 700 }}
+                className="ui-button invoice-apply-button"
               >
                 {ir.applyAiExtraction}
               </button>
@@ -866,16 +813,10 @@ export default function InvoiceReview({ invoice, documents, initialLinesAreDeter
 
         <div
           className="invoice-details-card"
-          style={{
-            background: "#fff",
-            border: "1px solid #e2e8f0",
-            borderRadius: 8,
-            padding: 24,
-          }}
         >
-          <div className="invoice-details-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-            <h2 style={{ fontSize: 18, fontWeight: 700, color: "#1e3a5f" }}>{ir.invoiceDetails}</h2>
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <div className="invoice-details-header">
+            <h2 className="invoice-details-title">{ir.invoiceDetails}</h2>
+            <div className="invoice-status-row">
               <button
                 type="button"
                 onClick={copyDiagnostics}
@@ -933,11 +874,11 @@ export default function InvoiceReview({ invoice, documents, initialLinesAreDeter
           </div>
 
           {/* Payment status controls */}
-          <div className="invoice-payment-section" style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: 12, marginBottom: 16 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: "#64748b", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+          <div className="invoice-payment-section">
+            <div className="invoice-section-kicker">
               {ir.payment}
             </div>
-            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <div className="invoice-action-row">
               {paymentStatus === "Unpaid" ? (
                 <>
                   <input
@@ -1041,12 +982,12 @@ export default function InvoiceReview({ invoice, documents, initialLinesAreDeter
           )}
 
           {/* Invoice number + date */}
-          <div className="invoice-field-row" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+          <div className="invoice-field-row">
             {field(ir.invoiceNumber, <input style={inputStyle} value={form.invoiceNumber} onChange={set("invoiceNumber")} placeholder="INV-001" />)}
             {field(ir.invoiceDate, <input style={inputStyle} type="date" value={form.invoiceDate} onChange={set("invoiceDate")} />)}
           </div>
 
-          <div className="invoice-field-row" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+          <div className="invoice-field-row">
             {field(ir.dueDate, <input style={inputStyle} type="date" value={form.dueDate} onChange={set("dueDate")} />)}
             {field(
               ir.currency,
@@ -1065,7 +1006,7 @@ export default function InvoiceReview({ invoice, documents, initialLinesAreDeter
             )}
           </div>
 
-          <div className="invoice-field-row" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+          <div className="invoice-field-row">
             {field(
               ir.currencyType,
               <select style={inputStyle} value={form.currencyType} onChange={set("currencyType")}>
@@ -1093,11 +1034,11 @@ export default function InvoiceReview({ invoice, documents, initialLinesAreDeter
           </div>
 
           {/* Amounts */}
-          <div className="invoice-amounts-section" style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: 16, marginBottom: 16 }}>
-            <div className="invoice-section-header" style={{ fontSize: 12, fontWeight: 600, color: "#64748b", marginBottom: 12, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+          <div className="invoice-amounts-section">
+            <div className="invoice-section-header">
               {ir.amountsTitle.replace("{currency}", form.currency)}
             </div>
-            <div className="invoice-amounts-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+            <div className="invoice-amounts-grid">
               <div>
                 <label style={{ display: "block", fontSize: 12, color: "#64748b", marginBottom: 4 }}>{ir.netAmount}</label>
                 <input
@@ -1187,11 +1128,11 @@ export default function InvoiceReview({ invoice, documents, initialLinesAreDeter
 
           {/* Base amounts (read-only) */}
           {showBaseAmounts && (
-            <div className="invoice-base-amounts-section" style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: 16, marginBottom: 16 }}>
-              <div className="invoice-section-header" style={{ fontSize: 12, fontWeight: 600, color: "#0369a1", marginBottom: 12, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+            <div className="invoice-base-amounts-section">
+              <div className="invoice-section-header">
                 {ir.baseAmountsTitle.replace("{currency}", baseCurrency)}
               </div>
-              <div className="invoice-amounts-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+              <div className="invoice-amounts-grid">
                 <div>
                   <label style={{ display: "block", fontSize: 12, color: "#64748b", marginBottom: 4 }}>{ir.baseNet}</label>
                   <input style={readOnlyStyle} value={previewBaseNet ? formatDisplayAmount(previewBaseNet, "fiat") : ""} readOnly />
@@ -1256,7 +1197,7 @@ export default function InvoiceReview({ invoice, documents, initialLinesAreDeter
             </div>
           )}
 
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+          <div className="invoice-footer-actions">
             <button
               onClick={() => save("save")}
               disabled={saving}
@@ -1343,19 +1284,10 @@ export default function InvoiceReview({ invoice, documents, initialLinesAreDeter
           role="dialog"
           aria-modal="true"
           aria-labelledby="delete-invoice-title"
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 100,
-            background: "rgba(15, 23, 42, 0.55)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 20,
-          }}
+          className="ui-dialog-backdrop"
         >
-          <div style={{ width: "100%", maxWidth: 460, background: "#fff", borderRadius: 10, padding: 24, boxShadow: "0 20px 50px rgba(15, 23, 42, 0.25)" }}>
-            <h2 id="delete-invoice-title" style={{ margin: 0, fontSize: 18, color: "#991b1b" }}>{ir.deleteTitle}</h2>
+          <div className="ui-dialog">
+            <h2 id="delete-invoice-title" className="ui-dialog-title ui-dialog-title-danger">{ir.deleteTitle}</h2>
             {form.invoiceNumber && (
               <div style={{ marginTop: 10, fontSize: 14, color: "#475569" }}>{ir.deleteInvoiceNumberLabel} <strong>{form.invoiceNumber}</strong></div>
             )}
@@ -1367,7 +1299,7 @@ export default function InvoiceReview({ invoice, documents, initialLinesAreDeter
                 {deleteError}
               </div>
             )}
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 22 }}>
+            <div className="ui-dialog-actions">
               <button
                 type="button"
                 onClick={() => setDeleteOpen(false)}

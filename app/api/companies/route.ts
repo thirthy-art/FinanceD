@@ -1,23 +1,21 @@
-import { asc } from "drizzle-orm";
 import { NextResponse } from "next/server";
-import { z } from "zod";
-import { getDb } from "@/src/db";
-import { companies } from "@/src/db/schema";
 import {
   activeCompanyIdFromRequest,
-  setActiveCompanyCookie,
+  AuthenticationRequiredError,
+  getAuthorizedCompanies,
 } from "@/src/lib/active-company";
 
-const CreateCompanySchema = z.object({
-  name: z.string().trim().min(1).max(255),
-  baseCurrency: z.string().trim().regex(/^[A-Za-z]{3}$/).transform((value) => value.toUpperCase()),
-});
-
 export async function GET(request: Request) {
-  const rows = await getDb()
-    .select({ id: companies.id, name: companies.name, baseCurrency: companies.baseCurrency })
-    .from(companies)
-    .orderBy(asc(companies.id));
+  let authorized;
+  try {
+    authorized = await getAuthorizedCompanies();
+  } catch (error) {
+    if (error instanceof AuthenticationRequiredError) {
+      return NextResponse.json({ error: error.message, code: error.code }, { status: 401 });
+    }
+    throw error;
+  }
+  const rows = authorized.map(({ id, name, baseCurrency }) => ({ id, name, baseCurrency }));
 
   const requestedId = activeCompanyIdFromRequest(request);
   const selected = requestedId === null ? undefined : rows.find((company) => company.id === requestedId);
@@ -26,21 +24,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
-  }
-
-  const parsed = CreateCompanySchema.safeParse(body);
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
-  }
-
-  const [company] = await getDb()
-    .insert(companies)
-    .values(parsed.data)
-    .returning({ id: companies.id, name: companies.name, baseCurrency: companies.baseCurrency });
-  return setActiveCompanyCookie(NextResponse.json(company, { status: 201 }), company.id);
+  void request;
+  return NextResponse.json(
+    { error: "Company creation is not available in the private beta." },
+    { status: 405, headers: { Allow: "GET" } },
+  );
 }

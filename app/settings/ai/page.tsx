@@ -1,26 +1,24 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import CompanyAccessState, { companyAccessCode, type CompanyAccessCode } from "@/src/components/CompanyAccessState";
+import { Badge } from "@/src/components/ui/badge";
+import { Button } from "@/src/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/card";
+import { Alert, LoadingState } from "@/src/components/ui/feedback";
+import { Input } from "@/src/components/ui/input";
+import { PageDescription, PageHeader, PageHeading, PageTitle } from "@/src/components/ui/page";
 import { useI18n } from "@/src/i18n/context";
-
-const inputStyle: React.CSSProperties = {
-  width: "100%", minHeight: 40, padding: "8px 10px", border: "1px solid #e2e8f0",
-  borderRadius: 6, fontSize: 14, background: "#fff", color: "#1e293b",
-};
 
 type ProviderState = { saving: boolean; testing: boolean; message: "saved" | "connected" | "error" | null };
 const idleState: ProviderState = { saving: false, testing: false, message: null };
-type AdminGate = "none" | "required" | "not-configured";
 
 export default function AiSettingsPage() {
   const { t } = useI18n();
   const a = t.aiSettings;
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
-  const [adminGate, setAdminGate] = useState<AdminGate>("none");
-  const [adminSecret, setAdminSecret] = useState("");
-  const [adminSubmitting, setAdminSubmitting] = useState(false);
-  const [adminError, setAdminError] = useState(false);
+  const [accessCode, setAccessCode] = useState<CompanyAccessCode | null>(null);
   const [mimoModel, setMimoModel] = useState("mimo-v2.5");
   const [mimoKey, setMimoKey] = useState("");
   const [mimoConfigured, setMimoConfigured] = useState(false);
@@ -33,21 +31,11 @@ export default function AiSettingsPage() {
 
   useEffect(() => {
     fetch("/api/settings/ai", { cache: "no-store" })
-      .then(async (response) => {
-        const data = await response.json().catch(() => null);
-        if (response.status === 401) {
-          setAdminGate("required");
-          return null;
-        }
-        if (data?.code === "AI_SETTINGS_ADMIN_NOT_CONFIGURED") {
-          setAdminGate("not-configured");
-          return null;
-        }
+      .then(async (response) => ({ response, data: await response.json().catch(() => null) }))
+      .then(({ response, data }) => {
+        const denied = companyAccessCode(data);
+        if (denied) { setAccessCode(denied); return; }
         if (!response.ok || !data) throw new Error("load failed");
-        return data;
-      })
-      .then((data) => {
-        if (!data) return;
         setMimoModel(data.mimo.model);
         setMimoConfigured(data.mimo.configured);
         setOpenrouterConfigured(data.openRouter.configured);
@@ -58,57 +46,25 @@ export default function AiSettingsPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  async function authorizeAdmin(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setAdminSubmitting(true);
-    setAdminError(false);
-    try {
-      const response = await fetch("/api/settings/ai/auth", {
-        method: "POST",
-        cache: "no-store",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ secret: adminSecret }),
-      });
-      const data = await response.json().catch(() => null);
-      setAdminSecret("");
-      if (response.ok) {
-        window.location.reload();
-        return;
-      }
-      if (data?.code === "AI_SETTINGS_ADMIN_NOT_CONFIGURED") {
-        setAdminGate("not-configured");
-      } else {
-        setAdminError(true);
-      }
-    } catch {
-      setAdminSecret("");
-      setAdminError(true);
-    } finally {
-      setAdminSubmitting(false);
-    }
-  }
-
   async function save(provider: "mimo" | "openrouter") {
     const setState = provider === "mimo" ? setMimoState : setOpenrouterState;
     setState({ saving: true, testing: false, message: null });
     try {
       const response = await fetch("/api/settings/ai", {
-        method: "PATCH",
-        cache: "no-store",
-        headers: { "Content-Type": "application/json" },
+        method: "PATCH", cache: "no-store", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(provider === "mimo"
           ? { provider, model: mimoModel, apiKey: mimoKey }
           : { provider, fallback1Model: fallback1, fallback2Model: fallback2, apiKey: openrouterKey }),
       });
+      const data = await response.json().catch(() => ({}));
+      const denied = companyAccessCode(data);
+      if (denied) { setAccessCode(denied); setState(idleState); return; }
       if (!response.ok) throw new Error("save failed");
-      const data = await response.json();
       setMimoConfigured(data.mimo.configured);
       setOpenrouterConfigured(data.openRouter.configured);
       if (provider === "mimo") setMimoKey(""); else setOpenrouterKey("");
       setState({ saving: false, testing: false, message: "saved" });
-    } catch {
-      setState({ saving: false, testing: false, message: "error" });
-    }
+    } catch { setState({ saving: false, testing: false, message: "error" }); }
   }
 
   async function test(provider: "mimo" | "openrouter") {
@@ -116,99 +72,52 @@ export default function AiSettingsPage() {
     setState({ saving: false, testing: true, message: null });
     try {
       const response = await fetch("/api/settings/ai/test", {
-        method: "POST",
-        cache: "no-store",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          provider,
-          model: provider === "mimo" ? mimoModel : fallback1,
-          apiKey: provider === "mimo" ? mimoKey : openrouterKey,
-        }),
+        method: "POST", cache: "no-store", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider, model: provider === "mimo" ? mimoModel : fallback1, apiKey: provider === "mimo" ? mimoKey : openrouterKey }),
       });
+      const data = await response.json().catch(() => ({}));
+      const denied = companyAccessCode(data);
+      if (denied) { setAccessCode(denied); setState(idleState); return; }
       if (!response.ok) throw new Error("test failed");
       setState({ saving: false, testing: false, message: "connected" });
-    } catch {
-      setState({ saving: false, testing: false, message: "error" });
-    }
+    } catch { setState({ saving: false, testing: false, message: "error" }); }
   }
 
-  if (loading) return <div style={{ color: "#94a3b8" }}>{a.loading}</div>;
-  if (adminGate !== "none") {
-    return (
-      <div style={{ maxWidth: 480 }}>
-        <h1 style={{ fontSize: 20, fontWeight: 700, color: "#1e3a5f", marginBottom: 8 }}>{a.adminAccessTitle}</h1>
-        <p style={{ color: "#64748b", marginBottom: 24 }}>{a.adminAccessDescription}</p>
-        <form onSubmit={authorizeAdmin} style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: 24 }}>
-          <label style={{ display: "block", marginBottom: 18 }}>
-            <span style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#64748b", marginBottom: 4 }}>{a.adminSecret}</span>
-            <input
-              type="password"
-              autoComplete="current-password"
-              spellCheck={false}
-              required
-              disabled={adminGate === "not-configured" || adminSubmitting}
-              style={inputStyle}
-              value={adminSecret}
-              onChange={(event) => setAdminSecret(event.target.value)}
-            />
-          </label>
-          <button
-            type="submit"
-            disabled={adminGate === "not-configured" || adminSubmitting}
-            style={{ minHeight: 40, padding: "8px 16px", border: "none", borderRadius: 6, background: "#2563eb", color: "#fff", fontWeight: 600, cursor: "pointer" }}
-          >
-            {adminSubmitting ? a.authorizing : a.continue}
-          </button>
-          {(adminError || adminGate === "not-configured") && (
-            <p role="alert" style={{ color: "#dc2626", marginTop: 14 }}>
-              {adminGate === "not-configured" ? a.adminNotConfigured : a.adminUnauthorized}
-            </p>
-          )}
-        </form>
-      </div>
-    );
-  }
-  if (loadError) return <div role="alert" style={{ color: "#dc2626" }}>{a.loadError}</div>;
+  if (loading) return <LoadingState>{a.loading}</LoadingState>;
+  if (accessCode) return <CompanyAccessState code={accessCode} />;
+  if (loadError) return <Alert tone="error">{a.loadError}</Alert>;
 
-  function status(state: ProviderState) {
-    if (state.message === "saved") return a.saved;
-    if (state.message === "connected") return a.connected;
-    if (state.message === "error") return a.actionError;
-    return null;
-  }
-
-  const cardStyle: React.CSSProperties = { background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: 24 };
-  const labelStyle: React.CSSProperties = { display: "block", fontSize: 12, fontWeight: 600, color: "#64748b", marginBottom: 4 };
-  const buttonStyle: React.CSSProperties = { minHeight: 40, padding: "8px 16px", border: "none", borderRadius: 6, background: "#2563eb", color: "#fff", fontWeight: 600, cursor: "pointer" };
+  const status = (state: ProviderState) => state.message === "saved" ? a.saved : state.message === "connected" ? a.connected : state.message === "error" ? a.actionError : null;
 
   return (
-    <div style={{ maxWidth: 680 }}>
-      <h1 style={{ fontSize: 20, fontWeight: 700, color: "#1e3a5f", marginBottom: 8 }}>{a.title}</h1>
-      <p style={{ color: "#64748b", marginBottom: 24 }}>{a.description}</p>
-      <div style={{ display: "grid", gap: 20 }}>
-        <section style={cardStyle}>
-          <h2 style={{ fontSize: 17, fontWeight: 700, color: "#1e3a5f", marginBottom: 18 }}>{a.mimoTitle}</h2>
-          <label style={{ display: "block", marginBottom: 16 }}><span style={labelStyle}>{a.model}</span><input style={inputStyle} value={mimoModel} onChange={(e) => setMimoModel(e.target.value)} /></label>
-          <label style={{ display: "block", marginBottom: 18 }}><span style={labelStyle}>{a.apiKey}</span><input type="password" autoComplete="new-password" spellCheck={false} style={inputStyle} value={mimoKey} placeholder={mimoConfigured ? a.configured : ""} onChange={(e) => setMimoKey(e.target.value)} /></label>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
-            <button type="button" style={buttonStyle} disabled={mimoState.saving || mimoState.testing} onClick={() => save("mimo")}>{mimoState.saving ? a.saving : a.save}</button>
-            <button type="button" style={{ ...buttonStyle, background: "#475569" }} disabled={mimoState.saving || mimoState.testing} onClick={() => test("mimo")}>{mimoState.testing ? a.testing : a.testConnection}</button>
-            {status(mimoState) && <span role="status" style={{ color: mimoState.message === "error" ? "#dc2626" : "#16a34a" }}>{status(mimoState)}</span>}
-          </div>
-        </section>
-
-        <section style={cardStyle}>
-          <h2 style={{ fontSize: 17, fontWeight: 700, color: "#1e3a5f", marginBottom: 18 }}>{a.openrouterTitle}</h2>
-          <label style={{ display: "block", marginBottom: 16 }}><span style={labelStyle}>{a.apiKey}</span><input type="password" autoComplete="new-password" spellCheck={false} style={inputStyle} value={openrouterKey} placeholder={openrouterConfigured ? a.configured : ""} onChange={(e) => setOpenrouterKey(e.target.value)} /></label>
-          <label style={{ display: "block", marginBottom: 16 }}><span style={labelStyle}>{a.fallback1}</span><input style={inputStyle} value={fallback1} onChange={(e) => setFallback1(e.target.value)} /></label>
-          <label style={{ display: "block", marginBottom: 18 }}><span style={labelStyle}>{a.fallback2}</span><input style={inputStyle} value={fallback2} placeholder={a.optional} onChange={(e) => setFallback2(e.target.value)} /></label>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
-            <button type="button" style={buttonStyle} disabled={openrouterState.saving || openrouterState.testing} onClick={() => save("openrouter")}>{openrouterState.saving ? a.saving : a.save}</button>
-            <button type="button" style={{ ...buttonStyle, background: "#475569" }} disabled={openrouterState.saving || openrouterState.testing} onClick={() => test("openrouter")}>{openrouterState.testing ? a.testing : a.testConnection}</button>
-            {status(openrouterState) && <span role="status" style={{ color: openrouterState.message === "error" ? "#dc2626" : "#16a34a" }}>{status(openrouterState)}</span>}
-          </div>
-        </section>
+    <div className="max-w-3xl">
+      <PageHeader><PageHeading><PageTitle>{a.title}</PageTitle><PageDescription>{a.description}</PageDescription></PageHeading></PageHeader>
+      <div className="grid gap-4">
+        <ProviderCard title={a.mimoTitle} configured={mimoConfigured} configuredLabel={a.configured}>
+          <Field label={a.model}><Input value={mimoModel} onChange={(event) => setMimoModel(event.target.value)} /></Field>
+          <Field label={a.apiKey}><Input type="password" autoComplete="new-password" spellCheck={false} value={mimoKey} placeholder={mimoConfigured ? a.configured : ""} onChange={(event) => setMimoKey(event.target.value)} /></Field>
+          <ProviderActions state={mimoState} saveLabel={a.save} savingLabel={a.saving} testLabel={a.testConnection} testingLabel={a.testing} onSave={() => save("mimo")} onTest={() => test("mimo")} message={status(mimoState)} />
+        </ProviderCard>
+        <ProviderCard title={a.openrouterTitle} configured={openrouterConfigured} configuredLabel={a.configured}>
+          <Field label={a.apiKey}><Input type="password" autoComplete="new-password" spellCheck={false} value={openrouterKey} placeholder={openrouterConfigured ? a.configured : ""} onChange={(event) => setOpenrouterKey(event.target.value)} /></Field>
+          <Field label={a.fallback1}><Input value={fallback1} onChange={(event) => setFallback1(event.target.value)} /></Field>
+          <Field label={a.fallback2}><Input value={fallback2} placeholder={a.optional} onChange={(event) => setFallback2(event.target.value)} /></Field>
+          <ProviderActions state={openrouterState} saveLabel={a.save} savingLabel={a.saving} testLabel={a.testConnection} testingLabel={a.testing} onSave={() => save("openrouter")} onTest={() => test("openrouter")} message={status(openrouterState)} />
+        </ProviderCard>
       </div>
     </div>
   );
+}
+
+function ProviderCard({ title, configured, configuredLabel, children }: { title: string; configured: boolean; configuredLabel: string; children: ReactNode }) {
+  return <Card><CardHeader className="flex-row items-center justify-between"><CardTitle>{title}</CardTitle>{configured && <Badge variant="success">{configuredLabel}</Badge>}</CardHeader><CardContent className="grid gap-4">{children}</CardContent></Card>;
+}
+
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return <label className="block"><span className="ui-label">{label}</span>{children}</label>;
+}
+
+function ProviderActions({ state, saveLabel, savingLabel, testLabel, testingLabel, onSave, onTest, message }: { state: ProviderState; saveLabel: string; savingLabel: string; testLabel: string; testingLabel: string; onSave: () => void; onTest: () => void; message: string | null }) {
+  const disabled = state.saving || state.testing;
+  return <div className="flex flex-wrap items-center gap-2 pt-1"><Button type="button" disabled={disabled} onClick={onSave}>{state.saving ? savingLabel : saveLabel}</Button><Button type="button" variant="secondary" disabled={disabled} onClick={onTest}>{state.testing ? testingLabel : testLabel}</Button>{message && <Alert tone={state.message === "error" ? "error" : "success"} className="py-2" role="status">{message}</Alert>}</div>;
 }

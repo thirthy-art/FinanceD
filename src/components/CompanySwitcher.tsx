@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import type { FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Building2, Check, ChevronDown } from "lucide-react";
 import { useI18n } from "@/src/i18n/context";
-import { SUPPORTED_BASE_CURRENCIES } from "@/src/lib/supported-base-currencies";
 
 export interface CompanySummary {
   id: number;
@@ -17,7 +16,7 @@ export interface CompaniesResponse {
 }
 
 type RequestState = "idle" | "loading" | "error";
-type ActionError = "couldNotSwitch" | "couldNotCreate";
+type ActionError = "couldNotSwitch";
 
 interface CompanySwitcherProps {
   initialData?: CompaniesResponse;
@@ -38,24 +37,6 @@ export async function switchActiveCompany(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ companyId }),
-  });
-  await expectSuccess(response);
-  reload();
-}
-
-export async function createCompany(
-  name: string,
-  baseCurrency: string,
-  fetchImpl: typeof fetch = fetch,
-  reload: () => void = () => window.location.reload(),
-) {
-  const response = await fetchImpl("/api/companies", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      name: name.trim(),
-      baseCurrency: baseCurrency.trim().toUpperCase(),
-    }),
   });
   await expectSuccess(response);
   reload();
@@ -82,11 +63,9 @@ export default function CompanySwitcher({
     initialLoadError ? "error" : initialData ? "idle" : "loading",
   );
   const [isOpen, setIsOpen] = useState(Boolean(initialActionError));
-  const [showCreate, setShowCreate] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<ActionError | null>(initialActionError ?? null);
-  const [name, setName] = useState("");
-  const [baseCurrency, setBaseCurrency] = useState("EUR");
+  const switcherRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (initialData || initialLoadError) return;
@@ -113,6 +92,22 @@ export default function CompanySwitcher({
     return () => controller.abort();
   }, [initialData, initialLoadError]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    function close(event: PointerEvent) {
+      if (event.target instanceof Node && !switcherRef.current?.contains(event.target)) setIsOpen(false);
+    }
+    function escape(event: KeyboardEvent) {
+      if (event.key === "Escape") setIsOpen(false);
+    }
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [isOpen]);
+
   const activeCompany = useMemo(
     () => resolveDisplayedCompany(companies, activeCompanyId),
     [activeCompanyId, companies],
@@ -122,7 +117,7 @@ export default function CompanySwitcher({
     ? t.common.loading
     : loadState === "error"
       ? c.couldNotLoad
-      : activeCompany?.name ?? c.selectCompany;
+      : activeCompany?.name ?? (companies.length === 0 ? c.noCompanyAssigned : c.selectCompany);
 
   async function handleSwitch(companyId: number) {
     if (pending || companyId === activeCompany?.id) return;
@@ -136,21 +131,8 @@ export default function CompanySwitcher({
     }
   }
 
-  async function handleCreate(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (pending) return;
-    setPending(true);
-    setError(null);
-    try {
-      await createCompany(name, baseCurrency);
-    } catch {
-      setError("couldNotCreate");
-      setPending(false);
-    }
-  }
-
   return (
-    <div className="company-switcher">
+    <div className="company-switcher" ref={switcherRef}>
       <button
         type="button"
         className={`company-switcher-control${!activeCompany && loadState === "idle" ? " company-switcher-control-attention" : ""}`}
@@ -160,8 +142,9 @@ export default function CompanySwitcher({
         disabled={loadState === "loading"}
         title={controlLabel}
       >
+        <Building2 className="company-switcher-control-icon" size={16} aria-hidden="true" />
         <span className="company-switcher-control-label">{controlLabel}</span>
-        <span aria-hidden="true">▾</span>
+        <ChevronDown className="company-switcher-chevron" size={15} aria-hidden="true" />
       </button>
 
       {isOpen && loadState !== "loading" && (
@@ -182,7 +165,7 @@ export default function CompanySwitcher({
                       disabled={pending || isActive}
                       onClick={() => void handleSwitch(company.id)}
                     >
-                      <span className="company-switcher-check" aria-hidden="true">{isActive ? "✓" : ""}</span>
+                      <span className="company-switcher-check" aria-hidden="true">{isActive ? <Check size={15} /> : null}</span>
                       <span className="company-switcher-option-name" title={company.name}>{company.name}</span>
                       <span className="company-switcher-currency">{company.baseCurrency}</span>
                     </button>
@@ -190,59 +173,8 @@ export default function CompanySwitcher({
                 })}
               </div>
 
-              {!showCreate ? (
-                <button
-                  type="button"
-                  className="company-switcher-create-link"
-                  disabled={pending}
-                  onClick={() => {
-                    setShowCreate(true);
-                    setError(null);
-                  }}
-                >
-                  + {c.createCompany}
-                </button>
-              ) : (
-                <form className="company-switcher-form" onSubmit={handleCreate}>
-                  <label>
-                    <span>{c.companyName}</span>
-                    <input
-                      value={name}
-                      onChange={(event) => setName(event.target.value)}
-                      required
-                      maxLength={255}
-                      disabled={pending}
-                      autoFocus
-                    />
-                  </label>
-                  <label>
-                    <span>{c.baseCurrency}</span>
-                    <select
-                      value={baseCurrency}
-                      onChange={(event) => setBaseCurrency(event.target.value)}
-                      required
-                      className="company-switcher-currency-input"
-                      disabled={pending}
-                    >
-                      {SUPPORTED_BASE_CURRENCIES.map((currency) => (
-                        <option key={currency} value={currency}>{currency}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <div className="company-switcher-form-actions">
-                    <button type="submit" disabled={pending}>{pending ? c.creating : c.create}</button>
-                    <button
-                      type="button"
-                      disabled={pending}
-                      onClick={() => {
-                        setShowCreate(false);
-                        setError(null);
-                      }}
-                    >
-                      {t.common.cancel}
-                    </button>
-                  </div>
-                </form>
+              {companies.length === 0 && (
+                <p className="company-switcher-error" role="status">{c.noCompanyAssigned}</p>
               )}
             </>
           )}

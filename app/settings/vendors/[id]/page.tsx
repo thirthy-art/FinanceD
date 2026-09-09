@@ -11,6 +11,11 @@ import { resolveLocale, getMessages } from "@/src/i18n/index";
 import { LOCALE_COOKIE } from "@/src/i18n/types";
 import { getActiveCompanyForPage } from "@/src/lib/active-company-page";
 import CompanySelectionRequired from "@/src/components/CompanySelectionRequired";
+import { Badge } from "@/src/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/card";
+import { EmptyState } from "@/src/components/ui/feedback";
+import { PageDescription, PageHeader, PageHeading, PageTitle } from "@/src/components/ui/page";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/src/components/ui/table";
 
 function displayAmount(value: string | null) {
   if (!value) return "—";
@@ -38,7 +43,7 @@ export default async function VendorDetailPage({
   ));
   if (!vendor) notFound();
 
-  const { vendorDetail: vd, common: cm } = getMessages(locale);
+  const { vendorDetail: vd } = getMessages(locale);
 
   const [invoiceRows, targetRows, [company]] = await Promise.all([
     db.select({
@@ -76,22 +81,21 @@ export default async function VendorDetailPage({
 
   return (
     <div>
-      <Link href="/settings/vendors" style={{ color: "#2563eb" }}>{vd.backToVendors}</Link>
-      <h1 style={{ margin: "16px 0 20px", fontSize: 22, color: "#1e3a5f" }}>{vendor.name}</h1>
-      <section style={cardStyle}>
-        <dl style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16, margin: 0 }}>
+      <PageHeader><PageHeading><Link href="/settings/vendors" className="ui-back-link">← {vd.backToVendors}</Link><PageTitle>{vendor.name}</PageTitle><PageDescription>{vendor.taxId ?? vd.labelTaxId}</PageDescription></PageHeading></PageHeader>
+      <Card className="mb-5">
+        <CardContent className="pt-5"><dl className="vendor-info-grid">
           <Info label={vd.labelVendorName} value={vendor.name} />
           <Info label={vd.labelTaxId} value={vendor.taxId ?? "—"} />
           <Info label={vd.labelDefaultCurrency} value={vendor.defaultCurrency ?? "—"} />
-          <Info label={vd.labelActiveStatus} value={vendor.isActive ? vd.active : vd.inactive} />
+          <div><dt className="ui-definition-label">{vd.labelActiveStatus}</dt><dd className="ui-definition-value"><Badge variant={vendor.isActive ? "success" : "neutral"}>{vendor.isActive ? vd.active : vd.inactive}</Badge></dd></div>
           <Info label={vd.labelDraftInvoices} value={String(draftCount)} />
           <Info label={vd.labelApprovedInvoices} value={String(approvedCount)} />
-        </dl>
-      </section>
+        </dl></CardContent>
+      </Card>
 
-      <section style={cardStyle}>
-        <h2 style={headingStyle}>{vd.totalInvoiced}</h2>
-        <p style={{ color: "#64748b", marginTop: 0 }}>{vd.approvedOnly}</p>
+      <Card className="mb-5">
+        <CardHeader><CardTitle>{vd.totalInvoiced}</CardTitle><p className="text-sm text-[var(--muted-foreground)]">{vd.approvedOnly}</p></CardHeader>
+        <CardContent className="vendor-total-grid">
         {totals.approved.length === 0 ? <p>—</p> : totals.approved.map((total) => <p key={total.currency}><strong>{total.currency}</strong> {displayAmount(total.amount)}</p>)}
         {totals.baseApproved && (
           <p>
@@ -99,41 +103,37 @@ export default async function VendorDetailPage({
             {displayAmount(totals.baseApproved)}
           </p>
         )}
-        <h3 style={{ fontSize: 14, marginTop: 20 }}>{vd.draftTotals}</h3>
+        <h3 className="col-span-full mt-2 text-sm font-semibold text-[var(--heading)]">{vd.draftTotals}</h3>
         {totals.drafts.length === 0 ? <p>—</p> : totals.drafts.map((total) => <p key={total.currency}><strong>{total.currency}</strong> {displayAmount(total.amount)}</p>)}
-      </section>
+        </CardContent>
+      </Card>
 
-      <section style={{ ...cardStyle, overflowX: "auto" }}>
-        <h2 style={headingStyle}>{vd.associatedInvoices}</h2>
-        {invoiceRows.length === 0 ? <p style={{ color: "#64748b" }}>{vd.noAssociatedInvoices}</p> : (
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead><tr>{[vd.colInvoiceNumber, vd.colDate, vd.colStatus, vd.colCurrency, vd.colGrossAmount].map((label) => <th key={label} style={thStyle}>{label}</th>)}</tr></thead>
-            <tbody>{invoiceRows.map((invoice) => (
-              <tr key={invoice.id} style={{ borderTop: "1px solid #e2e8f0" }}>
-                <td style={tdStyle}><Link href={`/invoices/${invoice.id}`} style={{ color: "#2563eb" }}>{invoice.invoiceNumber ?? `${vd.invoicePrefix} ${invoice.id}`}</Link></td>
-                <td style={tdStyle}>{invoice.invoiceDate ?? "—"}</td>
-                <td style={tdStyle}>{invoice.status}</td>
-                <td style={tdStyle}>{invoice.currency}</td>
-                <td style={tdStyle}>{displayAmount(invoice.grossAmount)}</td>
-              </tr>
-            ))}</tbody>
-          </table>
+      <Card className="overflow-hidden">
+        <CardHeader><CardTitle>{vd.associatedInvoices}</CardTitle></CardHeader>
+        {invoiceRows.length === 0 ? <EmptyState className="m-5 mt-0">{vd.noAssociatedInvoices}</EmptyState> : (
+          <Table>
+            <TableHeader><TableRow>{[vd.colInvoiceNumber, vd.colDate, vd.colStatus, vd.colCurrency, vd.colGrossAmount].map((label) => <TableHead key={label}>{label}</TableHead>)}</TableRow></TableHeader>
+            <TableBody>{invoiceRows.map((invoice) => (
+              <TableRow key={invoice.id}>
+                <TableCell><Link href={`/invoices/${invoice.id}`} className="ui-table-link">{invoice.invoiceNumber ?? `${vd.invoicePrefix} ${invoice.id}`}</Link></TableCell>
+                <TableCell>{invoice.invoiceDate ?? "—"}</TableCell>
+                <TableCell><Badge variant={invoice.status === "approved" ? "success" : "warning"}>{invoice.status}</Badge></TableCell>
+                <TableCell>{invoice.currency}</TableCell>
+                <TableCell className="text-end font-semibold tabular-nums">{displayAmount(invoice.grossAmount)}</TableCell>
+              </TableRow>
+            ))}</TableBody>
+          </Table>
         )}
-        <VendorActions
+        <CardContent><VendorActions
           source={{ id: vendor.id, name: vendor.name, taxId: vendor.taxId, invoiceCount: invoiceRows.length }}
           targets={targets}
           initialMode={query.action === "merge" ? "merge" : "idle"}
-        />
-      </section>
+        /></CardContent>
+      </Card>
     </div>
   );
 }
 
 function Info({ label, value }: { label: string; value: string }) {
-  return <div><dt style={{ fontSize: 12, color: "#64748b" }}>{label}</dt><dd style={{ margin: "4px 0 0", fontWeight: 600 }}>{value}</dd></div>;
+  return <div><dt className="ui-definition-label">{label}</dt><dd className="ui-definition-value">{value}</dd></div>;
 }
-
-const cardStyle: React.CSSProperties = { marginBottom: 20, padding: 20, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8 };
-const headingStyle: React.CSSProperties = { margin: "0 0 12px", fontSize: 17, color: "#334155" };
-const thStyle: React.CSSProperties = { padding: "9px 10px", textAlign: "left", fontSize: 12, color: "#64748b" };
-const tdStyle: React.CSSProperties = { padding: "10px" };

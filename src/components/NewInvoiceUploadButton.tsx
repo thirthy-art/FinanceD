@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useI18n } from "@/src/i18n/context";
+import { Button } from "@/src/components/ui/button";
 
 const ALLOWED_TYPES = ["application/pdf", "image/jpeg", "image/png", "image/tiff", "image/webp"];
 
@@ -57,35 +58,24 @@ export default function NewInvoiceUploadButton({ label }: { label: string }) {
   }
 
   return (
-    <div style={{ display: "inline-flex", flexDirection: "column", gap: 6 }}>
+    <div className="inline-flex flex-col gap-1.5">
       <input
         ref={inputRef}
         type="file"
         accept=".pdf,.jpg,.jpeg,.png,.tiff,.webp"
         onChange={handleChange}
         disabled={uploading}
-        style={{ display: "none" }}
+        hidden
       />
-      <button
+      <Button
         type="button"
         onClick={() => inputRef.current?.click()}
         disabled={uploading}
-        style={{
-          background: uploading ? "#93c5fd" : "#2563eb",
-          color: "#fff",
-          padding: "8px 14px",
-          border: "none",
-          borderRadius: 6,
-          fontSize: 14,
-          fontWeight: 600,
-          cursor: uploading ? "default" : "pointer",
-          whiteSpace: "nowrap",
-        }}
       >
         {uploading ? t.newInvoice.processing : label}
-      </button>
+      </Button>
       {error && (
-        <span role="alert" style={{ maxWidth: 240, color: "#dc2626", fontSize: 12, lineHeight: 1.3 }}>
+        <span role="alert" className="max-w-60 text-xs leading-tight text-[var(--destructive)]">
           {error}
         </span>
       )}

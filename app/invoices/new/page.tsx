@@ -2,6 +2,11 @@
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useI18n } from "@/src/i18n/context";
+import CompanyAccessState, { companyAccessCode, type CompanyAccessCode } from "@/src/components/CompanyAccessState";
+import { Button } from "@/src/components/ui/button";
+import { Card } from "@/src/components/ui/card";
+import { Alert } from "@/src/components/ui/feedback";
+import { PageDescription, PageHeader, PageHeading, PageTitle } from "@/src/components/ui/page";
 
 export default function NewInvoicePage() {
   const router = useRouter();
@@ -11,6 +16,7 @@ export default function NewInvoicePage() {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
   const [canRetry, setCanRetry] = useState(false);
+  const [accessCode, setAccessCode] = useState<CompanyAccessCode | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const inFlightRef = useRef(false);
   const pendingUploadRef = useRef<{ file: File; requestId: string } | null>(null);
@@ -34,7 +40,13 @@ export default function NewInvoicePage() {
       fd.append("file", file);
       fd.append("requestId", requestId);
       const res = await fetch("/api/invoices/upload", { method: "POST", body: fd });
-      const json = await res.json().catch(() => ({})) as { error?: unknown; invoiceId?: unknown };
+      const json = await res.json().catch(() => ({})) as { error?: unknown; invoiceId?: unknown; code?: unknown };
+      const denied = companyAccessCode(json);
+      if (denied) {
+        setAccessCode(denied);
+        setUploading(false);
+        return;
+      }
       if (!res.ok) throw new Error(typeof json.error === "string" ? json.error : "Upload failed. Please retry.");
       if (typeof json.invoiceId !== "number") throw new Error(n.uploadWithoutId);
       pendingUploadRef.current = null;
@@ -67,82 +79,71 @@ export default function NewInvoicePage() {
     if (pending) handleFile(pending.file, pending.requestId);
   }
 
-  return (
-    <div style={{ maxWidth: 540, margin: "0 auto" }}>
-      <h1 style={{ fontSize: 22, fontWeight: 700, color: "#1e3a5f", marginBottom: 24 }}>
-        {n.title}
-      </h1>
+  if (accessCode) return <CompanyAccessState code={accessCode} />;
 
-      <div
+  return (
+    <div className="mx-auto max-w-2xl">
+      <PageHeader>
+        <PageHeading>
+          <PageTitle>{n.title}</PageTitle>
+          <PageDescription>{n.supportedFormats}</PageDescription>
+        </PageHeading>
+      </PageHeader>
+
+      <Card
         onClick={() => !uploading && inputRef.current?.click()}
         onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
         onDragLeave={() => setDragging(false)}
         onDrop={onDrop}
-        style={{
-          border: `2px dashed ${dragging ? "#2563eb" : "#cbd5e1"}`,
-          borderRadius: 12,
-          padding: "60px 24px",
-          textAlign: "center",
-          cursor: uploading ? "default" : "pointer",
-          background: dragging ? "#eff6ff" : "#fff",
-          transition: "all 0.15s",
-        }}
+        className={`invoice-upload-zone${dragging ? " invoice-upload-zone-active" : ""}${uploading ? " invoice-upload-zone-busy" : ""}`}
       >
         <input
           ref={inputRef}
           type="file"
           accept=".pdf,.jpg,.jpeg,.png,.tiff,.webp"
-          style={{ display: "none" }}
+          className="sr-only"
           onChange={onInputChange}
           disabled={uploading}
         />
         {uploading ? (
           <div>
-            <div style={{ fontSize: 36, marginBottom: 12 }}>⏳</div>
-            <div style={{ fontSize: 16, fontWeight: 600, color: "#1e3a5f" }}>
+            <div className="invoice-upload-icon" aria-hidden="true">⏳</div>
+            <div className="invoice-upload-title">
               {n.processing}
             </div>
-            <div style={{ color: "#64748b", marginTop: 8 }}>
+            <div className="invoice-upload-copy">
               {n.extractingText}
             </div>
           </div>
         ) : (
           <div>
-            <div style={{ fontSize: 48, marginBottom: 12 }}>📂</div>
-            <div style={{ fontSize: 16, fontWeight: 600, color: "#1e3a5f", marginBottom: 8 }}>
+            <div className="invoice-upload-icon" aria-hidden="true">📂</div>
+            <div className="invoice-upload-title">
               {n.dropHere}
             </div>
-            <div style={{ color: "#64748b", fontSize: 13 }}>
+            <div className="invoice-upload-copy">
               {n.supportedFormats}
             </div>
           </div>
         )}
-      </div>
+      </Card>
 
       {error && (
-        <div
-          style={{
-            marginTop: 16,
-            padding: "12px 16px",
-            background: "#fef2f2",
-            border: "1px solid #fecaca",
-            borderRadius: 8,
-            color: "#dc2626",
-            fontSize: 14,
-          }}
-        >
+        <Alert tone="error" className="mt-4">
           <div>{error}</div>
           {canRetry && (
-            <button
+            <Button
               type="button"
               onClick={retryUpload}
               disabled={uploading}
-              style={{ marginTop: 10, padding: "7px 12px", border: "none", borderRadius: 6, background: "#dc2626", color: "#fff", cursor: uploading ? "default" : "pointer", fontWeight: 600 }}
+              variant="destructive"
+              size="sm"
+              className="mt-3"
             >
               {n.retryUpload}
-            </button>
+            </Button>
           )}
-        </div>
+        </Alert>
       )}
     </div>
   );

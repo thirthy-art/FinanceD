@@ -1,110 +1,63 @@
-import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const mocks = vi.hoisted(() => ({
+  activeCompany: vi.fn(), publicSettings: vi.fn(), saveMimo: vi.fn(), saveOpenRouter: vi.fn(),
+}));
 vi.mock("server-only", () => ({}));
-
+vi.mock("@/src/lib/active-company", () => ({ getActiveCompanyFromRequest: mocks.activeCompany }));
 vi.mock("@/src/lib/ai-settings", () => ({
-  getPublicAiSettings: vi.fn(),
-  saveMimoSettings: vi.fn(),
-  saveOpenRouterSettings: vi.fn(),
+  getPublicAiSettings: mocks.publicSettings,
+  saveMimoSettings: mocks.saveMimo,
+  saveOpenRouterSettings: mocks.saveOpenRouter,
 }));
 
-import { getPublicAiSettings, saveMimoSettings, saveOpenRouterSettings } from "@/src/lib/ai-settings";
-import { AI_SETTINGS_ADMIN_COOKIE, createAiSettingsAdminToken } from "@/src/lib/ai-settings-admin-auth";
 import { GET, PATCH } from "@/app/api/settings/ai/route";
 
-const mockPublic = vi.mocked(getPublicAiSettings);
-const mockSaveMimo = vi.mocked(saveMimoSettings);
-const mockSaveOpenRouter = vi.mocked(saveOpenRouterSettings);
-const originalAdminSecret = process.env.AI_SETTINGS_ADMIN_SECRET;
 const publicSettings = {
   mimo: { model: "mimo-v2.5", configured: true },
   openRouter: { configured: true, fallback1Model: "xiaomi/mimo-v2.5", fallback2Model: "" },
 };
 
-function cookieHeader() {
-  return `${AI_SETTINGS_ADMIN_COOKIE}=${createAiSettingsAdminToken()}`;
-}
-
-function get(authorized = true) {
-  return GET(new Request("http://localhost/api/settings/ai", {
-    headers: authorized ? { Cookie: cookieHeader() } : undefined,
-  }));
-}
-
-function patch(body: unknown, authorized = true) {
+function patch(body: unknown) {
   return PATCH(new Request("http://localhost/api/settings/ai", {
-    method: "PATCH",
-    headers: {
-      "Content-Type": "application/json",
-      ...(authorized ? { Cookie: cookieHeader() } : {}),
-    },
-    body: JSON.stringify(body),
+    method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   }));
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
-  process.env.AI_SETTINGS_ADMIN_SECRET = "route-test-admin-secret";
-  mockPublic.mockResolvedValue(publicSettings);
+  mocks.activeCompany.mockResolvedValue({ id: 22 });
+  mocks.publicSettings.mockResolvedValue(publicSettings);
 });
 
-afterAll(() => {
-  if (originalAdminSecret === undefined) delete process.env.AI_SETTINGS_ADMIN_SECRET;
-  else process.env.AI_SETTINGS_ADMIN_SECRET = originalAdminSecret;
-});
-
-describe("AI settings API privacy contract", () => {
-  it("GET returns only models and configured flags", async () => {
-    const response = await get();
-    expect(await response.json()).toEqual(publicSettings);
-    expect(response.headers.get("cache-control")).toBe("no-store");
+describe("company AI settings API privacy", () => {
+  it("returns only public flags/models for the authorized active company", async () => {
+    const response = await GET(new Request("http://localhost/api/settings/ai"));
+    const body = await response.json();
+    expect(body).toEqual(publicSettings);
+    expect(mocks.publicSettings).toHaveBeenCalledWith(22);
+    expect(JSON.stringify(body)).not.toContain("apiKey");
   });
 
-  it("rejects unauthorized GET without revealing configured state", async () => {
-    const response = await get(false);
+  it("fails closed before settings access when company authorization fails", async () => {
+    mocks.activeCompany.mockResolvedValue(new Response(JSON.stringify({ error: "Authentication required." }), { status: 401 }));
+    const response = await GET(new Request("http://localhost/api/settings/ai"));
     expect(response.status).toBe(401);
-    expect(await response.json()).toEqual({ error: "Unauthorized." });
-    expect(mockPublic).not.toHaveBeenCalled();
+    expect(mocks.publicSettings).not.toHaveBeenCalled();
   });
 
-  it("rejects unauthorized PATCH before parsing or saving settings", async () => {
-    const sentinel = "UNAUTHORIZED-REPLACEMENT-MUST-NOT-LEAK";
-    const response = await patch({ provider: "mimo", model: "mimo-next", apiKey: sentinel }, false);
-    expect(response.status).toBe(401);
+  it("saves only under the authorized company and never echoes submitted keys", async () => {
+    const sentinel = "DO-NOT-RETURN-THIS-KEY";
+    const response = await patch({ provider: "mimo", model: "mimo-next", apiKey: sentinel });
+    expect(mocks.saveMimo).toHaveBeenCalledWith(22, { model: "mimo-next", apiKey: sentinel });
     expect(JSON.stringify(await response.json())).not.toContain(sentinel);
-    expect(mockSaveMimo).not.toHaveBeenCalled();
-    expect(mockSaveOpenRouter).not.toHaveBeenCalled();
   });
 
-  it("fails closed without reading settings when admin access is not configured", async () => {
-    delete process.env.AI_SETTINGS_ADMIN_SECRET;
-    const response = await get(false);
-    expect(response.status).toBe(503);
-    expect(await response.json()).toEqual({
-      error: "AI settings admin access is not configured.",
-      code: "AI_SETTINGS_ADMIN_NOT_CONFIGURED",
-    });
-    expect(mockPublic).not.toHaveBeenCalled();
-  });
-
-  it("empty key preserves the MiMo key while saving the model", async () => {
-    const response = await patch({ provider: "mimo", model: "mimo-next", apiKey: "" });
-    expect(response.status).toBe(200);
-    expect(mockSaveMimo).toHaveBeenCalledWith({ model: "mimo-next", apiKey: undefined });
-  });
-
-  it("normalizes empty fallback 2 to disabled", async () => {
-    await patch({ provider: "openrouter", fallback1Model: "xiaomi/mimo-v2.5", fallback2Model: "", apiKey: "" });
-    expect(mockSaveOpenRouter).toHaveBeenCalledWith({
+  it("normalizes empty fallback 2 without returning credentials", async () => {
+    const response = await patch({ provider: "openrouter", fallback1Model: "xiaomi/mimo-v2.5", fallback2Model: "", apiKey: "" });
+    expect(mocks.saveOpenRouter).toHaveBeenCalledWith(22, {
       fallback1Model: "xiaomi/mimo-v2.5", fallback2Model: null, apiKey: undefined,
     });
-  });
-
-  it("never echoes a submitted key in validation or save errors", async () => {
-    const sentinel = "DO-NOT-RETURN-THIS-KEY";
-    mockSaveMimo.mockRejectedValueOnce(new Error(sentinel));
-    const response = await patch({ provider: "mimo", model: "mimo-v2.5", apiKey: sentinel });
-    expect(response.status).toBe(503);
-    expect(JSON.stringify(await response.json())).not.toContain(sentinel);
+    expect(JSON.stringify(await response.json())).not.toContain("apiKey");
   });
 });

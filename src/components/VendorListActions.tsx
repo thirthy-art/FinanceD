@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useI18n } from "@/src/i18n/context";
+import { buttonVariants } from "@/src/components/ui/button";
+import { cn } from "@/src/lib/utils";
 
 interface VendorListActionsProps {
   vendor: {
@@ -14,7 +16,6 @@ interface VendorListActionsProps {
   onDeleted: () => void | Promise<void>;
   onError: (message: string) => void;
 }
-
 export default function VendorListActions({ vendor, onDeleted, onError }: VendorListActionsProps) {
   const { t } = useI18n();
   const va = t.vendorActions;
@@ -50,27 +51,16 @@ export default function VendorListActions({ vendor, onDeleted, onError }: Vendor
           type="button"
           disabled={deleting}
           onClick={deleteVendor}
-          style={{ ...actionStyle, color: "#fff", background: "#dc2626", borderColor: "#dc2626", opacity: deleting ? 0.6 : 1 }}
+          className={buttonVariants({ variant: "destructive", size: "sm" })}
         >
           {deleting ? cm.deleting : cm.del}
         </button>
       )}
       {vendor.possibleDuplicate && vendor.invoiceCount > 0 && (
-        <Link href={`/settings/vendors/${vendor.id}?action=merge#vendor-actions`} style={{ ...actionStyle, color: "#92400e", background: "#fffbeb", borderColor: "#fbbf24", textDecoration: "none" }}>
+        <Link href={`/settings/vendors/${vendor.id}?action=merge#vendor-actions`} className={cn(buttonVariants({ variant: "secondary", size: "sm" }), "border-[var(--warning-border)] bg-[var(--warning-muted)] text-[var(--warning)]")}>
           {va.mergeResolve}
         </Link>
       )}
     </>
   );
 }
-
-const actionStyle: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  padding: "6px 8px",
-  border: "1px solid #cbd5e1",
-  borderRadius: 5,
-  cursor: "pointer",
-  fontSize: 12,
-  fontWeight: 600,
-};
