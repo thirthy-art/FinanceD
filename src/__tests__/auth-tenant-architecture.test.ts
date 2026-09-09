@@ -59,4 +59,30 @@ describe("private-beta auth and tenant architecture", () => {
     const combined = files.join("\n");
     expect(combined).not.toMatch(/AUTH_DISABLED|TRUST_ALL_USERS|integration_credentials|provider_registry/i);
   });
+
+  it("claims provisioned access only from a completed OAuth or OIDC sign-in", async () => {
+    const auth = await source("auth.ts");
+    expect(auth).toContain("events:");
+    expect(auth).toContain("async signIn({ user, account })");
+    expect(auth).toContain('account?.type !== "oauth" && account?.type !== "oidc"');
+    expect(auth).toContain("claimPendingCompanyAccess");
+  });
+
+  it("keeps pending access company-scoped, email-scoped, and non-authoritative", async () => {
+    const migration = await source("drizzle/0019_gorgeous_doctor_faustus.sql");
+    expect(migration).toContain('CREATE TABLE "company_access_invites"');
+    expect(migration).toContain('UNIQUE("company_id","normalized_email")');
+    expect(migration).toContain('REFERENCES "public"."companies"("id") ON DELETE cascade');
+    expect(migration).not.toMatch(/role|expires|domain/i);
+
+    const activeCompany = await source("src/lib/active-company.ts");
+    expect(activeCompany).toContain(".from(companyMembers)");
+    expect(activeCompany).not.toContain("companyAccessInvites");
+  });
+
+  it("exposes separate operator commands for new and existing companies", async () => {
+    const packageJson = JSON.parse(await source("package.json")) as { scripts: Record<string, string> };
+    expect(packageJson.scripts["auth:provision"]).toContain("company-access.ts provision");
+    expect(packageJson.scripts["auth:grant"]).toContain("company-access.ts grant");
+  });
 });

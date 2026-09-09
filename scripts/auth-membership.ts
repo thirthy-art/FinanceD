@@ -3,6 +3,7 @@ import "dotenv/config";
 import { eq, sql } from "drizzle-orm";
 import { closeDb, getDb } from "../src/db";
 import { authUsers, companies } from "../src/db/schema";
+import { normalizeEmail } from "../src/lib/email-normalization";
 import {
   grantCompanyMembership,
   revokeCompanyMembership,
@@ -10,7 +11,7 @@ import {
 
 async function main() {
   const [action, rawEmail, rawCompanyId] = process.argv.slice(2);
-  const email = rawEmail?.trim().toLowerCase();
+  const email = rawEmail ? normalizeEmail(rawEmail) : undefined;
   const companyId = rawCompanyId && /^\d+$/.test(rawCompanyId) ? Number(rawCompanyId) : null;
   if ((action !== "grant" && action !== "revoke") || !email || !companyId || !Number.isSafeInteger(companyId)) {
     throw new Error("Usage: npm run auth:grant -- <email> <companyId> or npm run auth:revoke -- <email> <companyId>");

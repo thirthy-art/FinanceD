@@ -67,13 +67,27 @@ Google's callback is `/api/auth/callback/google`; Microsoft's is `/api/auth/call
 
 ## Private-beta onboarding and removal
 
-There is no invitation or user-administration UI. The controlled workflow is:
+There is no invitation or user-administration UI. Run provisioning commands only in a trusted server/operations environment with `DATABASE_URL` configured.
 
-1. The tester signs in once with Google or Microsoft. This creates the Auth.js user, but grants no company access.
-2. An operator runs `npm run auth:grant -- <email> <companyId>` in a trusted server/operations environment with `DATABASE_URL` configured.
-3. The tester refreshes and can access that company. Granting the same membership again is safe and reports that it already exists.
+Create a new client company and grant its first user access:
 
-Remove only that company access with `npm run auth:revoke -- <email> <companyId>`. Both commands normalize the email, require an existing Auth.js user and company, and never expose an HTTP endpoint.
+```bash
+npm run auth:provision -- --company-name "Acme Ltd" --email alice@acme.com
+```
+
+The command refuses to create the company when a case-insensitive, whitespace-trimmed company name already exists. Use the reported existing company ID with the existing-company command instead; do not create a replacement company.
+
+Grant another user access to an existing company:
+
+```bash
+npm run auth:grant -- --company-id 3 --email bob@acme.com
+```
+
+The company ID is authoritative and the command reports both its ID and name. If the normalized email already belongs to an Auth.js user, the command creates `company_members` immediately. Otherwise it creates an idempotent pending access record. After a successful OAuth/OIDC sign-in, FinanceD matches the provider-authenticated email, creates every explicitly invited membership, and marks those access records claimed. No company is created during sign-in, and an uninvited identity has no company access.
+
+Both provisioning commands trim and lowercase email addresses without provider-specific rewriting. Repeating a grant cannot create duplicate effective access. Multiple users may belong to one company, and one user may be explicitly granted multiple companies.
+
+Remove an existing user's company membership with `npm run auth:revoke -- <email> <companyId>`. This command requires an existing Auth.js user and company. These operator commands never expose an HTTP endpoint; `company_members` remains the application authorization source.
 
 ## Document storage
 

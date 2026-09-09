@@ -4,6 +4,7 @@ import MicrosoftEntraID from "next-auth/providers/microsoft-entra-id";
 import { DrizzleAdapter } from "@auth/drizzle-adapter";
 import { getDb } from "@/src/db";
 import { authAccounts, authSessions, authUsers } from "@/src/db/schema";
+import { claimPendingCompanyAccess } from "@/src/lib/company-access-provisioning";
 
 export const configuredAuthProviders = [
   process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET
@@ -32,6 +33,19 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   providers: configuredAuthProviders,
   session: { strategy: "database" },
   pages: { signIn: "/sign-in" },
+  events: {
+    async signIn({ user, account }) {
+      if (
+        (account?.type !== "oauth" && account?.type !== "oidc")
+        || !user.id
+        || !user.email
+      ) return;
+      await claimPendingCompanyAccess(getDb(), {
+        userId: user.id,
+        authenticatedEmail: user.email,
+      });
+    },
+  },
   callbacks: {
     session({ session, user }) {
       session.user.id = user.id;

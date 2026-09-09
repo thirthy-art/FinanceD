@@ -163,6 +163,21 @@ export const companyMembers = pgTable("company_members", {
   userCompanyUnique: unique("uq_company_members_user_company").on(table.userId, table.companyId),
 }));
 
+export const companyAccessInvites = pgTable("company_access_invites", {
+  id: serial("id").primaryKey(),
+  companyId: integer("company_id")
+    .notNull()
+    .references(() => companies.id, { onDelete: "cascade" }),
+  normalizedEmail: varchar("normalized_email", { length: 320 }).notNull(),
+  claimedByUserId: text("claimed_by_user_id")
+    .references(() => authUsers.id),
+  claimedAt: timestamp("claimed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  companyEmailUnique: unique("uq_company_access_invites_company_email")
+    .on(table.companyId, table.normalizedEmail),
+}));
+
 export const companyAiSettings = pgTable("company_ai_settings", {
   companyId: integer("company_id")
     .primaryKey()
