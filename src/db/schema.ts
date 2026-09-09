@@ -10,6 +10,7 @@ import {
   pgEnum,
   unique,
   uniqueIndex,
+  index,
   primaryKey,
   check,
   type AnyPgColumn,
@@ -176,6 +177,52 @@ export const companyAccessInvites = pgTable("company_access_invites", {
 }, (table) => ({
   companyEmailUnique: unique("uq_company_access_invites_company_email")
     .on(table.companyId, table.normalizedEmail),
+}));
+
+export const companyAccessEventTypes = [
+  "invite_created",
+  "invite_claimed",
+  "membership_granted",
+  "membership_revoked",
+  "membership_existing_at_audit_start",
+] as const;
+export type CompanyAccessEventType = typeof companyAccessEventTypes[number];
+
+export const companyAccessActors = ["admin", "system"] as const;
+export type CompanyAccessActor = typeof companyAccessActors[number];
+
+export const companyAccessSources = [
+  "operator_cli",
+  "oauth_invite_claim",
+  "audit_bootstrap",
+] as const;
+export type CompanyAccessSource = typeof companyAccessSources[number];
+
+export const companyAccessEvents = pgTable("company_access_events", {
+  id: serial("id").primaryKey(),
+  companyId: integer("company_id")
+    .notNull()
+    .references(() => companies.id),
+  userId: text("user_id")
+    .references(() => authUsers.id, { onDelete: "set null" }),
+  normalizedEmail: varchar("normalized_email", { length: 320 }).notNull(),
+  eventType: varchar("event_type", { length: 64 }).$type<CompanyAccessEventType>().notNull(),
+  occurredAt: timestamp("occurred_at", { mode: "date", withTimezone: true }).defaultNow().notNull(),
+  actor: varchar("actor", { length: 16 }).$type<CompanyAccessActor>().notNull(),
+  source: varchar("source", { length: 64 }).$type<CompanyAccessSource>().notNull(),
+  inviteId: integer("invite_id")
+    .references(() => companyAccessInvites.id, { onDelete: "set null" }),
+}, (table) => ({
+  eventTypeCheck: check("ck_company_access_events_event_type", sql`${table.eventType} in ('invite_created', 'invite_claimed', 'membership_granted', 'membership_revoked', 'membership_existing_at_audit_start')`),
+  actorCheck: check("ck_company_access_events_actor", sql`${table.actor} in ('admin', 'system')`),
+  sourceCheck: check("ck_company_access_events_source", sql`${table.source} in ('operator_cli', 'oauth_invite_claim', 'audit_bootstrap')`),
+  inviteEventUnique: uniqueIndex("uq_company_access_events_invite_event")
+    .on(table.inviteId, table.eventType)
+    .where(sql`${table.inviteId} is not null`),
+  companyEmailOccurredIdx: index("idx_company_access_events_company_email_occurred")
+    .on(table.companyId, table.normalizedEmail, table.occurredAt, table.id),
+  companyUserOccurredIdx: index("idx_company_access_events_company_user_occurred")
+    .on(table.companyId, table.userId, table.occurredAt, table.id),
 }));
 
 export const companyAiSettings = pgTable("company_ai_settings", {

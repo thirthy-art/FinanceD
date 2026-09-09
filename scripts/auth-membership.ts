@@ -33,12 +33,12 @@ async function main() {
   if (!company) throw new Error(`Company ${companyId} does not exist.`);
 
   if (action === "grant") {
-    const result = await grantCompanyMembership(db, user.id, company.id);
+    const result = await grantCompanyMembership(db, user.id, company.id, email);
     console.log(result.granted
       ? `Granted ${email} access to ${company.name} (${company.id}).`
       : `${email} already has access to ${company.name} (${company.id}).`);
   } else {
-    const result = await revokeCompanyMembership(db, user.id, company.id);
+    const result = await revokeCompanyMembership(db, user.id, company.id, email);
     console.log(result.revoked
       ? `Revoked ${email} access to ${company.name} (${company.id}).`
       : `${email} did not have access to ${company.name} (${company.id}).`);
