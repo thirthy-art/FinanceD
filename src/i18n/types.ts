@@ -69,6 +69,10 @@ export interface Messages {
   invoiceList: {
     title: string;
     exportInvoices: string;
+    exportAll: string;
+    exportAllDescription: string;
+    colInvoice: string;
+    colWorkflow: string;
     newInvoice: string;
     deleted: string;
     noInvoicesTitle: string;

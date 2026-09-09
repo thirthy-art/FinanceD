@@ -65,6 +65,10 @@ export const he: Messages = {
   invoiceList: {
     title: "חשבוניות ספקים",
     exportInvoices: "ייצוא חשבוניות",
+    exportAll: "ייצוא הכול",
+    exportAllDescription: "ייצוא כל חשבוניות החברה והשורות שלהן ל-XLSX, ללא תלות במסנן התשלום",
+    colInvoice: "חשבונית",
+    colWorkflow: "אישור",
     newInvoice: "+ חשבונית חדשה",
     deleted: "טיוטת החשבונית נמחקה בהצלחה.",
     noInvoicesTitle: "אין חשבוניות עדיין",

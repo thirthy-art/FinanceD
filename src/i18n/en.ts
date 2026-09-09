@@ -65,6 +65,10 @@ export const en: Messages = {
   invoiceList: {
     title: "Supplier Invoices",
     exportInvoices: "Export invoices",
+    exportAll: "Export all",
+    exportAllDescription: "Export all company invoices and lines to XLSX, regardless of the payment filter",
+    colInvoice: "Invoice",
+    colWorkflow: "Workflow",
     newInvoice: "+ New Invoice",
     deleted: "Draft invoice deleted successfully.",
     noInvoicesTitle: "No invoices yet",

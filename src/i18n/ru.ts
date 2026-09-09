@@ -65,6 +65,10 @@ export const ru: Messages = {
   invoiceList: {
     title: "Счета поставщиков",
     exportInvoices: "Экспорт счетов",
+    exportAll: "Экспорт всех",
+    exportAllDescription: "Экспорт всех счетов компании и их строк в XLSX независимо от фильтра оплаты",
+    colInvoice: "Счёт",
+    colWorkflow: "Обработка",
     newInvoice: "+ Новый счёт",
     deleted: "Черновик счёта удалён.",
     noInvoicesTitle: "Счетов пока нет",

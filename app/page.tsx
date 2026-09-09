@@ -10,22 +10,22 @@ import { resolveLocale, getMessages } from "@/src/i18n/index";
 import { LOCALE_COOKIE } from "@/src/i18n/types";
 import NewInvoiceUploadButton from "@/src/components/NewInvoiceUploadButton";
 import InvoicePaymentFilter from "@/src/components/InvoicePaymentFilter";
-import { Badge } from "@/src/components/ui/badge";
+import { ChevronRight } from "lucide-react";
 import { Button } from "@/src/components/ui/button";
-import { Card } from "@/src/components/ui/card";
-import { PageActions, PageHeader, PageTitle } from "@/src/components/ui/page";
+import { PageTitle } from "@/src/components/ui/page";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/src/components/ui/table";
+import styles from "./invoice-list.module.css";
 
 export const dynamic = "force-dynamic";
 
 function statusBadge(status: string, t: { statusApproved: string; statusDraft: string }) {
   const label = status === "approved" ? t.statusApproved : t.statusDraft;
-  return <Badge variant={status === "approved" ? "success" : "warning"}>{label}</Badge>;
+  return <span className={`${styles.workflow} ${status === "approved" ? styles.approved : ""}`}>{label}</span>;
 }
 
 function paymentStatusBadge(status: "Paid" | "Unpaid", t: { statusPaid: string; statusUnpaid: string }) {
   const paid = status === "Paid";
-  return <Badge variant={paid ? "success" : "destructive"}>{paid ? t.statusPaid : t.statusUnpaid}</Badge>;
+  return <span className={`${styles.payment} ${paid ? styles.paid : ""}`}>{paid ? t.statusPaid : t.statusUnpaid}</span>;
 }
 
 export default async function Home({
@@ -80,117 +80,121 @@ export default async function Home({
   }
 
   return (
-    <div>
-      <PageHeader>
+    <div className={styles.page}>
+      <header className={styles.header}>
         <PageTitle>{t.title}</PageTitle>
-        <PageActions>
-          <form action="/api/invoices/export" method="get">
-            <Button type="submit" variant="secondary">
-              {t.exportInvoices}
+        <NewInvoiceUploadButton label={t.newInvoice} />
+      </header>
+
+      <section className={styles.results} aria-label={t.title}>
+        <div className={styles.toolbar}>
+          <InvoicePaymentFilter
+            label={t.paymentFilterLabel}
+            allLabel={t.paymentFilterAll}
+            unpaidLabel={common.statusUnpaid}
+            paidLabel={common.statusPaid}
+            value={paymentFilter}
+          />
+          <form action="/api/invoices/export" method="get" className={styles.export}>
+            <Button type="submit" variant="secondary" size="sm" aria-label={t.exportAllDescription}>
+              {t.exportAll} · <bdi>XLSX</bdi>
             </Button>
           </form>
-          <NewInvoiceUploadButton label={t.newInvoice} />
-        </PageActions>
-      </PageHeader>
-
-      <Card className="invoice-filter-bar">
-        <InvoicePaymentFilter
-          label={t.paymentFilterLabel}
-          allLabel={t.paymentFilterAll}
-          unpaidLabel={common.statusUnpaid}
-          paidLabel={common.statusPaid}
-          value={paymentFilter}
-        />
-      </Card>
-
-      {deleted === "1" && (
-        <div className="ui-alert ui-alert-success mb-4">
-          {t.deleted}
         </div>
-      )}
 
-      {!hasAnyInvoices ? (
-        <div className="ui-empty-state">
-          <div className="mb-2 text-base font-semibold text-[var(--heading)]">{t.noInvoicesTitle}</div>
-          <div className="mb-5">{t.noInvoicesDesc}</div>
-          <NewInvoiceUploadButton label={t.uploadInvoice} />
-        </div>
-      ) : rows.length === 0 ? (
-        <div className="invoice-list-filter-empty">{t.noFilterResults}</div>
-      ) : (
-        <>
-          <div className="invoice-list-desktop ui-table-shell">
-            <Table className="min-w-[820px]">
-            <TableHeader>
-              <TableRow>
-                {[t.colVendor, t.colInvoiceNo, t.colDate, t.colAmount, t.colStatus, t.colNum, ""].map((h, idx) => (
-                  <TableHead key={idx} className={idx === 3 ? "text-end" : undefined}>{h}</TableHead>
-                ))}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
+        {deleted === "1" && (
+          <div className={`${styles.notice} ui-alert ui-alert-success`} role="status">
+            {t.deleted}
+          </div>
+        )}
+
+        {!hasAnyInvoices ? (
+          <div className={styles.empty}>
+            <div className="mb-2 text-base font-semibold text-[var(--heading)]">{t.noInvoicesTitle}</div>
+            <div className="mb-5">{t.noInvoicesDesc}</div>
+            <NewInvoiceUploadButton label={t.uploadInvoice} />
+          </div>
+        ) : rows.length === 0 ? (
+          <div className={styles.empty}>{t.noFilterResults}</div>
+        ) : (
+          <>
+            <div className={styles.desktop}>
+              <Table className={styles.table}>
+                <colgroup>
+                  <col className={styles.identityColumn} />
+                  <col className={styles.dateColumn} />
+                  <col className={styles.workflowColumn} />
+                  <col className={styles.amountColumn} />
+                  <col className={styles.actionColumn} />
+                </colgroup>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead scope="col">{t.colInvoice}</TableHead>
+                    <TableHead scope="col">{t.colDate}</TableHead>
+                    <TableHead scope="col">{t.colWorkflow}</TableHead>
+                    <TableHead scope="col" className={styles.amountHeading}>{t.colAmount} / {t.paymentFilterLabel}</TableHead>
+                    <TableHead scope="col"><span className="sr-only">{t.review}</span></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {rows.map((inv) => (
+                    <TableRow key={inv.id}>
+                      <TableCell>
+                        <Link href={`/invoices/${inv.id}`} className={styles.identity}>
+                          <span className="sr-only">{t.review}: </span>
+                          <span className={styles.vendor}><bdi>{inv.vendorName ?? common.none}</bdi></span>
+                          <span className={styles.reference}>
+                            <bdi>{inv.invoiceNumber ?? common.none}</bdi>
+                            <bdi className={styles.id}>#{inv.id}</bdi>
+                          </span>
+                        </Link>
+                      </TableCell>
+                      <TableCell className={styles.date}><bdi>{inv.invoiceDate ?? common.none}</bdi></TableCell>
+                      <TableCell>{statusBadge(inv.status, common)}</TableCell>
+                      <TableCell>
+                        <div className={styles.money}>
+                          <span className={styles.amount} dir="ltr">
+                            {inv.grossAmount ? <><span className={styles.currency}>{inv.currency}</span>{" "}{formatDisplayAmount(inv.grossAmount, inv.currencyType)}</> : common.none}
+                          </span>
+                          {paymentStatusBadge(inv.paymentStatus, common)}
+                        </div>
+                      </TableCell>
+                      <TableCell className={styles.actionCell}>
+                        <Link href={`/invoices/${inv.id}`} className={styles.review} aria-label={`${t.review}: ${inv.vendorName ?? common.none}, ${inv.invoiceNumber ?? common.none}, #${inv.id}`}>
+                          <ChevronRight size={16} aria-hidden="true" />
+                        </Link>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+            <div className={styles.mobile}>
               {rows.map((inv) => (
-                <TableRow key={inv.id}>
-                  <TableCell className="font-semibold text-[var(--heading)]">{inv.vendorName ?? <span className="text-[var(--muted-foreground)]">{common.none}</span>}</TableCell>
-                  <TableCell>{inv.invoiceNumber ?? <span className="text-[var(--muted-foreground)]">{common.none}</span>}</TableCell>
-                  <TableCell className="text-[var(--muted-foreground)]">{inv.invoiceDate ?? common.none}</TableCell>
-                  <TableCell className="text-end font-semibold tabular-nums">
-                    {inv.grossAmount
-                      ? `${inv.currency} ${formatDisplayAmount(inv.grossAmount, inv.currencyType)}`
-                      : common.none}
-                  </TableCell>
-                  <TableCell>
-                    <div className="invoice-list-status-badges">
-                      {statusBadge(inv.status, common)}
+                <article key={inv.id}>
+                  <Link className={styles.mobileRow} href={`/invoices/${inv.id}`}>
+                    <span className="sr-only">{t.review}: </span>
+                    <span className={styles.mobileIdentity}>
+                      <span className={styles.vendor}><bdi>{inv.vendorName ?? common.none}</bdi></span>
+                      <span className={styles.reference}><bdi>{inv.invoiceNumber ?? common.none}</bdi><bdi className={styles.id}>#{inv.id}</bdi></span>
+                    </span>
+                    <span className={styles.money}>
+                      <span className={styles.amount} dir="ltr">
+                        {inv.grossAmount ? <><span className={styles.currency}>{inv.currency}</span>{" "}{formatDisplayAmount(inv.grossAmount, inv.currencyType)}</> : common.none}
+                      </span>
+                      <span className="sr-only">{t.paymentFilterLabel}: </span>
                       {paymentStatusBadge(inv.paymentStatus, common)}
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-xs text-[var(--muted-foreground)]">#{inv.id}</TableCell>
-                  <TableCell className="text-end">
-                    <Link href={`/invoices/${inv.id}`} className="ui-table-action">
-                      {t.review}
-                    </Link>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-            </Table>
-          </div>
-          <div className="invoice-list-mobile">
-            {rows.map((inv) => (
-              <article className="invoice-list-card" key={inv.id}>
-                <div className="invoice-list-card-header">
-                  <div className="invoice-list-card-vendor">
-                    {inv.vendorName ?? <span className="invoice-list-card-none">{common.none}</span>}
-                  </div>
-                  <div className="invoice-list-status-badges invoice-list-card-status">
-                    {statusBadge(inv.status, common)}
-                    {paymentStatusBadge(inv.paymentStatus, common)}
-                  </div>
-                </div>
-                <div className="invoice-list-card-details">
-                  <span className="invoice-list-card-invoice-number">
-                    {inv.invoiceNumber ?? <span className="invoice-list-card-none">{common.none}</span>}
-                  </span>
-                  <span aria-hidden="true">·</span>
-                  <span>{inv.invoiceDate ?? common.none}</span>
-                </div>
-                <div className="invoice-list-card-summary">
-                  <div className="invoice-list-card-amount">
-                    {inv.grossAmount
-                      ? `${inv.currency} ${formatDisplayAmount(inv.grossAmount, inv.currencyType)}`
-                      : common.none}
-                  </div>
-                  <Link className="invoice-list-card-review" href={`/invoices/${inv.id}`}>
-                    {t.review}
+                    </span>
+                    <span className={styles.date}><span className="sr-only">{t.colDate}: </span><bdi>{inv.invoiceDate ?? common.none}</bdi></span>
+                    <span className={styles.mobileWorkflow}><span>{t.colWorkflow}: </span>{statusBadge(inv.status, common)}</span>
+                    <ChevronRight className={styles.mobileChevron} size={16} aria-hidden="true" />
                   </Link>
-                </div>
-                <div className="invoice-list-card-id">#{inv.id}</div>
-              </article>
-            ))}
-          </div>
-        </>
-      )}
+                </article>
+              ))}
+            </div>
+          </>
+        )}
+      </section>
     </div>
   );
 }
