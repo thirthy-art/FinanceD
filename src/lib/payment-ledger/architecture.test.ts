@@ -6,6 +6,7 @@ const reconciliationService = readFileSync(new URL("../reconciliation/service.ts
 const paymentImportRoute = readFileSync(new URL("../../../app/api/payment-accounts/import/route.ts", import.meta.url), "utf8");
 const legacyImportRoute = readFileSync(new URL("../../../app/api/reconciliation/import/route.ts", import.meta.url), "utf8");
 const reconciliationPage = readFileSync(new URL("../../../app/reconciliation/page.tsx", import.meta.url), "utf8");
+const paymentAccountsPage = readFileSync(new URL("../../../app/reconciliation/payment-accounts/page.tsx", import.meta.url), "utf8");
 const paymentAccountsClient = readFileSync(new URL("../../../app/reconciliation/payment-accounts/PaymentAccountsClient.tsx", import.meta.url), "utf8");
 const snapshotRoute = readFileSync(new URL("../../../app/api/payment-accounts/balance-snapshots/route.ts", import.meta.url), "utf8");
 const migration = readFileSync(new URL("../../../drizzle/0016_boring_amazoness.sql", import.meta.url), "utf8");
@@ -49,6 +50,21 @@ describe("payment-ledger architectural invariants", () => {
     expect(paymentAccountsClient).not.toContain("> Client Funds eligible<");
     expect(paymentAccountsClient).not.toContain('"providerEventId"');
     expect(paymentAccountsClient).not.toContain('"relatedProviderEventId"');
+  });
+
+  it("uses a labeled fiat currency selector and explains opening-balance updates", () => {
+    const openingForm = paymentAccountsClient.slice(paymentAccountsClient.indexOf("function OpeningBalanceForm"), paymentAccountsClient.indexOf("function FormField"));
+    expect(paymentAccountsClient).toContain('SUPPORTED_BASE_CURRENCIES');
+    expect(paymentAccountsPage).toContain('openings={normalizedOpenings}');
+    expect(openingForm).toContain('label={t.selectAccount}');
+    expect(openingForm).toContain('label={t.currencyAsset}');
+    expect(openingForm).toContain('label={t.openingAvailable}');
+    expect(openingForm).toContain('label={t.openingReserve}');
+    expect(openingForm).toContain('label={t.openingBalanceDate}');
+    expect(openingForm).toContain('assetType: "fiat"');
+    expect(openingForm).toContain('existing ? t.updateOpeningBalance : t.saveOpeningBalance');
+    expect(openingForm).not.toContain('name="asset"');
+    expect(openingForm).not.toContain('name="assetType"');
   });
 
   it("filters canonical Client Funds imports in UI and service while retaining null-account legacy imports", () => {

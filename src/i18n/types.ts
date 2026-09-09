@@ -568,15 +568,15 @@ export interface Messages {
     accounts: string; transactions: string; balances: string; reserves: string; comparison: string;
     addAccount: string; accountName: string; providerName: string; accountType: string; create: string;
     selectAccount: string; upload: string; uploadHint: string; noAccounts: string; noTransactions: string;
-    asset: string; assetType: string; fiat: string; crypto: string; openingAvailable: string; openingReserve: string;
+    asset: string; assetType: string; fiat: string; crypto: string; currencyAsset: string; openingBalance: string; openingAvailable: string; openingReserve: string; openingBalanceDate: string;
     calculatedAvailable: string; calculatedReserve: string; reportedBalance: string; difference: string;
     totalFunds: string; immediatelyAvailable: string; fundsInTransit: string; rollingReserve: string;
     eventDate: string; eventType: string; amount: string; direction: string; source: string; fee: string;
     expectedFee: string; actualFee: string; feeVariance: string; impliedFx: string; expectedFx: string; fxVariance: string; providerCost: string;
-    unavailable: string; accountCreated: string; imported: string; duplicate: string; overlapWarning: string; saveAsset: string;
+    unavailable: string; accountCreated: string; accountUpdated: string; imported: string; duplicate: string; overlapWarning: string; saveAsset: string; saveOpeningBalance: string; updateOpeningBalance: string; openingBalanceSaved: string; openingBalanceHelp: string;
     expectedRelease: string; actualReleased: string; actualReleaseDate: string; unlinkedReleases: string; outstanding: string; exposureNote: string; error: string;
     clientFundsEligible: string; providerEventId: string; relatedProviderEventId: string;
-    currentCalculatedAvailable: string; calculatedAtReported: string; reportedAsOf: string;
+    currentCalculatedAvailable: string; calculatedAtReported: string; reportedAsOf: string; accountBalances: string; noAccountBalances: string;
     sourceAmountBasis: string; balanceAmountBasis: string; basisAssetOptional: string; feeAsset: string; days: string;
     accountTypeLabels: { psp: string; wallet: string; exchange: string; bank: string; other: string };
     eventTypeLabels: { deposit: string; withdrawal: string; refund: string; chargeback: string; fee: string; adjustment: string; settlement: string; transfer: string; reserve_hold: string; reserve_release: string; conversion: string; unknown: string };
