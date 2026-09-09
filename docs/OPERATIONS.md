@@ -42,7 +42,7 @@ The exact variables documented by `.env.example` are:
 |---|---|---|
 | `DATABASE_URL` | Yes | PostgreSQL connection string. |
 | `AUTH_SECRET` | Yes | High-entropy Auth.js signing/encryption secret. |
-| `AUTH_URL` | Optional | Explicit Auth.js base URL; normally inferred from trusted forwarded headers in v5. |
+| `AUTH_URL` | Production | Canonical Auth.js origin. Set to `https://financedapp.concept.me.uk` on Render so OAuth starts and returns on the same host. |
 | `AUTH_TRUST_HOST` | Render | Set to `true` so Auth.js accepts Render's forwarded host headers. |
 | `AUTH_GOOGLE_ID` | Google login | Google OAuth client ID. |
 | `AUTH_GOOGLE_SECRET` | Google login | Google OAuth client secret. |
@@ -63,7 +63,7 @@ The exact variables documented by `.env.example` are:
 
 Never place actual values for credentials, connection strings, bucket identifiers, or account details in documentation or source control.
 
-Google's callback is `/api/auth/callback/google`; Microsoft's is `/api/auth/callback/microsoft-entra-id`. A provider is enabled only when all of its documented variables are present. Auth.js identity, OAuth account, and database-session rows are persisted in PostgreSQL.
+Google's callback is `/api/auth/callback/google`; Microsoft's is `/api/auth/callback/microsoft-entra-id`. In production these resolve below the `AUTH_URL` origin, so provider redirect URIs must use `https://financedapp.concept.me.uk/api/auth/callback/<provider>` and must not use the Render service URL. A provider is enabled only when all of its documented variables are present. Auth.js identity, OAuth account, and database-session rows are persisted in PostgreSQL.
 
 ## Private-beta onboarding and removal
 
