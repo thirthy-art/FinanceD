@@ -12,6 +12,7 @@ import { normalizeEmail } from "@/src/lib/email-normalization";
 interface FakeOptions {
   selects: unknown[][];
   returning?: unknown[][];
+  updateReturning?: unknown[][];
 }
 
 function fakeDb(options: FakeOptions) {
@@ -19,6 +20,7 @@ function fakeDb(options: FakeOptions) {
   const updates: Array<{ values: unknown }> = [];
   const selects = [...options.selects];
   const returning = [...(options.returning ?? [])];
+  const updateReturning = [...(options.updateReturning ?? [])];
 
   const tx = {
     execute: vi.fn().mockResolvedValue([]),
@@ -51,7 +53,11 @@ function fakeDb(options: FakeOptions) {
     update: vi.fn().mockImplementation(() => ({
       set: vi.fn().mockImplementation((values: unknown) => {
         updates.push({ values });
-        return { where: vi.fn().mockResolvedValue([]) };
+        return {
+          where: vi.fn().mockImplementation(() => ({
+            returning: vi.fn().mockResolvedValue(updateReturning.shift() ?? []),
+          })),
+        };
       }),
     })),
   };
@@ -68,7 +74,10 @@ describe("company access provisioning", () => {
   });
 
   it("creates a new company and pending access for a brand-new email", async () => {
-    const fake = fakeDb({ selects: [[], []], returning: [[{ id: 41, name: "New Client Ltd" }]] });
+    const fake = fakeDb({
+      selects: [[], []],
+      returning: [[{ id: 41, name: "New Client Ltd" }], [{ id: 91 }]],
+    });
     await expect(provisionCompanyWithFirstUser(fake.db, {
       companyName: " New Client Ltd ", email: " Owner@NewClient.com ",
     })).resolves.toEqual({
@@ -77,8 +86,16 @@ describe("company access provisioning", () => {
       normalizedEmail: "owner@newclient.com",
       status: "pending-first-login-claim",
     });
-    expect(fake.inserts).toHaveLength(2);
+    expect(fake.inserts).toHaveLength(3);
     expect(fake.inserts[1].values).toEqual({ companyId: 41, normalizedEmail: "owner@newclient.com" });
+    expect(fake.inserts[2].values).toMatchObject({
+      companyId: 41,
+      normalizedEmail: "owner@newclient.com",
+      eventType: "invite_created",
+      actor: "admin",
+      source: "operator_cli",
+      inviteId: 91,
+    });
   });
 
   it("refuses an ambiguous repeat of new-company provisioning", async () => {
@@ -90,12 +107,16 @@ describe("company access provisioning", () => {
   });
 
   it("adds a brand-new email to an existing company without creating a company", async () => {
-    const fake = fakeDb({ selects: [[{ id: 3, name: "Gleb Test" }], []] });
+    const fake = fakeDb({
+      selects: [[{ id: 3, name: "Gleb Test" }], []],
+      returning: [[{ id: 73 }]],
+    });
     await expect(grantCompanyAccess(fake.db, {
       companyId: 3, email: "newperson@example.com",
     })).resolves.toMatchObject({ companyId: 3, status: "pending-first-login-claim" });
-    expect(fake.inserts).toHaveLength(1);
+    expect(fake.inserts).toHaveLength(2);
     expect(fake.inserts[0].values).toEqual({ companyId: 3, normalizedEmail: "newperson@example.com" });
+    expect(fake.inserts[1].values).toMatchObject({ eventType: "invite_created", inviteId: 73 });
   });
 
   it("grants an existing Auth.js user immediate idempotent membership", async () => {
@@ -112,6 +133,12 @@ describe("company access provisioning", () => {
     await expect(grantCompanyAccess(second.db, { companyId: 3, email: "user@example.com" }))
       .resolves.toMatchObject({ status: "membership-already-existed" });
     expect(first.inserts[0].values).toEqual({ userId: "user-1", companyId: 3 });
+    expect(first.inserts[1].values).toMatchObject({
+      eventType: "membership_granted",
+      actor: "admin",
+      source: "operator_cli",
+    });
+    expect(second.inserts).toHaveLength(1);
   });
 
   it("claims every explicitly invited company and preserves conflict-safe memberships", async () => {
@@ -120,16 +147,22 @@ describe("company access provisioning", () => {
         [{ id: "consultant", email: "Consultant@Example.com" }],
         [{ id: 11, companyId: 7 }, { id: 12, companyId: 12 }],
       ],
+      returning: [[{ companyId: 7 }, { companyId: 12 }]],
+      updateReturning: [[{ id: 11, companyId: 7 }, { id: 12, companyId: 12 }]],
     });
     await expect(claimPendingCompanyAccess(fake.db, {
       userId: "consultant", authenticatedEmail: "consultant@example.com",
     })).resolves.toEqual({ claimedCompanyIds: [7, 12] });
-    expect(fake.inserts).toHaveLength(1);
+    expect(fake.inserts).toHaveLength(2);
     expect(fake.inserts[0].values).toEqual([
       { userId: "consultant", companyId: 7 },
       { userId: "consultant", companyId: 12 },
     ]);
     expect(fake.updates).toHaveLength(1);
+    expect(fake.inserts[1].values).toEqual(expect.arrayContaining([
+      expect.objectContaining({ eventType: "invite_claimed", actor: "system", inviteId: 11 }),
+      expect.objectContaining({ eventType: "membership_granted", actor: "system", inviteId: 12 }),
+    ]));
   });
 
   it("repeated login with no unclaimed records creates no membership", async () => {
@@ -164,7 +197,10 @@ describe("company access provisioning", () => {
 
   it("supports multiple distinct users for the same existing company", async () => {
     for (const email of ["alice@acme.com", "bob@acme.com", "finance@acme.com"]) {
-      const fake = fakeDb({ selects: [[{ id: 7, name: "Acme Ltd" }], []] });
+      const fake = fakeDb({
+        selects: [[{ id: 7, name: "Acme Ltd" }], []],
+        returning: [[{ id: 80 }]],
+      });
       await expect(grantCompanyAccess(fake.db, { companyId: 7, email }))
         .resolves.toMatchObject({ companyId: 7, normalizedEmail: email });
       expect(fake.inserts[0].values).toEqual({ companyId: 7, normalizedEmail: email });
@@ -177,6 +213,8 @@ describe("company access provisioning", () => {
         [{ id: "user-1", email: "user@example.com" }],
         [{ id: 22, companyId: 12 }],
       ],
+      returning: [[]],
+      updateReturning: [[{ id: 22, companyId: 12 }]],
     });
     await claimPendingCompanyAccess(fake.db, {
       userId: "user-1", authenticatedEmail: "user@example.com",

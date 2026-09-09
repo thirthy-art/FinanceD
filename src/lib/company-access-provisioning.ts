@@ -4,6 +4,7 @@ import type { Db } from "@/src/db";
 import {
   authUsers,
   companies,
+  companyAccessEvents,
   companyAccessInvites,
   companyMembers,
 } from "@/src/db/schema";
@@ -44,12 +45,23 @@ async function grantOrInvite(
 ): Promise<AccessProvisioningResult> {
   const user = await findAuthUserByEmail(tx, normalizedEmail);
   if (!user) {
-    await tx
+    const [invite] = await tx
       .insert(companyAccessInvites)
       .values({ companyId: company.id, normalizedEmail })
       .onConflictDoNothing({
         target: [companyAccessInvites.companyId, companyAccessInvites.normalizedEmail],
+      })
+      .returning({ id: companyAccessInvites.id });
+    if (invite) {
+      await tx.insert(companyAccessEvents).values({
+        companyId: company.id,
+        normalizedEmail,
+        eventType: "invite_created",
+        actor: "admin",
+        source: "operator_cli",
+        inviteId: invite.id,
       });
+    }
     return {
       companyId: company.id,
       companyName: company.name,
@@ -64,14 +76,38 @@ async function grantOrInvite(
     .onConflictDoNothing({ target: [companyMembers.userId, companyMembers.companyId] })
     .returning({ userId: companyMembers.userId });
 
-  await tx
+  if (inserted.length === 1) {
+    await tx.insert(companyAccessEvents).values({
+      companyId: company.id,
+      userId: user.id,
+      normalizedEmail,
+      eventType: "membership_granted",
+      actor: "admin",
+      source: "operator_cli",
+    });
+  }
+
+  const claimedInvites = await tx
     .update(companyAccessInvites)
     .set({ claimedAt: new Date(), claimedByUserId: user.id })
     .where(and(
       eq(companyAccessInvites.companyId, company.id),
       eq(companyAccessInvites.normalizedEmail, normalizedEmail),
       isNull(companyAccessInvites.claimedAt),
-    ));
+    ))
+    .returning({ id: companyAccessInvites.id });
+
+  if (claimedInvites.length > 0) {
+    await tx.insert(companyAccessEvents).values(claimedInvites.map((invite) => ({
+      companyId: company.id,
+      userId: user.id,
+      normalizedEmail,
+      eventType: "invite_claimed" as const,
+      actor: "admin" as const,
+      source: "operator_cli" as const,
+      inviteId: invite.id,
+    })));
+  }
 
   return {
     companyId: company.id,
@@ -157,19 +193,45 @@ export async function claimPendingCompanyAccess(
       .for("update");
     if (pending.length === 0) return { claimedCompanyIds: [] };
 
-    await tx
+    const insertedMemberships = await tx
       .insert(companyMembers)
       .values(pending.map((invite) => ({ userId: user.id, companyId: invite.companyId })))
-      .onConflictDoNothing({ target: [companyMembers.userId, companyMembers.companyId] });
+      .onConflictDoNothing({ target: [companyMembers.userId, companyMembers.companyId] })
+      .returning({ companyId: companyMembers.companyId });
 
-    await tx
+    const claimedInvites = await tx
       .update(companyAccessInvites)
       .set({ claimedAt: new Date(), claimedByUserId: user.id })
       .where(and(
         inArray(companyAccessInvites.id, pending.map((invite) => invite.id)),
         isNull(companyAccessInvites.claimedAt),
-      ));
+      ))
+      .returning({ id: companyAccessInvites.id, companyId: companyAccessInvites.companyId });
 
-    return { claimedCompanyIds: pending.map((invite) => invite.companyId) };
+    const insertedCompanyIds = new Set(insertedMemberships.map((membership) => membership.companyId));
+    const inviteByCompanyId = new Map(pending.map((invite) => [invite.companyId, invite.id]));
+    const events = [
+      ...claimedInvites.map((invite) => ({
+        companyId: invite.companyId,
+        userId: user.id,
+        normalizedEmail,
+        eventType: "invite_claimed" as const,
+        actor: "system" as const,
+        source: "oauth_invite_claim" as const,
+        inviteId: invite.id,
+      })),
+      ...Array.from(insertedCompanyIds, (companyId) => ({
+        companyId,
+        userId: user.id,
+        normalizedEmail,
+        eventType: "membership_granted" as const,
+        actor: "system" as const,
+        source: "oauth_invite_claim" as const,
+        inviteId: inviteByCompanyId.get(companyId),
+      })),
+    ];
+    if (events.length > 0) await tx.insert(companyAccessEvents).values(events);
+
+    return { claimedCompanyIds: claimedInvites.map((invite) => invite.companyId) };
   });
 }

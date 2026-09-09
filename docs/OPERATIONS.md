@@ -89,6 +89,36 @@ Both provisioning commands trim and lowercase email addresses without provider-s
 
 Remove an existing user's company membership with `npm run auth:revoke -- <email> <companyId>`. This command requires an existing Auth.js user and company. These operator commands never expose an HTTP endpoint; `company_members` remains the application authorization source.
 
+## Company access audit trail
+
+`company_access_events` is the durable, append-only application history of company access administration. It records the company, a normalized email snapshot, an optional Auth.js user, an optional invite, the event type, the occurrence time, the actor category, and the application mechanism. Deleting a membership never deletes its events. User and invite deletion sets the corresponding event reference to null while retaining the normalized email and history. Company deletion is intentionally restricted by the event foreign key so ordinary lifecycle changes cannot silently erase company audit history.
+
+The event types have one meaning each:
+
+- `invite_created`: a new effective pending invitation was created.
+- `invite_claimed`: a pending invitation was claimed for a persisted Auth.js user.
+- `membership_granted`: a new `company_members` row created current access.
+- `membership_revoked`: an existing `company_members` row was deleted.
+- `membership_existing_at_audit_start`: the migration observed an already-existing membership when reliable auditing began; it is not a claim about the original grant time or mechanism.
+
+Actors are deliberately abstract. `admin` means the generic administrative identity in FinanceD's current single-operator model; it does not identify an individual operator. `system` means an automatic application action. Mechanism is recorded separately: `operator_cli` identifies the trusted operator commands, `oauth_invite_claim` identifies automatic first-login claiming, and `audit_bootstrap` identifies the migration boundary.
+
+The grant and invite flows are transactionally audited. A new pending record produces one `invite_created` event. Granting an existing Auth.js user creates `membership_granted` only when a membership is actually inserted. A successful OAuth/OIDC claim produces `invite_claimed` and, only when it creates access, `membership_granted`. Revocation produces `membership_revoked` only when an existing membership is actually deleted. Conflict-safe inserts, locked claims, mutation `RETURNING` results, and database constraints keep retries and concurrent attempts from producing misleading duplicate events.
+
+Inspect history by company, normalized email, or both:
+
+```bash
+npm run auth:access-history -- --company-id 3
+npm run auth:access-history -- --email alice@example.com
+npm run auth:access-history -- --company-id 3 --email alice@example.com
+```
+
+The read-only report shows events, current access, and reconstructed access periods. `membership_granted` or `membership_existing_at_audit_start` opens a period; `membership_revoked` closes it; an open audited period with a current membership is shown through `present`.
+
+Reliable access event auditing begins when migration `0020_chilly_archangel.sql` is deployed. Existing memberships are recorded as present at audit start with `actor = system` and `source = audit_bootstrap`. Their prior grant time, actor, invitation state, and mechanism are not inferred. The existing `company_members.created_at` value is not presented as an independently observed audit event.
+
+`company_members` remains the sole source of truth for current company authorization. Pending invites and audit rows are observational records only: neither can authorize company data, and active-company resolution does not consult either table.
+
 ## Document storage
 
 `src/lib/document-storage.ts` is the storage boundary used by upload, viewing, extraction, and deletion.

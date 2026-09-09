@@ -16,6 +16,7 @@
     "auth:provision": "tsx scripts/company-access.ts provision",
     "auth:grant": "tsx scripts/company-access.ts grant",
     "auth:revoke": "tsx scripts/auth-membership.ts revoke",
+    "auth:access-history": "tsx scripts/company-access-history.ts",
     "db:push": "drizzle-kit push",
     "test": "vitest run --config vitest.config.mjs",
     "test:watch": "vitest --config vitest.config.mjs",
