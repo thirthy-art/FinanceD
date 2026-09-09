@@ -207,7 +207,7 @@ function DashboardScreen({ company, locale, today, data }: {
     <section className={styles.kpiGrid} aria-label="Financial overview">
       <KpiCard label="Total Cash" value={formatMoney(data.cash, company.baseCurrency)} note={data.cash === null ? "No base-currency balance data" : `${data.accountBalances.length} active cash source${data.accountBalances.length === 1 ? "" : "s"}`} tone={data.cash === null ? "muted" : "positive"} icon={WalletCards} />
       <KpiCard label="Receivables" value="—" note="Customer invoices not available in V1" tone="muted" icon={CircleDollarSign} />
-      <KpiCard label="Payables" value={formatMoney(data.payables, company.baseCurrency)} note={`${data.unpaidInvoiceCount} unpaid · ${data.overdueInvoiceCount} overdue`} tone={data.overdueInvoiceCount > 0 ? "negative" : "neutral"} icon={FileText} />
+      <KpiCard label="Payables" value={formatMoney(data.payables, company.baseCurrency)} note={`${data.unpaidInvoiceCount} unpaid · ${data.overdueInvoiceCount} overdue${data.payablesMissingAmountCount > 0 ? ` · ${data.payablesMissingAmountCount} without base amount` : ""}`} tone={data.overdueInvoiceCount > 0 || data.payablesMissingAmountCount > 0 ? "negative" : "neutral"} icon={FileText} />
       <KpiCard label="Net Position" value={formatMoney(data.netPosition, company.baseCurrency)} note={data.netPosition === null ? "Available when cash data exists" : "Cash less open payables"} tone={data.netPosition !== null && new Decimal(data.netPosition).isNegative() ? "negative" : data.netPosition === null ? "muted" : "positive"} icon={Landmark} />
     </section>
 

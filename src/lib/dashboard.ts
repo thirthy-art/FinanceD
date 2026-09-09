@@ -45,6 +45,7 @@ export interface DashboardData {
   receivables: null;
   netPosition: string | null;
   unpaidInvoiceCount: number;
+  payablesMissingAmountCount: number;
   overdueInvoiceCount: number;
   draftInvoiceCount: number;
   cashSeries: { date: string; value: string }[];
@@ -134,6 +135,7 @@ export function buildDashboardData(input: {
     receivables: null,
     netPosition,
     unpaidInvoiceCount: unpaid.length,
+    payablesMissingAmountCount: unpaid.filter((invoice) => invoice.baseGrossAmount === null).length,
     overdueInvoiceCount: unpaid.filter((invoice) => invoice.dueDate !== null && invoice.dueDate < input.today).length,
     draftInvoiceCount: input.invoices.filter((invoice) => invoice.status === "draft").length,
     cashSeries,

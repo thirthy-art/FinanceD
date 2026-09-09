@@ -33,6 +33,7 @@ describe("buildDashboardData", () => {
     expect(result.payables).toBe("250.125");
     expect(result.netPosition).toBe("749.975");
     expect(result.unpaidInvoiceCount).toBe(2);
+    expect(result.payablesMissingAmountCount).toBe(1);
     expect(result.accountBalances).toEqual([{ accountId: 1, name: "Revolut", value: "1000.1" }]);
   });
 
