@@ -96,7 +96,13 @@ function CashPositionChart({ series, currency, locale }: {
   </div>;
 }
 
-const DONUT_COLORS = ["#2768df", "#24a483", "#78a8f8", "#f0ad4e", "#8091a7"];
+const DONUT_GRADIENTS = [
+  { from: "#1855c7", to: "#70a9ff" },
+  { from: "#12806d", to: "#72ddc2" },
+  { from: "#5d70cb", to: "#adc8ff" },
+  { from: "#c9792b", to: "#ffd08a" },
+  { from: "#596c87", to: "#b4c3d6" },
+];
 
 function AccountDonut({ balances, total, currency }: {
   balances: { accountId: number; name: string; value: string }[];
@@ -106,20 +112,45 @@ function AccountDonut({ balances, total, currency }: {
   const positive = balances.filter((balance) => new Decimal(balance.value).isPositive());
   const chartTotal = positive.reduce((sum, balance) => sum.plus(balance.value), new Decimal(0));
   if (positive.length === 0 || chartTotal.isZero()) return <ChartEmpty title="No base-currency balances" copy="Balances will be allocated here when payment account data is available." compact />;
-  const stops = positive.reduce<{ cursor: Decimal; parts: string[] }>((result, balance, index) => {
-    const end = result.cursor.plus(new Decimal(balance.value).div(chartTotal).times(100));
+  const segments = positive.reduce<{ cursor: Decimal; items: { length: string; offset: string; gradientIndex: number }[] }>((result, balance, index) => {
+    const length = new Decimal(balance.value).div(chartTotal).times(100);
     return {
-      cursor: end,
-      parts: [...result.parts, `${DONUT_COLORS[index % DONUT_COLORS.length]} ${result.cursor.toDecimalPlaces(3)}% ${end.toDecimalPlaces(3)}%`],
+      cursor: result.cursor.plus(length),
+      items: [...result.items, {
+        length: length.toDecimalPlaces(4).toString(),
+        offset: result.cursor.negated().toDecimalPlaces(4).toString(),
+        gradientIndex: index % DONUT_GRADIENTS.length,
+      }],
     };
-  }, { cursor: new Decimal(0), parts: [] }).parts.join(", ");
+  }, { cursor: new Decimal(0), items: [] }).items;
   return <div className={styles.donutLayout}>
-    <div className={styles.donut} style={{ background: `conic-gradient(${stops})` }} role="img" aria-label="Cash allocation by payment account">
+    <div className={styles.donut}>
+      <svg className={styles.donutSvg} viewBox="0 0 120 120" role="img" aria-label="Cash allocation by payment account">
+        <defs>
+          {DONUT_GRADIENTS.map((gradient, index) => <linearGradient key={gradient.from} id={`cash-by-psp-gradient-${index}`} gradientUnits="userSpaceOnUse" x1="18" y1="16" x2="104" y2="106">
+            <stop offset="0" stopColor={gradient.from} />
+            <stop offset="1" stopColor={gradient.to} />
+          </linearGradient>)}
+        </defs>
+        {segments.map((segment, index) => <circle
+          key={positive[index].accountId}
+          cx="60"
+          cy="60"
+          r="48"
+          fill="none"
+          pathLength="100"
+          stroke={`url(#cash-by-psp-gradient-${segment.gradientIndex})`}
+          strokeWidth="24"
+          strokeDasharray={`${segment.length} ${new Decimal(100).minus(segment.length).toString()}`}
+          strokeDashoffset={segment.offset}
+          transform="rotate(-90 60 60)"
+        />)}
+      </svg>
       <div className={styles.donutCenter}><strong dir="ltr">{formatMoney(total, currency)}</strong><span>available</span></div>
     </div>
     <div className={styles.legend}>
       {positive.slice(0, 5).map((balance, index) => <div className={styles.legendRow} key={balance.accountId}>
-        <span className={styles.legendDot} style={{ background: DONUT_COLORS[index % DONUT_COLORS.length] }} />
+        <span className={styles.legendDot} style={{ background: `linear-gradient(135deg, ${DONUT_GRADIENTS[index % DONUT_GRADIENTS.length].from}, ${DONUT_GRADIENTS[index % DONUT_GRADIENTS.length].to})` }} />
         <span className={styles.legendName}>{balance.name}</span>
         <b>{new Decimal(balance.value).div(chartTotal).times(100).toDecimalPlaces(0).toString()}%</b>
       </div>)}
