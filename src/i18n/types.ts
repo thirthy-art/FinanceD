@@ -6,6 +6,7 @@ export const LOCALE_COOKIE = "financed_locale";
 
 export interface Messages {
   nav: {
+    dashboard: string;
     invoices: string;
     newInvoice: string;
     cashForecast: string;
@@ -17,6 +18,7 @@ export interface Messages {
     aiSettings: string;
     language: string;
     menu: string;
+    more: string;
   };
   companySwitcher: {
     selectCompany: string;

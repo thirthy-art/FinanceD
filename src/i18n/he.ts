@@ -2,6 +2,7 @@ import type { Messages } from "./types";
 
 export const he: Messages = {
   nav: {
+    dashboard: "לוח בקרה",
     invoices: "חשבוניות",
     newInvoice: "חשבונית חדשה",
     cashForecast: "תחזית מזומנים",
@@ -13,6 +14,7 @@ export const he: Messages = {
     aiSettings: "הגדרות AI",
     language: "שפה",
     menu: "תפריט ניווט",
+    more: "עוד",
   },
   companySwitcher: {
     selectCompany: "בחר חברה",

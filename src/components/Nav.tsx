@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 import {
-  Bot, Building2, ChartNoAxesColumnIncreasing, ChevronsUpDown, FileText,
+  Bot, Building2, ChartNoAxesColumnIncreasing, ChevronsUpDown, Ellipsis, FileText, House,
   Languages, Landmark, LogOut, Menu, Scale, SlidersHorizontal, Users, WalletCards, X,
 } from "lucide-react";
 import CompanySwitcher from "@/src/components/CompanySwitcher";
@@ -24,11 +24,12 @@ export default function Nav({ user }: { user?: { name?: string | null; email?: s
   const languageRef = useRef<HTMLDivElement>(null);
 
   const links: NavLink[] = [
+    { href: "/dashboard", label: t.nav.dashboard, icon: House },
     { href: "/", label: t.nav.invoices, icon: FileText },
     { href: "/cash-flow", label: t.nav.cashForecast, icon: ChartNoAxesColumnIncreasing },
+    { href: "/budget", label: t.nav.budget, icon: Landmark },
     { href: "/reconciliation", label: t.nav.reconciliation, icon: Scale },
     { href: "/reconciliation/payment-accounts", label: t.paymentAccounts.topPayments, icon: WalletCards },
-    { href: "/budget", label: t.nav.budget, icon: Landmark },
     { href: "/settings/vendors", label: t.nav.vendors, icon: Users },
     { href: "/settings/chart-of-accounts", label: t.nav.chartOfAccounts, icon: SlidersHorizontal },
     { href: "/settings/company", label: t.nav.company, icon: Building2 },
@@ -87,7 +88,7 @@ export default function Nav({ user }: { user?: { name?: string | null; email?: s
       {mobileOpen && <button type="button" className="app-sidebar-backdrop" aria-label={t.nav.menu} onClick={() => setMobileOpen(false)} />}
       <aside id="app-sidebar" className={`app-sidebar${mobileOpen ? " app-sidebar-open" : ""}`}>
         <div className="app-sidebar-header">
-          <Link href="/" className="app-brand" aria-label="FinanceD"><BrandMark /><span>FinanceD</span></Link>
+          <Link href="/dashboard" className="app-brand" aria-label="FinanceD"><BrandMark /><span>FinanceD</span></Link>
         </div>
         <div className="app-sidebar-company"><CompanySwitcher /></div>
         <nav className="app-sidebar-nav" aria-label={t.nav.menu}>
@@ -110,8 +111,18 @@ export default function Nav({ user }: { user?: { name?: string | null; email?: s
           </div>
         </div>
       </aside>
+      <nav className="mobile-bottom-nav" aria-label={t.nav.menu}>
+        <MobileNavLink href="/dashboard" label={t.nav.dashboard} icon={House} active={isActive("/dashboard")} />
+        <MobileNavLink href="/" label={t.nav.invoices} icon={FileText} active={isActive("/")} />
+        <MobileNavLink href="/cash-flow" label={t.nav.cashForecast} icon={ChartNoAxesColumnIncreasing} active={isActive("/cash-flow")} />
+        <button type="button" className="mobile-bottom-link" aria-label={t.nav.menu} aria-expanded={mobileOpen} onClick={() => setMobileOpen(true)}><Ellipsis size={20} aria-hidden="true" /><span>{t.nav.more}</span></button>
+      </nav>
     </>
   );
+}
+
+function MobileNavLink({ href, label, icon: Icon, active }: NavLink & { active: boolean }) {
+  return <Link href={href} className={`mobile-bottom-link${active ? " mobile-bottom-link-active" : ""}`} aria-current={active ? "page" : undefined}><Icon size={19} strokeWidth={1.9} aria-hidden="true" /><span>{label}</span></Link>;
 }
 
 function BrandMark() { return <span className="app-brand-mark" aria-hidden="true"><Landmark size={17} strokeWidth={2.2} /></span>; }

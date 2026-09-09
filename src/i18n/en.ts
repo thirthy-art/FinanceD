@@ -2,6 +2,7 @@ import type { Messages } from "./types";
 
 export const en: Messages = {
   nav: {
+    dashboard: "Dashboard",
     invoices: "Invoices",
     newInvoice: "New Invoice",
     cashForecast: "Cash Forecast",
@@ -13,6 +14,7 @@ export const en: Messages = {
     aiSettings: "AI Settings",
     language: "Language",
     menu: "Navigation menu",
+    more: "More",
   },
   companySwitcher: {
     selectCompany: "Select company",
