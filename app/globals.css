@@ -93,7 +93,7 @@ main table { font-variant-numeric: tabular-nums; }
 main h1 { letter-spacing: -.02em; }
 
 .app-main {
-  width: min(100%, 1480px);
+  width: min(calc(100% - 252px), 1480px);
   min-height: 100vh;
   margin-inline-start: 252px;
   padding: 32px clamp(24px, 3vw, 48px) 48px;
@@ -131,7 +131,7 @@ main h1 { letter-spacing: -.02em; }
 .ui-tab[aria-selected="true"], .ui-tab-active { border-bottom-color: var(--primary); color: var(--primary-strong); }
 
 @media (max-width: 899.98px) {
-  .app-main { width: 100%; min-height: calc(100vh - 60px); margin-inline-start: 0; padding: 22px 16px 40px; }
+  .app-main { width: 100%; min-height: calc(100vh - 60px); margin-inline-start: 0; padding: 22px 16px 90px; }
   .auth-main { min-height: calc(100vh - 60px); padding: 24px 16px 48px; }
 }
 
@@ -644,6 +644,7 @@ main h1 { letter-spacing: -.02em; }
 .app-sidebar-footer { display: grid; gap: 10px; padding: 14px; border-top: 1px solid var(--sidebar-border); background: var(--sidebar-strong); }
 
 .mobile-topbar { display: none; }
+.mobile-bottom-nav { display: none; }
 .app-sidebar-backdrop { display: none; }
 .auth-topbar { height: 64px; display: flex; align-items: center; justify-content: space-between; padding-inline: clamp(20px, 4vw, 48px); border-bottom: 1px solid var(--border); background: var(--sidebar); }
 .auth-topbar .language-control { width: auto; }
@@ -801,10 +802,11 @@ main h1 { letter-spacing: -.02em; }
 }
 
 @media (max-width: 899.98px) {
-  .mobile-topbar { position: sticky; z-index: 45; inset-block-start: 0; height: 60px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-inline: 12px; border-bottom: 1px solid rgb(0 0 0 / 14%); background: var(--sidebar); }
-  .mobile-topbar .app-brand-mark { width: 34px; height: 34px; }
+  .mobile-topbar { position: sticky; z-index: 45; inset-block-start: 0; height: 58px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-inline: 12px; border-bottom: 1px solid var(--border); background: #fff; }
+  .mobile-topbar .app-brand { color: var(--heading); font-size: 17px; }
+  .mobile-topbar .app-brand-mark { width: 30px; height: 30px; }
   .mobile-topbar .company-switcher-control { min-height: 40px; }
-  .mobile-menu-button { width: 40px; height: 40px; display: grid; place-items: center; border: 1px solid var(--sidebar-border); border-radius: 7px; background: rgb(255 255 255 / 6%); color: #fff; }
+  .mobile-menu-button { width: 38px; height: 38px; display: grid; place-items: center; border: 0; border-radius: 7px; background: transparent; color: #40506a; }
   .app-sidebar { width: min(304px, calc(100vw - 48px)); visibility: hidden; pointer-events: none; transform: translateX(calc(-100% - 8px)); transition: transform .18s ease, visibility .18s ease; box-shadow: var(--shadow-menu); }
   [dir="rtl"] .app-sidebar { transform: translateX(calc(100% + 8px)); }
   .app-sidebar-open, [dir="rtl"] .app-sidebar-open { visibility: visible; pointer-events: auto; transform: translateX(0); }
@@ -812,6 +814,10 @@ main h1 { letter-spacing: -.02em; }
   .app-sidebar .company-switcher-panel { position: fixed; inset-block-start: 76px; inset-inline: 12px; width: auto; max-width: none; }
   .app-sidebar-nav { padding-bottom: 10px; }
   .auth-topbar { height: 60px; padding-inline: 16px; }
+  .mobile-bottom-nav { position: fixed; z-index: 44; inset: auto 0 0; height: 62px; display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--border); background: rgb(255 255 255 / 96%); box-shadow: 0 -4px 18px rgb(31 52 86 / 7%); backdrop-filter: blur(8px); }
+  .mobile-bottom-link { min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border: 0; background: transparent; color: #8b97a8; font-size: 9px; font-weight: 600; text-decoration: none; }
+  .mobile-bottom-link span { max-width: 100%; overflow: hidden; padding-inline: 3px; text-overflow: ellipsis; white-space: nowrap; }
+  .mobile-bottom-link-active { color: var(--primary); }
 }
 
 @media (prefers-reduced-motion: reduce) {
