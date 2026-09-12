@@ -52,7 +52,7 @@ describe("payment-ledger architectural invariants", () => {
     expect(paymentAccountsClient).not.toContain('"relatedProviderEventId"');
   });
 
-  it("uses a labeled fiat currency selector and explains opening-balance updates", () => {
+  it("uses a labeled fiat currency selector and requires deliberate opening-balance edits", () => {
     const openingForm = paymentAccountsClient.slice(paymentAccountsClient.indexOf("function OpeningBalanceForm"), paymentAccountsClient.indexOf("function FormField"));
     expect(paymentAccountsClient).toContain('SUPPORTED_BASE_CURRENCIES');
     expect(paymentAccountsPage).toContain('openings={normalizedOpenings}');
@@ -62,7 +62,10 @@ describe("payment-ledger architectural invariants", () => {
     expect(openingForm).toContain('label={t.openingReserve}');
     expect(openingForm).toContain('label={t.openingBalanceDate}');
     expect(openingForm).toContain('assetType: "fiat"');
-    expect(openingForm).toContain('existing ? t.updateOpeningBalance : t.saveOpeningBalance');
+    expect(openingForm).toContain("t.editOpeningBalance");
+    expect(openingForm).toContain("t.replaceOpeningBalanceWarning");
+    expect(openingForm).toContain('existing ? "PATCH" : "POST"');
+    expect(openingForm).toContain('required name="date"');
     expect(openingForm).not.toContain('name="asset"');
     expect(openingForm).not.toContain('name="assetType"');
   });

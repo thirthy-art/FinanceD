@@ -30,16 +30,28 @@ export async function setClientFundsEligibility(companyId: number, paymentAccoun
   return updated;
 }
 
-export async function upsertAccountAsset(companyId: number, input: { paymentAccountId: number; assetCode: string; assetType: AssetType; openingAvailableBalance: string; openingReserveBalance: string; openingBalanceDate?: string | null }) {
-  const db = getDb(); await requireOwnedAccount(db, companyId, input.paymentAccountId);
+type AccountAssetInput = { paymentAccountId: number; assetCode: string; assetType: AssetType; openingAvailableBalance: string; openingReserveBalance: string; openingBalanceDate: string };
+
+function validateAccountAssetInput(input: AccountAssetInput) {
   validDecimal(input.openingAvailableBalance, "Opening available balance"); validDecimal(input.openingReserveBalance, "Opening reserve balance");
-  const openingBalanceDate = input.openingBalanceDate || null;
-  if (openingBalanceDate !== null) requireDateOnly(openingBalanceDate, "Opening balance date");
-  const assetCode = normalizeAssetCode(input.assetCode);
-  const [row] = await db.insert(paymentAccountAssets).values({ ...input, companyId, assetCode, openingBalanceDate }).onConflictDoUpdate({
-    target: [paymentAccountAssets.paymentAccountId, paymentAccountAssets.assetCode],
-    set: { assetType: input.assetType, openingAvailableBalance: input.openingAvailableBalance, openingReserveBalance: input.openingReserveBalance, openingBalanceDate, updatedAt: new Date() },
-  }).returning();
+  requireDateOnly(input.openingBalanceDate, "Opening balance date");
+  return normalizeAssetCode(input.assetCode);
+}
+
+export async function createAccountAsset(companyId: number, input: AccountAssetInput) {
+  const db = getDb(); await requireOwnedAccount(db, companyId, input.paymentAccountId);
+  const assetCode = validateAccountAssetInput(input);
+  const [existing] = await db.select({ id: paymentAccountAssets.id }).from(paymentAccountAssets).where(and(eq(paymentAccountAssets.companyId, companyId), eq(paymentAccountAssets.paymentAccountId, input.paymentAccountId), eq(paymentAccountAssets.assetCode, assetCode))).limit(1);
+  if (existing) throw new Error("An opening balance already exists for this account and asset. Enter edit mode to replace it.");
+  const [row] = await db.insert(paymentAccountAssets).values({ ...input, companyId, assetCode }).returning();
+  return row;
+}
+
+export async function updateAccountAsset(companyId: number, input: AccountAssetInput) {
+  const db = getDb(); await requireOwnedAccount(db, companyId, input.paymentAccountId);
+  const assetCode = validateAccountAssetInput(input);
+  const [row] = await db.update(paymentAccountAssets).set({ assetType: input.assetType, openingAvailableBalance: input.openingAvailableBalance, openingReserveBalance: input.openingReserveBalance, openingBalanceDate: input.openingBalanceDate, updatedAt: new Date() }).where(and(eq(paymentAccountAssets.companyId, companyId), eq(paymentAccountAssets.paymentAccountId, input.paymentAccountId), eq(paymentAccountAssets.assetCode, assetCode))).returning();
+  if (!row) throw new Error("No existing opening balance is available to update for this account and asset.");
   return row;
 }
 

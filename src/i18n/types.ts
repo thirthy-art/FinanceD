@@ -574,6 +574,7 @@ export interface Messages {
     eventDate: string; eventType: string; amount: string; direction: string; source: string; fee: string;
     expectedFee: string; actualFee: string; feeVariance: string; impliedFx: string; expectedFx: string; fxVariance: string; providerCost: string;
     unavailable: string; accountCreated: string; accountUpdated: string; imported: string; duplicate: string; overlapWarning: string; saveAsset: string; saveOpeningBalance: string; updateOpeningBalance: string; openingBalanceSaved: string; openingBalanceHelp: string;
+    existingOpeningBalance: string; asOf: string; legacyDateMissing: string; editOpeningBalance: string; replaceOpeningBalanceWarning: string; dateChange: string; backToAccounts: string; accountDetails: string; reportedSnapshots: string; reportedReserve: string; reserveRules: string; effectiveFrom: string; effectiveTo: string; eligible: string; notEligible: string; noSnapshots: string; noReserveInformation: string;
     expectedRelease: string; actualReleased: string; actualReleaseDate: string; unlinkedReleases: string; outstanding: string; exposureNote: string; error: string;
     clientFundsEligible: string; providerEventId: string; relatedProviderEventId: string;
     currentCalculatedAvailable: string; calculatedAtReported: string; reportedAsOf: string; accountBalances: string; noAccountBalances: string;

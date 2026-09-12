@@ -3,7 +3,8 @@ import { and, eq } from "drizzle-orm";
 import { getDb } from "@/src/db";
 import * as schema from "@/src/db/schema";
 import type { ImportedPaymentEvent } from "./import";
-import { createPaymentAccount, createReportedBalanceSnapshot, persistCanonicalPaymentImport, upsertAccountAsset } from "./service";
+import { createAccountAsset, createPaymentAccount, createReportedBalanceSnapshot, persistCanonicalPaymentImport, updateAccountAsset } from "./service";
+import { getPaymentAccountDetail } from "./account-detail";
 
 const HAS_DB = Boolean(process.env.DATABASE_URL);
 const db = getDb();
@@ -40,16 +41,26 @@ async function persist(companyId: number, accountId: number, hash: string, event
 }
 
 describe("canonical payment persistence (DB)", () => {
-  it.skipIf(!HAS_DB)("updates the existing opening balance for the same account and asset", async () => {
+  it.skipIf(!HAS_DB)("rejects a create overwrite and permits a deliberate opening-balance update", async () => {
     const companyId = await freshCompany();
     try {
       const paymentAccount = await account(companyId, "Opening balance PSP");
-      await upsertAccountAsset(companyId, { paymentAccountId: paymentAccount.id, assetCode: "eur", assetType: "fiat", openingAvailableBalance: "1000", openingReserveBalance: "50", openingBalanceDate: "2026-01-01" });
-      await upsertAccountAsset(companyId, { paymentAccountId: paymentAccount.id, assetCode: "EUR", assetType: "fiat", openingAvailableBalance: "1250", openingReserveBalance: "75", openingBalanceDate: "2026-02-01" });
+      await createAccountAsset(companyId, { paymentAccountId: paymentAccount.id, assetCode: "eur", assetType: "fiat", openingAvailableBalance: "1000", openingReserveBalance: "50", openingBalanceDate: "2026-01-01" });
+      await expect(createAccountAsset(companyId, { paymentAccountId: paymentAccount.id, assetCode: "EUR", assetType: "fiat", openingAvailableBalance: "1250", openingReserveBalance: "75", openingBalanceDate: "2026-02-01" })).rejects.toThrow(/already exists/);
+      await updateAccountAsset(companyId, { paymentAccountId: paymentAccount.id, assetCode: "EUR", assetType: "fiat", openingAvailableBalance: "1250", openingReserveBalance: "75", openingBalanceDate: "2026-02-01" });
       const rows = await db.select().from(schema.paymentAccountAssets).where(and(eq(schema.paymentAccountAssets.companyId, companyId), eq(schema.paymentAccountAssets.paymentAccountId, paymentAccount.id)));
       expect(rows).toHaveLength(1);
       expect(rows[0]).toMatchObject({ assetCode: "EUR", openingAvailableBalance: "1250.000000000000000000", openingReserveBalance: "75.000000000000000000", openingBalanceDate: "2026-02-01" });
     } finally { await cleanup(companyId); }
+  });
+
+  it.skipIf(!HAS_DB)("does not expose another company's payment-account detail", async () => {
+    const companyId = await freshCompany(); const otherCompanyId = await freshCompany();
+    try {
+      const foreign = await account(otherCompanyId, "Foreign detail");
+      expect(await getPaymentAccountDetail(companyId, foreign.id)).toBeNull();
+      expect((await getPaymentAccountDetail(otherCompanyId, foreign.id))?.account.id).toBe(foreign.id);
+    } finally { await cleanup(companyId); await cleanup(otherCompanyId); }
   });
 
   it.skipIf(!HAS_DB)("deduplicates provider events per account while preserving whole-file reuse and provenance", async () => {
