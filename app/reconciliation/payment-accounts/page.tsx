@@ -38,5 +38,5 @@ export default async function PaymentAccountsPage() {
   });
   const reserveLots = calculateReserveLots(events, normalizedReserveRules);
   const unlinkedReserveReleases = events.filter((event) => event.eventType === "reserve_release" && event.relatedEventId === null).map((event) => ({ id: event.id, paymentAccountId: event.paymentAccountId, assetCode: event.balanceAssetCode, eventDate: event.eventDate, amount: event.balanceAmount, relatedProviderEventId: event.relatedProviderEventId }));
-  return <PaymentAccountsClient accounts={accounts.map((row) => ({ ...row, createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString() }))} events={eventView} balances={balances} totals={totals} transit={transit} reserveLots={reserveLots} unlinkedReserveReleases={unlinkedReserveReleases} />;
+  return <PaymentAccountsClient accounts={accounts.map((row) => ({ ...row, createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString() }))} openings={normalizedOpenings} defaultCurrency={company.baseCurrency} events={eventView} balances={balances} totals={totals} transit={transit} reserveLots={reserveLots} unlinkedReserveReleases={unlinkedReserveReleases} />;
 }
