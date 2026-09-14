@@ -4,7 +4,10 @@
 .pageHeader p { margin: 6px 0 0; color: #8290a5; font-size: 12px; }
 .period { min-height: 36px; display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border: 1px solid #e2e7ef; border-radius: 7px; background: #fff; color: #59677c; font-size: 12px; font-weight: 600; box-shadow: 0 1px 2px rgb(19 38 71 / 3%); }
 .mobilePeriod { display: none; }
+.financialSection { margin-bottom: 24px; }
+.sectionTitle { margin: 0 0 10px; color: #25334b; font-size: 15px; font-weight: 760; letter-spacing: -.015em; }
 .kpiGrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 13px; margin-bottom: 14px; }
+.clientKpiGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 13px; margin-bottom: 14px; }
 .kpiCard, .panel { border: 1px solid #e6ebf2; background: #fff; box-shadow: 0 4px 14px rgb(31 52 86 / 5%); }
 .kpiCard { min-width: 0; min-height: 116px; padding: 15px 16px 13px; border-radius: 9px; }
 .kpiTop { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: #7c899d; font-size: 11px; font-weight: 600; }
@@ -28,14 +31,16 @@
 .axisLabels { position: absolute; inset: 17px auto 32px 12px; display: flex; flex-direction: column; justify-content: space-between; color: #93a0b2; font-size: 9px; font-variant-numeric: tabular-nums; }
 .chartDates { position: absolute; inset: auto 16px 12px 58px; display: flex; justify-content: space-between; color: #93a0b2; font-size: 9px; }
 .donutLayout { min-height: 260px; display: grid; place-items: center; align-content: center; grid-template-columns: 1fr; gap: 17px; padding: 16px 22px 20px; }
+.pspPanel .donutLayout { grid-template-columns: auto minmax(180px, 280px); justify-content: center; gap: 36px; }
 .donut { position: relative; width: 146px; height: 146px; display: grid; place-items: center; border-radius: 50%; }
 .donutSvg { position: absolute; inset: 0; display: block; width: 100%; height: 100%; filter: drop-shadow(0 3px 7px rgb(31 73 138 / 10%)); }
 .donutCenter { position: relative; width: 86px; height: 86px; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 50%; background: #fff; box-shadow: 0 0 0 1px #edf0f5; text-align: center; }
 .donutCenter strong { max-width: 75px; overflow: hidden; color: #25334b; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .donutCenter span { margin-top: 2px; color: #99a4b4; font-size: 8px; }
-.legend { width: min(100%, 220px); display: grid; gap: 5px; }
-.legendRow { display: grid; grid-template-columns: 7px minmax(0, 1fr) auto; gap: 7px; align-items: center; color: #67758a; font-size: 9px; }
-.legendDot { width: 7px; height: 7px; border-radius: 2px; }.legendName { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.legendRow b { color: #3f4d62; font-weight: 650; }
+.legend { width: min(100%, 300px); display: grid; gap: 8px; }
+.legendRow { display: grid; grid-template-columns: 7px minmax(0, 1fr) auto; gap: 7px; align-items: start; color: #67758a; font-size: 9px; }
+.legendDot { width: 7px; height: 7px; margin-top: 3px; border-radius: 2px; }.legendAccount { min-width: 0; display: grid; gap: 2px; }.legendName { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.balanceDetail { color: #8b97a9; font-size: 8px; line-height: 1.35; }.legendRow b { color: #3f4d62; font-weight: 650; }
+.balanceBreakdown { min-height: 260px; display: grid; align-content: center; gap: 9px; padding: 18px 22px; }.balanceBreakdown > p { margin: 0 0 4px; color: #7c899d; font-size: 10px; line-height: 1.45; }.balanceBreakdownRow { display: grid; grid-template-columns: minmax(130px, 1fr) repeat(3, minmax(100px, auto)); gap: 12px; align-items: center; padding: 10px 12px; border: 1px solid #edf0f5; border-radius: 7px; color: #7c899d; font-size: 9px; }.balanceBreakdownRow > strong { overflow: hidden; color: #344258; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }.balanceBreakdownRow > span { display: grid; gap: 2px; }.balanceBreakdownRow b { color: #3f4d62; font-weight: 650; }
 .chartEmpty { min-height: 260px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px; color: #98a3b3; text-align: center; }
 .chartEmptyCompact { min-height: 254px; }.emptyChartIcon { width: 40px; height: 40px; display: grid; place-items: center; margin-bottom: 10px; border-radius: 50%; background: #f1f6ff; color: #5f8fe4; }.chartEmpty strong { color: #536177; font-size: 12px; }.chartEmpty > span:last-child { max-width: 300px; margin-top: 5px; font-size: 10px; line-height: 1.5; }
 .dataList { width: 100%; }.listHead, .listRow { display: grid; grid-template-columns: 80px minmax(120px, 1fr) minmax(108px, auto) 62px; gap: 10px; align-items: center; padding: 0 16px; }
@@ -46,6 +51,7 @@
 
 @media (min-width: 900px) and (max-width: 1160px) {
   .kpiGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .clientKpiGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .chartGrid { grid-template-columns: minmax(0, 1.35fr) minmax(260px, .85fr); }
   .listHead, .listRow { grid-template-columns: 68px minmax(95px, 1fr) minmax(95px, auto) 55px; padding-inline: 12px; }
   .cashList { grid-template-columns: 68px minmax(110px, 1fr) minmax(100px, auto); }
@@ -55,11 +61,13 @@
   .page { padding-bottom: 62px; }
   .pageHeader { min-height: 48px; margin-bottom: 14px; }.pageHeader h1 { font-size: 23px; }.pageHeader p { display: none; }.period { min-height: 32px; padding: 6px 9px; font-size: 10px; }
   .desktopPeriod { display: none; }.mobilePeriod { display: inline; }
-  .kpiGrid { grid-template-columns: 1fr; gap: 8px; }.kpiCard { min-height: 98px; padding: 13px 14px; }.kpiValue { font-size: 23px; }.kpiIcon { width: 27px; height: 27px; }
-  .chartGrid, .lowerGrid { grid-template-columns: 1fr; gap: 10px; }.cashPanel, .pspPanel { min-height: 290px; }.chartWrap { height: 238px; padding-left: 52px; }.donutLayout { grid-template-columns: auto minmax(100px, 1fr); min-height: 236px; padding-inline: 17px; }.donut { width: 130px; height: 130px; }.donutCenter { width: 76px; height: 76px; }
+  .financialSection { margin-bottom: 20px; }.sectionTitle { margin-bottom: 8px; font-size: 14px; }
+  .kpiGrid, .clientKpiGrid { grid-template-columns: 1fr; gap: 8px; }.kpiCard { min-height: 98px; padding: 13px 14px; }.kpiValue { font-size: 23px; }.kpiIcon { width: 27px; height: 27px; }
+  .chartGrid, .lowerGrid { grid-template-columns: 1fr; gap: 10px; }.cashPanel, .pspPanel { min-height: 290px; }.chartWrap { height: 238px; padding-left: 52px; }.donutLayout, .pspPanel .donutLayout { grid-template-columns: auto minmax(100px, 1fr); min-height: 236px; padding-inline: 17px; gap: 17px; }.donut { width: 130px; height: 130px; }.donutCenter { width: 76px; height: 76px; }
+  .balanceBreakdownRow { grid-template-columns: minmax(110px, 1fr) repeat(3, minmax(78px, auto)); gap: 8px; }
   .listHead { display: none; }.listRow { grid-template-columns: 62px minmax(0, 1fr) auto; min-height: 54px; padding-inline: 13px; }.listRow > :last-child { grid-column: 2; justify-self: start; }.cashList { grid-template-columns: 62px minmax(0, 1fr) auto; }.cashList > :last-child { grid-column: auto; justify-self: end; }
 }
 
 @media (max-width: 420px) {
-  .donutLayout { grid-template-columns: 1fr; gap: 13px; }.pspPanel { min-height: 360px; }.legend { width: 100%; }.pageHeader { align-items: center; }
+  .donutLayout, .pspPanel .donutLayout { grid-template-columns: 1fr; gap: 13px; }.pspPanel { min-height: 360px; }.legend { width: 100%; }.balanceBreakdownRow { grid-template-columns: 1fr 1fr; }.balanceBreakdownRow > strong { grid-column: 1 / -1; }.pageHeader { align-items: center; }
 }
