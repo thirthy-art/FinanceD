@@ -90,6 +90,15 @@ export interface Messages {
     paymentFilterLabel: string;
     paymentFilterAll: string;
     noFilterResults: string;
+    searchVendor: string;
+    selectInvoice: string;
+    selectAll: string;
+    deleteSelected: string;
+    deleteConfirmation: string;
+    deletedCount: string;
+    partialDelete: string;
+    deletionFailed: string;
+    deleting: string;
   };
   newInvoice: {
     title: string;
