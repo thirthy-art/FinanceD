@@ -565,7 +565,7 @@ export interface Messages {
   };
   paymentAccounts: {
     topClientFunds: string; topPayments: string; title: string; subtitle: string;
-    accounts: string; transactions: string; balances: string; reserves: string; comparison: string;
+    accounts: string; transactions: string; accountHistory: string; balances: string; reserves: string; comparison: string;
     addAccount: string; accountName: string; providerName: string; accountType: string; create: string;
     selectAccount: string; upload: string; uploadHint: string; noAccounts: string; noTransactions: string;
     asset: string; assetType: string; fiat: string; crypto: string; currencyAsset: string; openingBalance: string; openingAvailable: string; openingReserve: string; openingBalanceDate: string;
@@ -574,7 +574,7 @@ export interface Messages {
     eventDate: string; eventType: string; amount: string; direction: string; source: string; fee: string;
     expectedFee: string; actualFee: string; feeVariance: string; impliedFx: string; expectedFx: string; fxVariance: string; providerCost: string;
     unavailable: string; accountCreated: string; accountUpdated: string; imported: string; duplicate: string; overlapWarning: string; saveAsset: string; saveOpeningBalance: string; updateOpeningBalance: string; openingBalanceSaved: string; openingBalanceHelp: string;
-    existingOpeningBalance: string; asOf: string; legacyDateMissing: string; editOpeningBalance: string; replaceOpeningBalanceWarning: string; dateChange: string; backToAccounts: string; accountDetails: string; reportedSnapshots: string; reportedReserve: string; reserveRules: string; effectiveFrom: string; effectiveTo: string; eligible: string; notEligible: string; noSnapshots: string; noReserveInformation: string;
+    existingOpeningBalance: string; openingBalances: string; asOf: string; legacyDateMissing: string; editOpeningBalance: string; deleteOpeningBalance: string; editNamedOpeningBalance: string; deleteNamedOpeningBalanceQuestion: string; openingBalanceDeleteConfirmation: string; openingBalanceIdentityStable: string; confirmOpeningBalanceChanges: string; openingBalanceDateRequired: string; openingBalanceUpdateFailed: string; openingBalanceDeleteFailed: string; replaceOpeningBalanceWarning: string; dateChange: string; backToAccounts: string; accountDetails: string; reportedSnapshots: string; reportedReserve: string; reserveRules: string; effectiveFrom: string; effectiveTo: string; eligible: string; notEligible: string; noSnapshots: string; noReserveInformation: string;
     expectedRelease: string; actualReleased: string; actualReleaseDate: string; unlinkedReleases: string; outstanding: string; exposureNote: string; error: string;
     clientFundsEligible: string; providerEventId: string; relatedProviderEventId: string;
     currentCalculatedAvailable: string; calculatedAtReported: string; reportedAsOf: string; accountBalances: string; noAccountBalances: string;

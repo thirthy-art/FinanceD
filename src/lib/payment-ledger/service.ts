@@ -84,6 +84,19 @@ export async function updateAccountAsset(companyId: number, input: AccountAssetI
   return row;
 }
 
+export async function deleteAccountAsset(companyId: number, paymentAccountId: number, assetCodeInput: string) {
+  const db = getDb();
+  await requireOwnedAccount(db, companyId, paymentAccountId);
+  const assetCode = normalizeAssetCode(assetCodeInput);
+  const [deleted] = await db.delete(paymentAccountAssets).where(and(
+    eq(paymentAccountAssets.companyId, companyId),
+    eq(paymentAccountAssets.paymentAccountId, paymentAccountId),
+    eq(paymentAccountAssets.assetCode, assetCode),
+  )).returning({ id: paymentAccountAssets.id });
+  if (!deleted) throw new PaymentLedgerNotFoundError("Opening balance not found.");
+  return { deleted: true as const };
+}
+
 export interface CanonicalPaymentImportInput { ingestionSource: PaymentIngestionSource; sourceIdentity: string; contentHash: string; events: ImportedPaymentEvent[]; }
 
 /** Shared persistence boundary for CSV, XLSX, and future API adapters. */

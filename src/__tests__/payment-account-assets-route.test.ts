@@ -2,13 +2,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 vi.mock("@/src/lib/active-company", () => ({ getActiveCompanyFromRequest: vi.fn() }));
-vi.mock("@/src/lib/payment-ledger", () => ({ createAccountAsset: vi.fn(), updateAccountAsset: vi.fn() }));
+vi.mock("@/src/lib/payment-ledger", () => ({ createAccountAsset: vi.fn(), deleteAccountAsset: vi.fn(), PaymentLedgerNotFoundError: class PaymentLedgerNotFoundError extends Error {}, updateAccountAsset: vi.fn() }));
 
-import { PATCH, POST } from "@/app/api/payment-accounts/assets/route";
+import { DELETE, PATCH, POST } from "@/app/api/payment-accounts/assets/route";
 import { getActiveCompanyFromRequest } from "@/src/lib/active-company";
-import { createAccountAsset, updateAccountAsset } from "@/src/lib/payment-ledger";
+import { createAccountAsset, deleteAccountAsset, updateAccountAsset } from "@/src/lib/payment-ledger";
 
-const activeCompany = vi.mocked(getActiveCompanyFromRequest); const createAsset = vi.mocked(createAccountAsset); const updateAsset = vi.mocked(updateAccountAsset);
+const activeCompany = vi.mocked(getActiveCompanyFromRequest); const createAsset = vi.mocked(createAccountAsset); const updateAsset = vi.mocked(updateAccountAsset); const removeAsset = vi.mocked(deleteAccountAsset);
 const request = (method: string, body: unknown) => new NextRequest("http://localhost/api/payment-accounts/assets", { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 const valid = { paymentAccountId: 12, assetCode: "EUR", assetType: "fiat", openingAvailableBalance: "1000", openingReserveBalance: "50", openingBalanceDate: "2026-09-01" };
 
@@ -31,5 +31,16 @@ describe("payment-account opening balance API", () => {
     updateAsset.mockResolvedValue({ id: 9 } as never);
     const response = await PATCH(request("PATCH", { ...valid, confirmOverwrite: true }));
     expect(response.status).toBe(200); expect(updateAsset).toHaveBeenCalledWith(7, valid);
+  });
+
+  it("requires a date when updating a legacy null-date opening balance", async () => {
+    const response = await PATCH(request("PATCH", { ...valid, openingBalanceDate: "", confirmOverwrite: true }));
+    expect(response.status).toBe(400); expect(await response.json()).toEqual({ error: "Opening balance date is required." }); expect(updateAsset).not.toHaveBeenCalled();
+  });
+
+  it("deletes only the active company's requested account and asset", async () => {
+    removeAsset.mockResolvedValue({ deleted: true });
+    const response = await DELETE(request("DELETE", { paymentAccountId: 12, assetCode: "PSP" }));
+    expect(response.status).toBe(200); expect(removeAsset).toHaveBeenCalledWith(7, 12, "PSP");
   });
 });

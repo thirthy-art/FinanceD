@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Decimal } from "@/src/lib/decimal";
 import { getActiveCompanyFromRequest } from "@/src/lib/active-company";
-import { createAccountAsset, updateAccountAsset } from "@/src/lib/payment-ledger";
+import { createAccountAsset, deleteAccountAsset, PaymentLedgerNotFoundError, updateAccountAsset } from "@/src/lib/payment-ledger";
 
 const validDecimal = (value: unknown) => { if (typeof value !== "string") return false; try { return new Decimal(value).isFinite(); } catch { return false; } };
 export async function POST(req: NextRequest) {
@@ -25,4 +25,17 @@ export async function PATCH(req: NextRequest) {
     const position = await updateAccountAsset(company.id, { paymentAccountId: body.paymentAccountId, assetCode: body.assetCode, assetType: body.assetType, openingAvailableBalance: body.openingAvailableBalance as string, openingReserveBalance: body.openingReserveBalance as string, openingBalanceDate: body.openingBalanceDate });
     return NextResponse.json({ position });
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Asset position could not be updated." }, { status: 400 }); }
+}
+
+export async function DELETE(req: NextRequest) {
+  const company = await getActiveCompanyFromRequest(req); if (company instanceof Response) return company;
+  try {
+    const body = await req.json() as Record<string, unknown>;
+    if (typeof body.paymentAccountId !== "number" || !Number.isInteger(body.paymentAccountId) || typeof body.assetCode !== "string") return NextResponse.json({ error: "Valid account and asset are required." }, { status: 400 });
+    await deleteAccountAsset(company.id, body.paymentAccountId, body.assetCode);
+    return NextResponse.json({ deleted: true });
+  } catch (error) {
+    const status = error instanceof PaymentLedgerNotFoundError ? 404 : 400;
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Opening balance could not be deleted." }, { status });
+  }
 }

@@ -22,6 +22,7 @@ describe("payment account detail", () => {
     };
     const html = renderToStaticMarkup(<PaymentAccountDetail detail={detail} messages={getMessages("en").paymentAccounts}/>);
     expect(html).toContain("Testbank"); expect(html).toContain(">EUR<"); expect(html).toContain(">USD<"); expect(html).toContain(">PSP<"); expect(html).toContain(">2000<"); expect(html).toContain(">1250.5<"); expect(html).not.toContain("2000.000000000000000000");
+    expect(html).toContain("Account history"); expect(html.indexOf("Opening balance")).toBeLessThan(html.indexOf("Deposit")); expect(html).toContain("01/09/2026"); expect(html).toContain("No date / legacy");
     expect(html).toContain("Edit"); expect(html).toContain(">Delete<"); expect(html).toContain("Delete account"); expect(html).not.toContain("Danger Zone");
   });
 });

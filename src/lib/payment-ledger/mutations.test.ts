@@ -3,8 +3,9 @@ import { describe, expect, it } from "vitest";
 import { getDb } from "@/src/db";
 import * as schema from "@/src/db/schema";
 import { calculateBalances } from "./calculations";
+import { getPaymentAccountDetail } from "./account-detail";
 import type { ImportedPaymentEvent } from "./import";
-import { createAccountAsset, createFeeRule, createPaymentAccount, createReportedBalanceSnapshot, createReserveRule, deletePaymentAccount, deletePaymentEvent, persistCanonicalPaymentImport, updatePaymentEvent } from "./service";
+import { createAccountAsset, createFeeRule, createPaymentAccount, createReportedBalanceSnapshot, createReserveRule, deleteAccountAsset, deletePaymentAccount, deletePaymentEvent, persistCanonicalPaymentImport, updateAccountAsset, updatePaymentEvent } from "./service";
 
 const HAS_DB = Boolean(process.env.DATABASE_URL); const db = getDb();
 const event = (overrides: Partial<ImportedPaymentEvent> = {}): ImportedPaymentEvent => ({ sourceRowNumber: 2, sourceRowId: null, providerEventId: `event-${Date.now()}-${Math.random()}`, relatedProviderEventId: null, relatedPaymentAccountId: null, externalId: null, reference: null, eventDate: "2026-09-08", eventType: "deposit", balanceDirection: "credit", balanceAmount: "100", balanceAssetCode: "EUR", balanceAssetType: "fiat", sourceAmount: null, sourceAssetCode: null, sourceAssetType: null, actualFeeAmount: null, actualFeeAssetCode: null, expectedFxRate: null, reportedAvailableBalance: null, reportedReserveBalance: null, expectedReleaseDate: null, destinationAccountId: null, destinationAmount: null, destinationAssetCode: null, destinationAssetType: null, expectedDestinationAmount: null, expectedDestinationRate: null, relatedEventId: null, finalReceipt: false, status: "settled", statusProvided: true, rawIdentifiers: "{}", ...overrides });
@@ -27,6 +28,24 @@ describe("payment ledger destructive mutations", () => {
       await expect(updatePaymentEvent(a, eventId, { eventDate: "2026-09-09", eventType: "deposit", balanceDirection: "credit", balanceAmount: "200", balanceAssetCode: "EUR", balanceAssetType: "fiat", reference: null })).rejects.toThrow(/not found/);
       await expect(deletePaymentEvent(a, eventId)).rejects.toThrow(/not found/);
     } finally { await cleanup(a); await cleanup(b); }
+  });
+
+  it.skipIf(!HAS_DB)("rejects cross-tenant opening-balance edits and deletes", async () => {
+    const a = await company(); const b = await company(); try { const foreign = await account(b, "Foreign opening"); await createAccountAsset(b, { paymentAccountId: foreign.id, assetCode: "EUR", assetType: "fiat", openingAvailableBalance: "1000", openingReserveBalance: "0", openingBalanceDate: "2026-09-01" });
+      await expect(updateAccountAsset(a, { paymentAccountId: foreign.id, assetCode: "EUR", assetType: "fiat", openingAvailableBalance: "2000", openingReserveBalance: "0", openingBalanceDate: "2026-09-02" })).rejects.toThrow(/valid payment account/);
+      await expect(deleteAccountAsset(a, foreign.id, "EUR")).rejects.toThrow(/valid payment account/);
+      expect(await db.select().from(schema.paymentAccountAssets).where(and(eq(schema.paymentAccountAssets.companyId, b), eq(schema.paymentAccountAssets.paymentAccountId, foreign.id)))).toHaveLength(1);
+    } finally { await cleanup(a); await cleanup(b); }
+  });
+
+  it.skipIf(!HAS_DB)("deletes only one opening row while preserving the account, events, snapshots, and derived event balance", async () => {
+    const companyId = await company(); try { const owned = await account(companyId, "Opening deletion"); const sibling = await account(companyId, "Sibling account"); await createAccountAsset(companyId, { paymentAccountId: owned.id, assetCode: "EUR", assetType: "fiat", openingAvailableBalance: "1000", openingReserveBalance: "50", openingBalanceDate: "2026-09-01" }); await createAccountAsset(companyId, { paymentAccountId: owned.id, assetCode: "PSP", assetType: "fiat", openingAvailableBalance: "25", openingReserveBalance: "0", openingBalanceDate: "2026-09-01" }); await createAccountAsset(companyId, { paymentAccountId: sibling.id, assetCode: "EUR", assetType: "fiat", openingAvailableBalance: "500", openingReserveBalance: "0", openingBalanceDate: "2026-09-01" }); await createReportedBalanceSnapshot(companyId, { paymentAccountId: owned.id, assetCode: "EUR", assetType: "fiat", reportedAvailableBalance: "1100", asOf: "2026-09-08", ingestionSource: "manual" }); await imported(companyId, owned.id, [event({ balanceAmount: "100" })]);
+      await expect(deleteAccountAsset(companyId, owned.id, "eur")).resolves.toEqual({ deleted: true });
+      expect((await db.select().from(schema.paymentAccountAssets).where(eq(schema.paymentAccountAssets.paymentAccountId, owned.id))).map((row) => row.assetCode)).toEqual(["PSP"]);
+      expect((await db.select().from(schema.paymentAccountAssets).where(eq(schema.paymentAccountAssets.paymentAccountId, sibling.id))).map((row) => row.assetCode)).toEqual(["EUR"]);
+      expect(await db.select().from(schema.paymentAccounts).where(eq(schema.paymentAccounts.id, owned.id))).toHaveLength(1); expect(await db.select().from(schema.paymentEvents).where(eq(schema.paymentEvents.paymentAccountId, owned.id))).toHaveLength(1); expect(await db.select().from(schema.paymentBalanceSnapshots).where(eq(schema.paymentBalanceSnapshots.paymentAccountId, owned.id))).toHaveLength(1);
+      const detail = await getPaymentAccountDetail(companyId, owned.id); expect(detail?.balances.find((row) => row.assetCode === "EUR")?.available).toBe("100");
+    } finally { await cleanup(companyId); }
   });
 
   it.skipIf(!HAS_DB)("deletes safe account-local children atomically", async () => {
