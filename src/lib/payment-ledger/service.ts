@@ -57,15 +57,6 @@ export class PaymentLedgerNotFoundError extends Error {
   }
 }
 
-export interface PaymentAccountDeletionImpact {
-  openings: number;
-  transactions: number;
-  snapshots: number;
-  feeRules: number;
-  reserveRules: number;
-  imports: number;
-}
-
 export interface PaymentEventBusinessUpdate {
   eventDate: string;
   eventType: PaymentEventType;
@@ -191,24 +182,6 @@ export async function createReserveRule(companyId: number, input: { paymentAccou
   const [row] = await db.insert(paymentReserveRules).values({ ...input, companyId, assetCode: input.assetCode ? normalizeAssetCode(input.assetCode) : null, reservePercentage: input.reservePercentage ?? null, holdPeriodDays: input.holdPeriodDays ?? null, effectiveTo: input.effectiveTo || null }).returning(); return row;
 }
 
-async function accountDeletionImpact(db: Db, companyId: number, paymentAccountId: number): Promise<PaymentAccountDeletionImpact> {
-  const [openings, transactions, snapshots, feeRules, reserveRules, imports] = await Promise.all([
-    db.select({ id: paymentAccountAssets.id }).from(paymentAccountAssets).where(and(eq(paymentAccountAssets.companyId, companyId), eq(paymentAccountAssets.paymentAccountId, paymentAccountId))),
-    db.select({ id: paymentEvents.id }).from(paymentEvents).where(and(eq(paymentEvents.companyId, companyId), eq(paymentEvents.paymentAccountId, paymentAccountId))),
-    db.select({ id: paymentBalanceSnapshots.id }).from(paymentBalanceSnapshots).where(and(eq(paymentBalanceSnapshots.companyId, companyId), eq(paymentBalanceSnapshots.paymentAccountId, paymentAccountId))),
-    db.select({ id: paymentFeeRules.id }).from(paymentFeeRules).where(and(eq(paymentFeeRules.companyId, companyId), eq(paymentFeeRules.paymentAccountId, paymentAccountId))),
-    db.select({ id: paymentReserveRules.id }).from(paymentReserveRules).where(and(eq(paymentReserveRules.companyId, companyId), eq(paymentReserveRules.paymentAccountId, paymentAccountId))),
-    db.select({ id: reconciliationImports.id }).from(reconciliationImports).where(and(eq(reconciliationImports.companyId, companyId), eq(reconciliationImports.paymentAccountId, paymentAccountId))),
-  ]);
-  return { openings: openings.length, transactions: transactions.length, snapshots: snapshots.length, feeRules: feeRules.length, reserveRules: reserveRules.length, imports: imports.length };
-}
-
-export async function getPaymentAccountDeletionImpact(companyId: number, paymentAccountId: number): Promise<PaymentAccountDeletionImpact | null> {
-  const db = getDb();
-  const [account] = await db.select({ id: paymentAccounts.id }).from(paymentAccounts).where(and(eq(paymentAccounts.id, paymentAccountId), eq(paymentAccounts.companyId, companyId))).limit(1);
-  return account ? accountDeletionImpact(db, companyId, paymentAccountId) : null;
-}
-
 async function assertAccountHasNoUnsafeDependencies(db: Db, companyId: number, paymentAccountId: number) {
   const localEvents = await db.select({ id: paymentEvents.id, relatedEventId: paymentEvents.relatedEventId, relatedPaymentAccountId: paymentEvents.relatedPaymentAccountId, destinationAccountId: paymentEvents.destinationAccountId })
     .from(paymentEvents).where(and(eq(paymentEvents.companyId, companyId), eq(paymentEvents.paymentAccountId, paymentAccountId)));
@@ -270,14 +243,13 @@ async function assertAccountHasNoUnsafeDependencies(db: Db, companyId: number, p
   return { localEventIds, importIds };
 }
 
-export async function deletePaymentAccount(companyId: number, paymentAccountId: number, confirmationName: string) {
+export async function deletePaymentAccount(companyId: number, paymentAccountId: number) {
   const db = getDb();
   return db.transaction(async (tx) => {
     const scoped = tx as unknown as Db;
-    const [account] = await scoped.select({ id: paymentAccounts.id, name: paymentAccounts.name }).from(paymentAccounts)
+    const [account] = await scoped.select({ id: paymentAccounts.id }).from(paymentAccounts)
       .where(and(eq(paymentAccounts.id, paymentAccountId), eq(paymentAccounts.companyId, companyId))).limit(1);
     if (!account) throw new PaymentLedgerNotFoundError("Payment account not found.");
-    if (confirmationName !== account.name) throw new Error("Type the payment account name exactly to confirm deletion.");
     const { localEventIds, importIds } = await assertAccountHasNoUnsafeDependencies(scoped, companyId, paymentAccountId);
 
     if (localEventIds.length > 0) await scoped.delete(paymentImportEvents).where(and(eq(paymentImportEvents.companyId, companyId), inArray(paymentImportEvents.paymentEventId, localEventIds)));

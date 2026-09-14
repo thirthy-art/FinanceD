@@ -21,11 +21,10 @@ const validEdit = { eventDate: "2026-09-09", eventType: "deposit", balanceDirect
 beforeEach(() => { vi.clearAllMocks(); activeCompany.mockResolvedValue({ id: 7 } as never); });
 
 describe("payment-ledger mutation routes", () => {
-  it("passes only the active company to account deletion and requires typed confirmation", async () => {
-    expect((await deleteAccount(request("DELETE", {}), params("12"))).status).toBe(400);
+  it("passes only the active company and account id to confirmed account deletion", async () => {
     removeAccount.mockResolvedValue({ deleted: true });
-    const response = await deleteAccount(request("DELETE", { confirmationName: "Testbank" }), params("12"));
-    expect(response.status).toBe(200); expect(removeAccount).toHaveBeenCalledWith(7, 12, "Testbank");
+    const response = await deleteAccount(request("DELETE"), params("12"));
+    expect(response.status).toBe(200); expect(removeAccount).toHaveBeenCalledWith(7, 12);
   });
 
   it("passes only the active company to transaction edits and deletes", async () => {

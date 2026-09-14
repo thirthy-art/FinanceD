@@ -6,8 +6,7 @@ import type { AssetType, BalanceDirection, PaymentAccountType, PaymentEventType 
 import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/card";
 import { EmptyState } from "@/src/components/ui/feedback";
 import { PageDescription, PageHeader, PageHeading, PageTitle } from "@/src/components/ui/page";
-import type { PaymentAccountDeletionImpact } from "@/src/lib/payment-ledger";
-import { AccountDangerZone, TransactionActions } from "./PaymentAccountMutationControls";
+import { AccountDeleteAction, TransactionActions } from "./PaymentAccountMutationControls";
 
 export type PaymentAccountDetailView = {
   account: { id: number; name: string; providerName: string | null; accountType: PaymentAccountType; clientFundsEligible: boolean };
@@ -19,7 +18,7 @@ export type PaymentAccountDetailView = {
   reserveLots: Array<{ id: number; assetCode: string; holdDate: string; amount: string; expectedReleaseDate: string | null; released: string; actualReleaseDate: string | null; outstanding: string }>;
 };
 
-export default function PaymentAccountDetail({ detail, deletionImpact, messages }: { detail: PaymentAccountDetailView; deletionImpact: PaymentAccountDeletionImpact; messages: Messages["paymentAccounts"] }) {
+export default function PaymentAccountDetail({ detail, messages }: { detail: PaymentAccountDetailView; messages: Messages["paymentAccounts"] }) {
   const openingByAsset = new Map(detail.openings.map((row) => [row.assetCode, row]));
   return <div className="payment-account-detail-page">
     <PageHeader><PageHeading><Link href="/reconciliation/payment-accounts" className="ui-back-link">← {messages.backToAccounts}</Link><PageTitle>{detail.account.name}</PageTitle><PageDescription>{messages.accountDetails}</PageDescription></PageHeading></PageHeader>
@@ -27,10 +26,10 @@ export default function PaymentAccountDetail({ detail, deletionImpact, messages 
       <Info label={messages.accountName} value={detail.account.name}/><Info label={messages.providerName} value={detail.account.providerName ?? "—"}/><Info label={messages.accountType} value={messages.accountTypeLabels[detail.account.accountType]}/><Info label={messages.clientFundsEligible} value={detail.account.clientFundsEligible ? messages.eligible : messages.notEligible}/>
     </dl></CardContent></Card>
     <Card className="mb-5"><CardHeader><CardTitle>{messages.balances}</CardTitle></CardHeader><CardContent><Table headers={[messages.asset, messages.assetType, messages.openingAvailable, messages.openingReserve, messages.openingBalanceDate, messages.currentCalculatedAvailable, messages.calculatedReserve, messages.totalFunds, messages.reportedBalance, messages.reportedReserve, messages.reportedAsOf]} rows={detail.balances.map((balance) => { const opening = openingByAsset.get(balance.assetCode); return [balance.assetCode, opening ? messages[opening.assetType] : "—", amount(opening?.openingAvailableBalance), amount(opening?.openingReserveBalance), opening?.openingBalanceDate ?? "—", amount(balance.available), amount(balance.reserve), amount(balance.totalOwned), amount(balance.reportedAvailable), amount(balance.reportedReserve), balance.reportedAsOf?.slice(0, 10) ?? "—"]; })}/></CardContent></Card>
-    <Card className="mb-5"><CardHeader><CardTitle>{messages.transactions}</CardTitle></CardHeader><CardContent>{detail.events.length === 0 ? <EmptyState>{messages.noTransactions}</EmptyState> : <TransactionActions accountName={detail.account.name} events={detail.events.map((event) => ({ ...event, balanceAmount: amount(event.balanceAmount) }))} messages={messages}/>}</CardContent></Card>
+    <Card className="mb-5"><CardHeader><CardTitle>{messages.transactions}</CardTitle></CardHeader><CardContent>{detail.events.length === 0 ? <EmptyState>{messages.noTransactions}</EmptyState> : <TransactionActions events={detail.events.map((event) => ({ ...event, balanceAmount: amount(event.balanceAmount) }))} messages={messages}/>}</CardContent></Card>
     <Card className="mb-5"><CardHeader><CardTitle>{messages.reportedSnapshots}</CardTitle></CardHeader><CardContent>{detail.snapshots.length === 0 ? <EmptyState>{messages.noSnapshots}</EmptyState> : <Table headers={[messages.asset, messages.reportedBalance, messages.reportedReserve, messages.reportedAsOf]} rows={detail.snapshots.map((snapshot) => [snapshot.assetCode, amount(snapshot.reportedAvailableBalance), amount(snapshot.reportedReserveBalance), snapshot.asOf.slice(0, 10)])}/>}</CardContent></Card>
     <Card className="mb-5"><CardHeader><CardTitle>{messages.reserveRules}</CardTitle></CardHeader><CardContent>{detail.reserveRules.length === 0 && detail.reserveLots.length === 0 ? <EmptyState>{messages.noReserveInformation}</EmptyState> : <div className="grid gap-4"><Table headers={[messages.asset, "%", messages.days, messages.effectiveFrom, messages.effectiveTo]} rows={detail.reserveRules.map((rule) => [rule.assetCode ?? "—", amount(rule.reservePercentage), rule.holdPeriodDays === null ? "—" : String(rule.holdPeriodDays), rule.effectiveFrom, rule.effectiveTo ?? "—"])}/><Table headers={[messages.asset, messages.eventDate, messages.amount, messages.expectedRelease, messages.actualReleased, messages.outstanding]} rows={detail.reserveLots.map((lot) => [lot.assetCode, lot.holdDate, amount(lot.amount), lot.expectedReleaseDate ?? "—", amount(lot.released), amount(lot.outstanding)])}/></div>}</CardContent></Card>
-    <AccountDangerZone account={detail.account} impact={deletionImpact} messages={messages}/>
+    <AccountDeleteAction account={detail.account} messages={messages}/>
   </div>;
 }
 

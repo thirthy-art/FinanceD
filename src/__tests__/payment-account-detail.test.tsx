@@ -20,8 +20,8 @@ describe("payment account detail", () => {
       ],
       events: [{ id: 7, eventDate: "2026-09-08", eventType: "deposit", balanceDirection: "credit", balanceAmount: "100.000000000000000000", balanceAssetCode: "EUR", balanceAssetType: "fiat", providerEventId: "provider-7", reference: "Order 7" }], snapshots: [], reserveRules: [], reserveLots: [],
     };
-    const html = renderToStaticMarkup(<PaymentAccountDetail detail={detail} deletionImpact={{ openings: 3, transactions: 0, snapshots: 0, feeRules: 0, reserveRules: 0, imports: 0 }} messages={getMessages("en").paymentAccounts}/>);
+    const html = renderToStaticMarkup(<PaymentAccountDetail detail={detail} messages={getMessages("en").paymentAccounts}/>);
     expect(html).toContain("Testbank"); expect(html).toContain(">EUR<"); expect(html).toContain(">USD<"); expect(html).toContain(">PSP<"); expect(html).toContain(">2000<"); expect(html).toContain(">1250.5<"); expect(html).not.toContain("2000.000000000000000000");
-    expect(html).toContain("Edit"); expect(html).toContain("Delete transaction"); expect(html).toContain("Danger Zone"); expect(html).toContain("Delete Testbank");
+    expect(html).toContain("Edit"); expect(html).toContain(">Delete<"); expect(html).toContain("Delete account"); expect(html).not.toContain("Danger Zone");
   });
 });

@@ -8,9 +8,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   if (!Number.isInteger(paymentAccountId) || paymentAccountId <= 0) return NextResponse.json({ error: "Invalid payment account id." }, { status: 400 });
   const company = await getActiveCompanyFromRequest(req); if (company instanceof Response) return company;
   try {
-    const body = await req.json() as { confirmationName?: unknown };
-    if (typeof body.confirmationName !== "string") return NextResponse.json({ error: "Typed account-name confirmation is required." }, { status: 400 });
-    return NextResponse.json(await deletePaymentAccount(company.id, paymentAccountId, body.confirmationName));
+    return NextResponse.json(await deletePaymentAccount(company.id, paymentAccountId));
   } catch (error) {
     if (error instanceof PaymentLedgerNotFoundError) return NextResponse.json({ error: error.message }, { status: 404 });
     if (error instanceof PaymentLedgerDependencyError) return NextResponse.json({ error: error.message }, { status: 409 });

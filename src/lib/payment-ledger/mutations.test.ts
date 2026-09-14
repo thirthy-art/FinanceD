@@ -23,22 +23,22 @@ describe("payment ledger destructive mutations", () => {
 
   it.skipIf(!HAS_DB)("rejects cross-tenant account and transaction mutations", async () => {
     const a = await company(); const b = await company(); try { const foreign = await account(b, "Foreign account"); const result = await imported(b, foreign.id, [event()]); const eventId = result.eventIds[0];
-      await expect(deletePaymentAccount(a, foreign.id, foreign.name)).rejects.toThrow(/not found/);
+      await expect(deletePaymentAccount(a, foreign.id)).rejects.toThrow(/not found/);
       await expect(updatePaymentEvent(a, eventId, { eventDate: "2026-09-09", eventType: "deposit", balanceDirection: "credit", balanceAmount: "200", balanceAssetCode: "EUR", balanceAssetType: "fiat", reference: null })).rejects.toThrow(/not found/);
       await expect(deletePaymentEvent(a, eventId)).rejects.toThrow(/not found/);
     } finally { await cleanup(a); await cleanup(b); }
   });
 
-  it.skipIf(!HAS_DB)("deletes safe account-local children atomically after exact-name confirmation", async () => {
+  it.skipIf(!HAS_DB)("deletes safe account-local children atomically", async () => {
     const companyId = await company(); try { const owned = await account(companyId, "Safe delete"); await createAccountAsset(companyId, { paymentAccountId: owned.id, assetCode: "EUR", assetType: "fiat", openingAvailableBalance: "10", openingReserveBalance: "1", openingBalanceDate: "2026-09-01" }); await createReportedBalanceSnapshot(companyId, { paymentAccountId: owned.id, assetCode: "EUR", assetType: "fiat", reportedAvailableBalance: "10", asOf: "2026-09-08", ingestionSource: "manual" }); await createFeeRule(companyId, { paymentAccountId: owned.id, eventType: "deposit", feeBasis: "balance_amount", feeAssetCode: "EUR", percentageRate: "1", fixedAmount: "0", effectiveFrom: "2026-01-01" }); await createReserveRule(companyId, { paymentAccountId: owned.id, assetCode: "EUR", reservePercentage: "5", effectiveFrom: "2026-01-01" }); await imported(companyId, owned.id, [event()]);
-      await expect(deletePaymentAccount(companyId, owned.id, "wrong")).rejects.toThrow(/exactly/); await expect(deletePaymentAccount(companyId, owned.id, owned.name)).resolves.toEqual({ deleted: true });
+      await expect(deletePaymentAccount(companyId, owned.id)).resolves.toEqual({ deleted: true });
       expect(await db.select().from(schema.paymentAccounts).where(eq(schema.paymentAccounts.id, owned.id))).toHaveLength(0); expect(await db.select().from(schema.reconciliationImports).where(eq(schema.reconciliationImports.paymentAccountId, owned.id))).toHaveLength(0);
     } finally { await cleanup(companyId); }
   });
 
   it.skipIf(!HAS_DB)("blocks account deletion for cross-account and reconciliation dependencies", async () => {
-    const companyId = await company(); try { const source = await account(companyId, "Source"); const destination = await account(companyId, "Destination"); await imported(companyId, destination.id, [event({ destinationAccountId: source.id })]); await expect(deletePaymentAccount(companyId, source.id, source.name)).rejects.toThrow(/outside its account-owned data/);
-      const safe = await account(companyId, "Reconciled"); const pspImport = await imported(companyId, safe.id, [event()]); const [ledgerImport] = await db.insert(schema.reconciliationImports).values({ companyId, sourceKind: "player_ledger", originalFilename: "ledger.csv", contentHash: `${Date.now()}`.padEnd(64, "a").slice(0, 64), rowCount: 0 }).returning(); await db.insert(schema.reconciliationRuns).values({ companyId, playerLedgerImportId: ledgerImport.id, pspImportId: pspImport.importId }); await expect(deletePaymentAccount(companyId, safe.id, safe.name)).rejects.toThrow(/reconciliation run/);
+    const companyId = await company(); try { const source = await account(companyId, "Source"); const destination = await account(companyId, "Destination"); await imported(companyId, destination.id, [event({ destinationAccountId: source.id })]); await expect(deletePaymentAccount(companyId, source.id)).rejects.toThrow(/outside its account-owned data/);
+      const safe = await account(companyId, "Reconciled"); const pspImport = await imported(companyId, safe.id, [event()]); const [ledgerImport] = await db.insert(schema.reconciliationImports).values({ companyId, sourceKind: "player_ledger", originalFilename: "ledger.csv", contentHash: `${Date.now()}`.padEnd(64, "a").slice(0, 64), rowCount: 0 }).returning(); await db.insert(schema.reconciliationRuns).values({ companyId, playerLedgerImportId: ledgerImport.id, pspImportId: pspImport.importId }); await expect(deletePaymentAccount(companyId, safe.id)).rejects.toThrow(/reconciliation run/);
     } finally { await cleanup(companyId); }
   });
 

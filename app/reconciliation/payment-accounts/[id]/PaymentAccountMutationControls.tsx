@@ -3,13 +3,12 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Messages } from "@/src/i18n";
-import type { AssetType, BalanceDirection, PaymentEventType, PaymentAccountDeletionImpact } from "@/src/lib/payment-ledger";
+import type { AssetType, BalanceDirection, PaymentEventType } from "@/src/lib/payment-ledger";
 import { Button } from "@/src/components/ui/button";
 import { Input } from "@/src/components/ui/input";
 import { Select } from "@/src/components/ui/select";
 import { Textarea } from "@/src/components/ui/textarea";
 import { Alert } from "@/src/components/ui/feedback";
-import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/card";
 
 export interface EditablePaymentEvent {
   id: number;
@@ -28,7 +27,7 @@ type Mode = { kind: "edit" | "review" | "delete"; event: EditablePaymentEvent } 
 const EVENT_TYPES: PaymentEventType[] = ["deposit", "withdrawal", "refund", "chargeback", "fee", "adjustment", "settlement", "transfer", "reserve_hold", "reserve_release", "conversion", "unknown"];
 const DIRECTIONS: BalanceDirection[] = ["credit", "debit", "none"];
 
-export function TransactionActions({ accountName, events, messages }: { accountName: string; events: EditablePaymentEvent[]; messages: Messages["paymentAccounts"] }) {
+export function TransactionActions({ events, messages }: { events: EditablePaymentEvent[]; messages: Messages["paymentAccounts"] }) {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>(null);
   const [draft, setDraft] = useState<EditDraft | null>(null);
@@ -86,38 +85,32 @@ export function TransactionActions({ accountName, events, messages }: { accountN
         <div className="ui-dialog-actions"><Button variant="secondary" disabled={busy} onClick={() => setMode({ kind: "edit", event: mode.event })}>{messages.back}</Button><Button disabled={busy || changes(mode.event, draft, messages).length === 0} onClick={confirmEdit}>{busy ? messages.saving : messages.confirmChanges}</Button></div>
       </>}
       {mode.kind === "delete" && <>
-        <h2 id="payment-event-dialog-title" className="ui-dialog-title ui-dialog-title-danger">{messages.deleteTransactionQuestion}</h2>
-        <div className="my-4 rounded-md border border-[var(--destructive-border)] bg-[var(--destructive-muted)] p-4 text-sm">
-          <strong>{accountName}</strong><div>{mode.event.eventDate}</div><div>{messages.eventTypeLabels[mode.event.eventType]}</div><div>{mode.event.balanceAssetCode} {mode.event.balanceAmount}</div>{mode.event.providerEventId && <div>{messages.providerEventId}: {mode.event.providerEventId}</div>}
-        </div>
-        <p className="text-sm">{messages.transactionDeletePermanent}</p>{error && <Alert tone="error" className="mt-4">{error}</Alert>}
+        <h2 id="payment-event-dialog-title" className="ui-dialog-title">{messages.deleteTransactionQuestion}</h2>
+        <p className="text-sm">{messages.transactionDeleteConfirmation}</p>{error && <Alert tone="error" className="mt-4">{error}</Alert>}
         <div className="ui-dialog-actions"><Button variant="secondary" disabled={busy} onClick={close}>{messages.cancel}</Button><Button variant="destructive" disabled={busy} onClick={confirmDelete}>{busy ? messages.deleting : messages.deleteTransaction}</Button></div>
       </>}
     </div></div>}
   </>;
 }
 
-export function AccountDangerZone({ account, impact, messages }: { account: { id: number; name: string }; impact: PaymentAccountDeletionImpact; messages: Messages["paymentAccounts"] }) {
-  const router = useRouter(); const [open, setOpen] = useState(false); const [confirmation, setConfirmation] = useState(""); const [busy, setBusy] = useState(false); const [error, setError] = useState("");
+export function AccountDeleteAction({ account, messages }: { account: { id: number; name: string }; messages: Messages["paymentAccounts"] }) {
+  const router = useRouter(); const [open, setOpen] = useState(false); const [busy, setBusy] = useState(false); const [error, setError] = useState("");
   async function remove() {
-    if (confirmation !== account.name || busy) return; setBusy(true); setError("");
-    const response = await fetch(`/api/payment-accounts/${account.id}`, { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ confirmationName: confirmation }) });
+    if (busy) return; setBusy(true); setError("");
+    const response = await fetch(`/api/payment-accounts/${account.id}`, { method: "DELETE" });
     const result = await response.json() as { error?: string };
     if (!response.ok) { setError(result.error ?? messages.accountDeleteFailed); setBusy(false); return; }
     router.push("/reconciliation/payment-accounts"); router.refresh();
   }
-  return <Card className="border-[var(--destructive-border)]"><CardHeader><CardTitle className="text-[var(--destructive)]">{messages.dangerZone}</CardTitle></CardHeader><CardContent><p className="mb-4 text-sm">{messages.accountDeletePermanent}</p><Button variant="destructive" onClick={() => { setOpen(true); setError(""); }}>{messages.deleteNamedAccount.replace("{name}", account.name)}</Button></CardContent>
+  return <div className="flex justify-end py-2"><Button variant="secondary" onClick={() => { setOpen(true); setError(""); }}>{messages.deleteAccount}</Button>
     {open && <div className="ui-dialog-backdrop" role="presentation"><div role="dialog" aria-modal="true" aria-labelledby="delete-account-title" className="ui-dialog">
-      <h2 id="delete-account-title" className="ui-dialog-title ui-dialog-title-danger">{messages.deleteNamedAccount.replace("{name}", account.name)}</h2><p className="mb-4 text-sm">{messages.accountDeletePermanent}</p>
-      <dl className="grid grid-cols-2 gap-3 rounded-md border border-[var(--border)] p-4 text-sm"><Impact label={messages.openingBalancesAssets} value={impact.openings}/><Impact label={messages.transactionsPaymentEvents} value={impact.transactions}/><Impact label={messages.balanceSnapshots} value={impact.snapshots}/><Impact label={messages.feeRulesCount} value={impact.feeRules}/><Impact label={messages.reserveRulesCount} value={impact.reserveRules}/><Impact label={messages.accountImports} value={impact.imports}/></dl>
-      <label className="ui-label mt-4 block">{messages.typeAccountName.replace("{name}", account.name)}<Input className="mt-1" value={confirmation} autoComplete="off" onChange={(e) => setConfirmation(e.target.value)}/></label>
-      {error && <Alert tone="error" className="mt-4">{error}</Alert>}<div className="ui-dialog-actions"><Button variant="secondary" disabled={busy} onClick={() => { setOpen(false); setConfirmation(""); setError(""); }}>{messages.cancel}</Button><Button variant="destructive" disabled={busy || confirmation !== account.name} onClick={remove}>{busy ? messages.deleting : messages.deleteNamedAccountPermanently.replace("{name}", account.name)}</Button></div>
+      <h2 id="delete-account-title" className="ui-dialog-title">{messages.deleteNamedAccountQuestion.replace("{name}", account.name)}</h2><p className="text-sm">{messages.accountDeleteConfirmation}</p>
+      {error && <Alert tone="error" className="mt-4">{error}</Alert>}<div className="ui-dialog-actions"><Button variant="secondary" disabled={busy} onClick={() => { setOpen(false); setError(""); }}>{messages.cancel}</Button><Button variant="destructive" disabled={busy} onClick={remove}>{busy ? messages.deleting : messages.delete}</Button></div>
     </div></div>}
-  </Card>;
+  </div>;
 }
 
 function Field({ label, wide = false, children }: { label: string; wide?: boolean; children: React.ReactNode }) { return <label className={`ui-label ${wide ? "sm:col-span-2" : ""}`}>{label}<span className="mt-1 block">{children}</span></label>; }
-function Impact({ label, value }: { label: string; value: number }) { return <div><dt className="ui-definition-label">{label}</dt><dd className="ui-definition-value">{value}</dd></div>; }
 function changes(event: EditablePaymentEvent, draft: EditDraft, messages: Messages["paymentAccounts"]) {
   const values: Array<[string, string | null, string | null]> = [[messages.eventDate, event.eventDate, draft.eventDate], [messages.eventType, messages.eventTypeLabels[event.eventType], messages.eventTypeLabels[draft.eventType]], [messages.direction, messages.directionLabels[event.balanceDirection], messages.directionLabels[draft.balanceDirection]], [messages.amount, `${event.balanceAssetCode} ${event.balanceAmount}`, `${draft.balanceAssetCode} ${draft.balanceAmount}`], [messages.assetType, messages[event.balanceAssetType], messages[draft.balanceAssetType]], [messages.reference, event.reference, draft.reference]];
   return values.filter(([, before, after]) => (before ?? "") !== (after ?? "")).map(([label, before, after]) => ({ label, before: before || "—", after: after || "—" }));
