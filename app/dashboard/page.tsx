@@ -74,7 +74,7 @@ function CashPositionChart({ series, currency, locale }: {
       <span>{formatMoney(min.plus(range.div(2)).toFixed(), currency)}</span>
       <span>{formatMoney(min.toFixed(), currency)}</span>
     </div>
-    <svg className={styles.areaChart} viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label={`Cash position from ${series[0].date} to ${series.at(-1)?.date}`}>
+    <svg className={styles.areaChart} viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label={`Available cash position from ${series[0].date} to ${series.at(-1)?.date}`}>
       <defs><linearGradient id="cash-area-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#2f6fec" stopOpacity=".24"/><stop offset="1" stopColor="#2f6fec" stopOpacity=".02"/></linearGradient></defs>
       <path className={styles.chartGridLines} d="M 0 18 H 100 M 0 52 H 100 M 0 86 H 100" />
       <path d={area} fill="url(#cash-area-fill)" />
@@ -241,7 +241,7 @@ function DashboardScreen({ company, locale, today, data }: {
       </div>
 
       <article className={`${styles.panel} ${styles.cashPanel}`}>
-        <PanelHeader title="Cash position"><span className={styles.panelMeta}>Company accounts · reported balance history</span></PanelHeader>
+        <PanelHeader title="Available cash position"><span className={styles.panelMeta}>Company accounts · reported available balance history</span></PanelHeader>
         <CashPositionChart series={data.cashSeries} currency={company.baseCurrency} locale={locale} />
       </article>
     </section>
