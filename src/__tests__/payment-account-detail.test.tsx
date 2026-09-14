@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
 import PaymentAccountDetail, { type PaymentAccountDetailView } from "@/app/reconciliation/payment-accounts/[id]/PaymentAccountDetail";
 import { getMessages } from "@/src/i18n";
 
@@ -17,9 +18,10 @@ describe("payment account detail", () => {
         { assetCode: "USD", available: "9.25", reserve: "0", totalOwned: "9.25", reportedAvailable: null, reportedReserve: null, reportedAsOf: null },
         { assetCode: "PSP", available: "1", reserve: "0", totalOwned: "1", reportedAvailable: null, reportedReserve: null, reportedAsOf: null },
       ],
-      events: [], snapshots: [], reserveRules: [], reserveLots: [],
+      events: [{ id: 7, eventDate: "2026-09-08", eventType: "deposit", balanceDirection: "credit", balanceAmount: "100.000000000000000000", balanceAssetCode: "EUR", balanceAssetType: "fiat", providerEventId: "provider-7", reference: "Order 7" }], snapshots: [], reserveRules: [], reserveLots: [],
     };
-    const html = renderToStaticMarkup(<PaymentAccountDetail detail={detail} messages={getMessages("en").paymentAccounts}/>);
+    const html = renderToStaticMarkup(<PaymentAccountDetail detail={detail} deletionImpact={{ openings: 3, transactions: 0, snapshots: 0, feeRules: 0, reserveRules: 0, imports: 0 }} messages={getMessages("en").paymentAccounts}/>);
     expect(html).toContain("Testbank"); expect(html).toContain(">EUR<"); expect(html).toContain(">USD<"); expect(html).toContain(">PSP<"); expect(html).toContain(">2000<"); expect(html).toContain(">1250.5<"); expect(html).not.toContain("2000.000000000000000000");
+    expect(html).toContain("Edit"); expect(html).toContain("Delete transaction"); expect(html).toContain("Danger Zone"); expect(html).toContain("Delete Testbank");
   });
 });

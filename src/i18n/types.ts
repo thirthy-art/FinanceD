@@ -579,6 +579,8 @@ export interface Messages {
     clientFundsEligible: string; providerEventId: string; relatedProviderEventId: string;
     currentCalculatedAvailable: string; calculatedAtReported: string; reportedAsOf: string; accountBalances: string; noAccountBalances: string;
     sourceAmountBasis: string; balanceAmountBasis: string; basisAssetOptional: string; feeAsset: string; days: string;
+    actions: string; editTransaction: string; deleteTransaction: string; reference: string; editBusinessFactsOnly: string; reviewChanges: string; confirmTransactionChanges: string; changedValues: string; confirmChanges: string; back: string; cancel: string; saving: string; deleting: string; deleteTransactionQuestion: string; transactionDeletePermanent: string; transactionChangeFailed: string; transactionDeleteFailed: string;
+    dangerZone: string; accountDeletePermanent: string; deleteNamedAccount: string; deleteNamedAccountPermanently: string; typeAccountName: string; openingBalancesAssets: string; transactionsPaymentEvents: string; balanceSnapshots: string; feeRulesCount: string; reserveRulesCount: string; accountImports: string; accountDeleteFailed: string;
     accountTypeLabels: { psp: string; wallet: string; exchange: string; bank: string; other: string };
     eventTypeLabels: { deposit: string; withdrawal: string; refund: string; chargeback: string; fee: string; adjustment: string; settlement: string; transfer: string; reserve_hold: string; reserve_release: string; conversion: string; unknown: string };
     directionLabels: { credit: string; debit: string; none: string };
