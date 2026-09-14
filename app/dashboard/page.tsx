@@ -3,11 +3,10 @@ import { cookies } from "next/headers";
 import { ArrowDownRight, ArrowUpRight, CalendarDays, ChevronRight, CircleDollarSign, Clock3, FileText, Landmark, WalletCards } from "lucide-react";
 import CompanySelectionRequired from "@/src/components/CompanySelectionRequired";
 import { getActiveCompanyForPage } from "@/src/lib/active-company-page";
-import { buildDashboardData, type DashboardData } from "@/src/lib/dashboard";
+import { buildDashboardData, clientFundsVisualizationMode, type DashboardData } from "@/src/lib/dashboard";
 import { loadDashboardSourceRows } from "@/src/lib/dashboard-source";
 import { Decimal } from "@/src/lib/decimal";
 import { calculateBalances, type PaymentEvent } from "@/src/lib/payment-ledger";
-import { computeCoverage, type ReconciliationTransaction } from "@/src/lib/reconciliation";
 import { resolveLocale } from "@/src/i18n";
 import { LOCALE_COOKIE } from "@/src/i18n/types";
 import styles from "./dashboard.module.css";
@@ -96,15 +95,21 @@ const DONUT_GRADIENTS = [
 ];
 
 function ClientFundsDonut({ balances, total, currency }: {
-  balances: { accountId: number; name: string; value: string }[];
+  balances: DashboardData["clientAccountBalances"];
   total: string | null;
   currency: string;
 }) {
-  const positive = balances.filter((balance) => new Decimal(balance.value).isPositive());
-  const chartTotal = positive.reduce((sum, balance) => sum.plus(balance.value), new Decimal(0));
-  if (positive.length === 0 || chartTotal.isZero()) return <ChartEmpty title="No client-funds balances" copy="Base-currency balances will appear here when an eligible client-funds account holds money." compact />;
-  const segments = positive.reduce<{ cursor: Decimal; items: { length: string; offset: string; gradientIndex: number }[] }>((result, balance, index) => {
-    const length = new Decimal(balance.value).div(chartTotal).times(100);
+  const mode = clientFundsVisualizationMode(balances);
+  if (mode === "empty") return <ChartEmpty title="No client-funds balances" copy="Base-currency balances will appear here when an eligible client-funds account holds money." compact />;
+  if (mode === "breakdown") return <div className={styles.balanceBreakdown}>
+    <p>{balances.some((balance) => new Decimal(balance.totalHeld).isNegative())
+      ? "A donut is not shown because one or more account balances are negative."
+      : "There are no positive balances to chart."}</p>
+    {balances.map((balance) => <ClientAccountBalance key={balance.accountId} balance={balance} currency={currency} />)}
+  </div>;
+  const chartTotal = balances.reduce((sum, balance) => sum.plus(balance.totalHeld), new Decimal(0));
+  const segments = balances.reduce<{ cursor: Decimal; items: { length: string; offset: string; gradientIndex: number }[] }>((result, balance, index) => {
+    const length = new Decimal(balance.totalHeld).div(chartTotal).times(100);
     return {
       cursor: result.cursor.plus(length),
       items: [...result.items, {
@@ -124,7 +129,7 @@ function ClientFundsDonut({ balances, total, currency }: {
           </linearGradient>)}
         </defs>
         {segments.map((segment, index) => <circle
-          key={positive[index].accountId}
+          key={balances[index].accountId}
           cx="60"
           cy="60"
           r="48"
@@ -140,12 +145,24 @@ function ClientFundsDonut({ balances, total, currency }: {
       <div className={styles.donutCenter}><strong dir="ltr">{formatMoney(total, currency)}</strong><span>held</span></div>
     </div>
     <div className={styles.legend}>
-      {positive.slice(0, 5).map((balance, index) => <div className={styles.legendRow} key={balance.accountId}>
+      {balances.slice(0, 5).map((balance, index) => <div className={styles.legendRow} key={balance.accountId}>
         <span className={styles.legendDot} style={{ background: `linear-gradient(135deg, ${DONUT_GRADIENTS[index % DONUT_GRADIENTS.length].from}, ${DONUT_GRADIENTS[index % DONUT_GRADIENTS.length].to})` }} />
-        <span className={styles.legendName}>{balance.name}</span>
-        <b>{new Decimal(balance.value).div(chartTotal).times(100).toDecimalPlaces(0).toString()}%</b>
+        <span className={styles.legendAccount}><span className={styles.legendName}>{balance.name}</span><span className={styles.balanceDetail}>Available {formatMoney(balance.available, currency)} · Reserve {formatMoney(balance.reserve, currency)} · Total {formatMoney(balance.totalHeld, currency)}</span></span>
+        <b>{new Decimal(balance.totalHeld).div(chartTotal).times(100).toDecimalPlaces(0).toString()}%</b>
       </div>)}
     </div>
+  </div>;
+}
+
+function ClientAccountBalance({ balance, currency }: {
+  balance: DashboardData["clientAccountBalances"][number];
+  currency: string;
+}) {
+  return <div className={styles.balanceBreakdownRow}>
+    <strong>{balance.name}</strong>
+    <span>Available <b dir="ltr">{formatMoney(balance.available, currency)}</b></span>
+    <span>Reserve <b dir="ltr">{formatMoney(balance.reserve, currency)}</b></span>
+    <span>Total held <b dir="ltr">{formatMoney(balance.totalHeld, currency)}</b></span>
   </div>;
 }
 
@@ -165,16 +182,7 @@ export default async function DashboardPage() {
   const locale = resolveLocale(cookieStore.get(LOCALE_COOKIE)?.value);
   const company = await getActiveCompanyForPage();
   if (!company) return <CompanySelectionRequired locale={locale} />;
-  const { invoiceRows, forecastRows, accounts, openings, eventRows, snapshotRows, latestRun, liabilityRows } = await loadDashboardSourceRows(company.id);
-  const liabilityCoverage = latestRun && liabilityRows.length > 0
-    ? computeCoverage(liabilityRows.map((row) => ({
-        ...row,
-        amount: String(row.amount),
-      })) as ReconciliationTransaction[], [])
-    : null;
-  const clientLiability = liabilityCoverage?.currency && !liabilityCoverage.multiCurrency
-    ? { value: liabilityCoverage.playerLiability, currency: liabilityCoverage.currency }
-    : null;
+  const { invoiceRows, forecastRows, accounts, openings, eventRows, snapshotRows } = await loadDashboardSourceRows(company.id);
   const events = eventRows.map((event) => ({
     ...event,
     balanceAmount: String(event.balanceAmount), sourceAmount: event.sourceAmount === null ? null : String(event.sourceAmount),
@@ -201,7 +209,7 @@ export default async function DashboardPage() {
     accounts,
     snapshots: snapshotRows.map((row) => ({ ...row, reportedAvailableBalance: String(row.reportedAvailableBalance) })),
     receivables: null,
-    clientLiability,
+    authoritativeClientLiability: null,
   });
   return <DashboardScreen company={company} locale={locale} today={today} data={data} />;
 }
@@ -226,7 +234,7 @@ function DashboardScreen({ company, locale, today, data }: {
     <section className={styles.financialSection} aria-labelledby="company-funds-heading">
       <h2 className={styles.sectionTitle} id="company-funds-heading">Company funds</h2>
       <div className={styles.kpiGrid}>
-      <KpiCard label="Total company cash" value={formatMoney(data.companyCash, company.baseCurrency)} note={data.companyCash === null ? "No base-currency company balance data" : "Base-currency operational accounts only"} tone={data.companyCash === null ? "muted" : "positive"} icon={WalletCards} />
+      <KpiCard label="Total company cash" value={formatMoney(data.companyCash, company.baseCurrency)} note={data.companyCash === null ? "No base-currency company balance data" : "Available + reserve · company accounts only"} tone={data.companyCash === null ? "muted" : "positive"} icon={WalletCards} />
       <KpiCard label="Receivables" value={formatMoney(data.receivables, company.baseCurrency)} note="Unavailable: no customer-invoice source" tone="muted" icon={CircleDollarSign} />
       <KpiCard label="Payables" value={formatMoney(data.payables, company.baseCurrency)} note={`${data.unpaidInvoiceCount} unpaid · ${data.overdueInvoiceCount} overdue${data.payablesMissingAmountCount > 0 ? ` · ${data.payablesMissingAmountCount} without base amount` : ""}`} tone={data.overdueInvoiceCount > 0 || data.payablesMissingAmountCount > 0 ? "negative" : "neutral"} icon={FileText} />
       <KpiCard label="Net position" value={formatMoney(data.netPosition, company.baseCurrency)} note={data.netPosition === null ? "Unavailable while a formula input is unavailable" : "Company cash + receivables − payables"} tone={data.netPosition !== null && new Decimal(data.netPosition).isNegative() ? "negative" : data.netPosition === null ? "muted" : "positive"} icon={Landmark} />
@@ -241,9 +249,9 @@ function DashboardScreen({ company, locale, today, data }: {
     <section className={styles.financialSection} aria-labelledby="client-funds-heading">
       <h2 className={styles.sectionTitle} id="client-funds-heading">Client funds</h2>
       <div className={styles.clientKpiGrid}>
-        <KpiCard label="Client money held" value={formatMoney(data.clientMoneyHeld, company.baseCurrency)} note={data.clientMoneyHeld === null ? "No base-currency client-funds balance data" : "Eligible client-funds accounts only"} tone={data.clientMoneyHeld === null ? "muted" : "positive"} icon={WalletCards} />
-        <KpiCard label="Client liability" value={formatMoney(data.clientLiability, data.clientLiabilityCurrency ?? company.baseCurrency)} note={data.clientLiability === null ? "Unavailable: no single-currency completed reconciliation" : "Latest completed player-ledger reconciliation"} tone={data.clientLiability === null ? "muted" : "neutral"} icon={CircleDollarSign} />
-        <KpiCard label="Surplus / deficit" value={formatMoney(data.clientSurplusDeficit, company.baseCurrency)} note={data.clientSurplusDeficit === null ? "Unavailable until held funds and liability are comparable" : "Client money held − client liability"} tone={data.clientSurplusDeficit === null ? "muted" : new Decimal(data.clientSurplusDeficit).isNegative() ? "negative" : "positive"} icon={Landmark} />
+        <KpiCard label="Client money held" value={formatMoney(data.clientMoneyHeld, company.baseCurrency)} note={data.clientMoneyHeld === null ? "No base-currency client-funds balance data" : `Available ${formatMoney(data.immediatelyAvailableClientFunds, company.baseCurrency)} · reserve ${formatMoney(data.clientReserveHeld, company.baseCurrency)}`} tone={data.clientMoneyHeld === null ? "muted" : "positive"} icon={WalletCards} />
+        <KpiCard label="Client liability" value={formatMoney(data.clientLiability, data.clientLiabilityCurrency ?? company.baseCurrency)} note="Unavailable: no authoritative current-liability source" tone="muted" icon={CircleDollarSign} />
+        <KpiCard label="Surplus / deficit" value={formatMoney(data.clientSurplusDeficit, company.baseCurrency)} note={data.clientSurplusDeficit === null ? "Unavailable until held funds and liability are comparable" : `Total held coverage · available coverage ${formatMoney(data.clientAvailableSurplusDeficit, company.baseCurrency)}`} tone={data.clientSurplusDeficit === null ? "muted" : new Decimal(data.clientSurplusDeficit).isNegative() ? "negative" : "positive"} icon={Landmark} />
       </div>
       <article className={`${styles.panel} ${styles.pspPanel}`}>
         <PanelHeader title="Cash by PSP / EMI / wallet" href="/reconciliation/payment-accounts"><span className={styles.panelMeta}>Client funds only</span></PanelHeader>
