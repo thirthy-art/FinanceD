@@ -4,6 +4,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PgDialect } from "drizzle-orm/pg-core";
 import Home from "@/app/page";
 import InvoicePaymentFilter from "@/src/components/InvoicePaymentFilter";
+import InvoiceListClient, {
+  deleteInvoicesWithConcurrency,
+  filterInvoicesByVendor,
+  visibleSelectableInvoiceIds,
+  withoutDeletedInvoices,
+  type InvoiceListRow,
+} from "@/src/components/InvoiceListClient";
 import { I18nProvider } from "@/src/i18n/context";
 import { getMessages } from "@/src/i18n/index";
 import type { Locale } from "@/src/i18n/types";
@@ -28,7 +35,7 @@ vi.mock("next/navigation", () => ({
 vi.mock("@/src/lib/active-company-page", () => ({ getActiveCompanyForPage: mocks.company }));
 vi.mock("@/src/db", () => ({ getDb: () => ({ select: mocks.select }) }));
 
-const invoice = {
+const invoice: InvoiceListRow & { createdAt: Date } = {
   id: 1034, vendorName: "Stripe", invoiceNumber: "INV-1034", invoiceDate: "2026-08-30",
   grossAmount: "2450.00", currency: "EUR", currencyType: "fiat",
   status: "draft", paymentStatus: "Paid", createdAt: new Date("2026-08-31"),
@@ -63,13 +70,13 @@ describe("invoice list", () => {
     expect(html).toMatch(/aria-pressed="true">All<\/button>/);
   });
 
-  it("keeps export unfiltered, five columns, review destinations, and independent states", async () => {
+  it("keeps export unfiltered, six columns, review destinations, and independent states", async () => {
     const html = await markup({ payment: "paid" });
     const form = html.match(/<form[^>]*>[\s\S]*?<\/form>/)?.[0];
     expect(form).toContain('action="/api/invoices/export"');
     expect(form).toContain('method="get"');
     expect(form).not.toContain('name="payment"');
-    expect(html.match(/scope="col"/g)).toHaveLength(5);
+    expect(html.match(/scope="col"/g)).toHaveLength(6);
     expect(html.match(/href="\/invoices\/1034"/g)).toHaveLength(3);
     expect(html).toContain("INV-1034");
     expect(html).toContain("#1034");
@@ -109,6 +116,90 @@ describe("invoice list", () => {
     mocks.company.mockResolvedValue(null);
     await markup();
     expect(mocks.select).not.toHaveBeenCalled();
+  });
+
+  it("renders separate, comfortable mobile selection controls without nesting them in navigation", async () => {
+    const html = await markup();
+    expect(html).toContain('aria-label="Select invoice: Stripe, INV-1034, #1034"');
+    expect(html).toContain('aria-label="Select all visible draft invoices"');
+    expect(html).toContain("mobileCheckbox");
+    const links = [...html.matchAll(/<a(?:\s|>)[^>]*>[\s\S]*?<\/a>/g)].map((match) => match[0]);
+    expect(links.every((link) => !link.includes('type="checkbox"'))).toBe(true);
+  });
+});
+
+describe("invoice list filtering and selection", () => {
+  const rows: InvoiceListRow[] = [
+    invoice,
+    { ...invoice, id: 1035, vendorName: "Acme Supplies", paymentStatus: "Unpaid" },
+    { ...invoice, id: 1036, vendorName: "STRIPE Services", status: "approved", paymentStatus: "Unpaid" },
+  ];
+
+  it("matches vendor names case-insensitively", () => {
+    expect(filterInvoicesByVendor(rows, "stripe").map((row) => row.id)).toEqual([1034, 1036]);
+  });
+
+  it("matches vendor-name substrings", () => {
+    expect(filterInvoicesByVendor(rows, "me supp").map((row) => row.id)).toEqual([1035]);
+  });
+
+  it("combines vendor search with the payment-filter result set", () => {
+    const unpaidRows = rows.filter((row) => row.paymentStatus === "Unpaid");
+    expect(filterInvoicesByVendor(unpaidRows, "stripe").map((row) => row.id)).toEqual([1036]);
+  });
+
+  it("makes drafts selectable and excludes approved invoices", () => {
+    expect(visibleSelectableInvoiceIds(rows)).toEqual([1034, 1035]);
+  });
+
+  it("Select all is limited to visible selectable invoices", () => {
+    const visible = filterInvoicesByVendor(rows, "stripe");
+    expect(visibleSelectableInvoiceIds(visible)).toEqual([1034]);
+  });
+
+  it("removes successful invoice rows while leaving undeleted rows", () => {
+    expect(withoutDeletedInvoices(rows, new Set([1034, 1035])).map((row) => row.id)).toEqual([1036]);
+  });
+
+  it("renders approved invoice checkboxes disabled on desktop and mobile", () => {
+    const labels = getMessages("en");
+    const html = renderToStaticMarkup(
+      <I18nProvider initialLocale="en">
+        <InvoiceListClient rows={[rows[2]]} hasAnyInvoices paymentFilter="all" showSingleDeleteNotice={false} labels={labels.invoiceList} common={labels.common} />
+      </I18nProvider>,
+    );
+    expect(html.match(/type="checkbox"[^>]*disabled=""/g)).toHaveLength(3);
+  });
+});
+
+describe("invoice list bulk deletion", () => {
+  it("deletes multiple selected drafts through one bounded bulk operation", async () => {
+    let active = 0;
+    let maxActive = 0;
+    const requested: number[] = [];
+    const result = await deleteInvoicesWithConcurrency([1, 2, 3, 4, 5, 6], async (id) => {
+      requested.push(id);
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await Promise.resolve();
+      active -= 1;
+      return Response.json({ deleted: true });
+    }, 2);
+
+    expect(requested.sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(maxActive).toBeLessThanOrEqual(2);
+    expect(result.deletedIds).toHaveLength(6);
+    expect(result.failures).toEqual([]);
+  });
+
+  it("continues after a failed deletion and does not report the whole batch as successful", async () => {
+    const result = await deleteInvoicesWithConcurrency([11, 12, 13], async (id) => id === 12
+      ? Response.json({ error: "Approved invoices cannot be deleted." }, { status: 409 })
+      : Response.json({ deleted: true, warning: id === 13 ? "Uploaded file cleanup failed." : undefined }));
+
+    expect(result.deletedIds.sort((a, b) => a - b)).toEqual([11, 13]);
+    expect(result.failures).toEqual([{ id: 12, message: "Approved invoices cannot be deleted." }]);
+    expect(result.warnings).toEqual([{ id: 13, message: "Uploaded file cleanup failed." }]);
   });
 });
 
